@@ -18,7 +18,7 @@
 
 > The name **GoShiSen** derives from **"ShieldSentry"** – a guardian that stands watch over your network traffic.
 
----
+
 ## Key Features
 
 | Feature                     | Description                                                                     |
@@ -32,7 +32,6 @@
 | **Web UI**                  | Intuitive dashboard for managing rules and monitoring traffic (optional)        |
 | **Cloud-Native Ready**      | Docker support and Kubernetes-ready design                                      |
 
----
 
 ## Quick Start
 
@@ -106,7 +105,6 @@ sudo ./bin/goshisen --config policies/my-rules.yaml
 ```
 
 ## Documentation
-
 | Document                                                     | Description                                               |
 | ------------------------------------------------------------ | --------------------------------------------------------- |
 | [Architecture Design](https://./docs/design/architecture.md) | High-level design decisions and system flow               |
@@ -188,9 +186,7 @@ We welcome contributions! Here's how you can help:
 
 Please read our Contributing Guide and Code of Conduct first.
 
----
 
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
-
