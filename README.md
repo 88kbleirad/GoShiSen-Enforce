@@ -34,7 +34,7 @@ make build                      # produces bin/goshisen (version from git descri
 
 # Simulate a packet — verdict + matching rule ID, no network changes:
 ./bin/goshisen policy simulate --policy-file policies/examples/allow-lab.yaml \
-  --protocol tcp --src 10.0.0.5 --dst 10.0.0.2 --dest-port 80
+  --protocol tcp --state new --src 10.0.0.5 --dst 10.0.0.2 --dest-port 80
 #   verdict: ACCEPT
 #   matched rule: allow-http
 

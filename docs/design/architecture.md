@@ -1,6 +1,6 @@
 # GoShiSen-Enforce Architecture
 
-Status: **Phase 0 — design baseline.** Repository is a scaffold (empty source files); this document is the normative design for the MVP. No implementation exists yet.
+Status: **Phase 7 — hardening/release (implementation current).** This document is the normative design for the MVP and is kept in sync with the implementation; where the design and code differ, the code wins and this document is updated.
 
 Target: a **Linux lab firewall** filtering **IPv4 TCP/UDP forwarding** traffic. A **Go policy engine** evaluates packets delivered via **NFQUEUE**; the **kernel conntrack** subsystem owns connection tracking; **nftables** owns packet hooks (and future NAT). All non-TCP/UDP IPv4 forwarded traffic is dropped by the kernel hook's default policy.
 
@@ -14,10 +14,10 @@ flowchart LR
         A["eth0 (client-facing)"] --> F["nftables table ip goshisen<br/>chain forward (priority filter, policy drop)"]
         B["eth1 (server-facing)"] --> F
         F -->|"meta l4proto {tcp,udp}"| Q["NFQUEUE queue 0"]
-        Q -->|"netlink (NETLINK_NETFILTER)"| D["Go daemon (goshisen)"]
-        K["kernel conntrack"] <-->|"ctnetlink events N/UP/DESTROY"| M["conntrack mirror (userspace)"]
-        M --> E["policy engine"]
-        P["policy YAML (loaded at start, atomic reload")"] --> E
+        Q -->|"netlink (NETLINK_NETFILTER) + NFQA_CT / NFQA_CT_INFO"| D["Go daemon (goshisen)"]
+        K["kernel conntrack"] -.->|"NFQA_CT / NFQA_CT_INFO per packet"| D
+        D --> E["policy engine"]
+        P["policy YAML (loaded at start, atomic reload)"] --> E
         E -->|"verdict: ACCEPT | DROP"| Q
         Q -->|"NF_ACCEPT"| OUT["post-forward: route onward"]
         Q -->|"NF_DROP"| DROP["packet discarded"]
@@ -29,8 +29,8 @@ Sequence per packet:
 1. A packet arrives in the firewall netns on an `eth` veth and is destined for the other side (forwarding path).
 2. conntrack sees it first (loads `nf_defrag_ipv4`, then assigns/updates the connection entry, resolving `ct state`).
 3. The nftables `forward` chain (table `ip goshisen`, family IPv4) matches TCP/UDP and sends the packet to NFQUEUE queue 0 (`counter queue num 0`). The chain policy is `drop`, so anything not queued is dropped by the kernel.
-4. The daemon reads the queued packet (netlink `nfnetlink_queue`), parses the IPv4 + TCP/UDP headers, and looks up the packet's 5-tuple in the conntrack mirror.
-5. The mirror classifies **state** (NEW/ESTABLISHED/RELATED/INVALID) and **direction** (original/reply relative to the tracked connection), and whether the connection was previously accepted by policy.
+4. The daemon reads the queued packet (netlink `nfnetlink_queue`), parses the IPv4 + TCP/UDP headers, and reads the kernel's conntrack metadata attached to the packet (`NFQA_CT_INFO` state/direction bits, `NFQA_CT` tuple/TCP-protoinfo).
+5. The backend maps that metadata to engine state/direction (`applyCTInfo`): NEW/ESTABLISHED/RELATED/INVALID and original/reply. The engine also tracks which connections the policy accepted (the `King` accepted-set).
 6. The policy engine evaluates rules in order (first match wins) using the packet's real fields plus state/direction signals.
 7. The engine writes the verdict back through the same NFQUEUE socket: `NF_ACCEPT` or `NF_DROP`.
 8. The kernel resumes the packet after the hook: ACCEPT → routing/post-processing; DROP → discard. The verdict is authoritative; the nftables chain never re-evaluates the queued packet.
@@ -41,12 +41,12 @@ Sequence per packet:
 
 | Component | Responsibility | Location |
 | --- | --- | --- |
-| nftables hook | FORWARD hook, IPv4-only table, queue TCP/UDP, policy drop | nftables ruleset (provisioned by daemon via `github.com/google/nftables` or `nft` CLI) |
-| NFQUEUE transport | bind queue 0, read packets, write verdicts | `internal/packet/capture.go` over `github.com/florianl/go-nfnetlink` (pure Go netlink) |
+| nftables hook | FORWARD hook, IPv4-only table, queue TCP/UDP, policy drop; NAT chains (Phase 6) | `internal/hook` (provisioned via the `nft` binary; one atomic `nft -f` transaction) |
+| NFQUEUE transport | bind queue 0, read packets, write verdicts, attach CT metadata | `internal/packet/capture.go` over `github.com/mdlayher/netlink` (pure Go netlink) |
 | Packet parser | IPv4 header, TCP/UDP headers, options, truncation, fragment handling | `internal/packet/parser.go` (hand-rolled; no gopacket) |
-| Conntrack mirror | subscribe to ctnetlink events, keep per-netns tuple table, state + direction + accepted flag | `internal/state/table.go` |
-| Policy engine | YAML validation, rule list, first-match evaluation, default DROP | `internal/policy/` |
-| Runtime supervisor | load/reload, health counters, queue stats, fail-closed guarantee | `cmd/goshisen/main.go`, `internal/worker/pool.go` |
+| Kernel conntrack metadata | per-packet state/direction (NFQA_CT_INFO) + tuple/TCP state (NFQA_CT) | kernel; mapped in `internal/packet/capture.go` (`applyCTInfo`) — no userspace conntrack mirror/event subscription |
+| Policy engine | YAML validation, rule list, first-match evaluation, default DROP, accepted-set | `internal/policy/` |
+| Runtime | load/reload, health counters, queue stats, readiness, fail-closed guarantee | `internal/app/`, `cmd/goshisen/main.go` |
 
 ### 2.1 nftables ruleset (canonical form)
 
@@ -82,8 +82,8 @@ Design notes:
 | --- | --- |
 | `NFQA_PACKET_HDR` | packet id, hook, hw ifindex |
 | `NFQA_PAYLOAD` | raw packet bytes (IPv4 from IP header) |
-| `NFQA_IFINDEX_IN` / `NFQA_IFINDEX_OUT` | forwarding ingress/egress interface; resolved to names for `in_iface`/`out_iface` matchers |
-| `NFQA_CFG_*` | bind/config; `NFQA_CFG_F_GSO` is **not** set (GSO offload out of scope) |
+| `NFQA_CT_INFO` / `NFQA_CT` | kernel conntrack state/direction bits and tuple/TCP-protoinfo (requested via `NFQA_CFG_F_CONNTRACK`) |
+| `NFQA_CFG_*` | bind/config; `NFQA_CFG_F_GSO` is **not** set (GSO offload out of scope); `NFQA_CFG_F_FAIL_OPEN` is **never** set (fail-closed) |
 
 ### 3.3 Verdicts
 
@@ -214,10 +214,10 @@ These are **different axes** and are both computed per packet, then fed to rule 
 ### 5.6 Evaluation order (per packet)
 
 1. Parse IPv4 header; reject non-IPv4/truncated (→ default DROP).
-2. Look up the 5-tuple in the mirror (`proto, saddr, sport, daddr, dport`); classify state, direction, accepted.
-3. For each rule, test protocol, src/dst prefix, ports, state set, iface names, in order; first full match yields the verdict.
+2. Read the kernel's `NFQA_CT_INFO` (state/direction) and `NFQA_CT` (tuple/TCP protoinfo) attributes; map to engine state/direction. Untracked (no CT attrs) → INVALID (a NEW original-direction packet with no attrs is left stateless so stateless rules can still accept it).
+3. For each rule, test protocol, src/dst prefix, ports, state set, in order; first full match yields the verdict.
 4. No match → `default_action`.
-5. If verdict is ACCEPT and state is NEW, mark the connection `accepted` (mirror update). DROP never alters `accepted`.
+5. If verdict is ACCEPT and state is NEW, mark the connection `accepted` (the `King` accepted-set). DROP never alters `accepted`.
 
 ---
 
@@ -237,23 +237,20 @@ See §4.1. Policy load failures abort startup or keep the previous policy on rel
 - TCP/UDP with unparseable headers: default DROP (§6.2).
 
 ### 6.4 Queue overflow
-- The kernel drops packets when queue 0 is full (maxlen 1024) and no verdict has been issued; these packets are **not** re-queued. Because the chain policy is `drop`, overflow is consistent with default DROP (no bypass).
-- The daemon samples queue stats (packets dropped due to overflow) via netlink and exposes them as counters/log lines; overflow is a signal to increase maxlen or speed up verdicts, not a correctness issue.
+- The kernel drops packets when queue 0 is full (maxlen, default 1024) and no verdict has been issued; these packets are **not** re-queued. Because the chain policy is `drop`, overflow is consistent with default DROP (no bypass). The backend never sets `NFQA_CFG_F_FAIL_OPEN` — overflow can never ACCEPT a packet.
+- The daemon samples the kernel's per-queue stats (`/proc/net/netfilter/nfnetlink_queue`; `queue_dropped` = queue-full drops, `queue_user_dropped` = unicast failures) once per second, records `goshisen_queue_overflow_total{cause="kernel_drop"|"user_drop"}`, and logs a rate-limited warning. Overflow is a signal to increase `queue_maxlen` or speed up verdicts, not a correctness issue.
 
 ### 6.5 Process crashes and fail-closed
 - If the daemon dies, the queue is unbound; the nftables rule makes the kernel drop the traffic (no verdict source). This is **fail-closed**: a crashed firewall stops traffic rather than passing it.
-- The daemon restarts under a supervisor (systemd unit or `bash` restart loop in the lab). On restart it rebinds queue 0 and reloads the policy file; the conntrack mirror is rebuilt from a full ctnetlink dump + event stream (no persistent state across restarts).
-- Startup ordering: bind queue → dump conntrack → load policy → mark ready. Until "ready", the hook is still in place, so the firewall is already failing closed.
+- The daemon restarts under a supervisor (systemd unit — `deployments/systemd/goshisen.service` — or the lab's `scripts/supervisor.sh` restart loop). On restart it reinstalls the hook (atomic) and rebinds queue 0; policy is restored from the durable store / policy file. No userspace connection state survives a restart; the kernel's conntrack entries remain authoritative (they are NOT cleared by a daemon restart) and `NEW` connections are re-accepted by policy.
+- Readiness: `GET /readyz` returns 200 only after the hook is installed AND the queue is bound; it is 503 during startup, on any startup failure, and from the moment shutdown begins. The hook is in place before the queue binds, so the firewall is failing closed throughout startup.
 
 ### 6.6 Policy reloads
-- Reload trigger: `SIGHUP` (lab; a REST API is out of scope).
+- Reload trigger: `SIGHUP` (the daemon reloads the policy file) and the REST API's versioned apply/activate endpoints (Phase 5; atomic, CAS-guarded).
 - The new policy is parsed and validated fully **before** switching; on any error the old policy stays active and the reload is logged/rejected.
 - Switch is atomic: the engine swaps an immutable pointer to the compiled rule list. Packets in flight are evaluated against the snapshot they started with; new packets see the new list.
-- The conntrack mirror and `accepted` flags are **not** cleared by reload (connections survive policy swaps).
+- The `King` accepted-set is **not** cleared by reload (accepted connections survive policy swaps).
 - A reload that changes ports/addresses affects only new decisions; already-accepted connections continue under ESTABLISHED/RELATED rules until they expire (kernel timeouts/events).
-
-### 6.7 Conntrack mirror consistency
-- The mirror is a best-effort local cache; the kernel remains authoritative. If a mirror miss occurs (event loss, restart), the engine falls back to an on-demand ctnetlink lookup; if that also fails (no entry), the packet is classified by TCP flags only (SYN-alone → NEW; otherwise INVALID-ish → default DROP). This keeps behavior conservative.
 
 ---
 
@@ -263,28 +260,25 @@ See §4.1. Policy load failures abort startup or keep the previous policy on rel
 
 ```mermaid
 flowchart LR
-    subgraph host["Host (runner)"]
-        mgmt["mgmt0 (veth)"] 
+    subgraph fw["netns gsh_fw"]
+        fw0["gsh-fw0 (client-facing)"] --> FORWARD
+        fw1["gsh-fw1 (server-facing)"] --> FORWARD
+        FORWARD["nftables table gsh_lab / goshisen\n(forward hook)"] --> DAEMON["goshisen daemon"]
+        DAEMON --> API["REST API + metrics\n(127.0.0.1 inside netns)"]
     end
-    subgraph fw["netns fw (fw)"]
-        eth0["eth0"] 
-        eth1["eth1"]
+    subgraph client["netns gsh_client"]
+        c0["gsh-c0"]
     end
-    subgraph client["netns client"]
-        c0["c0"]
+    subgraph server["netns gsh_server"]
+        s0["gsh-s0"]
     end
-    subgraph server["netns server"]
-        s0["s0"]
-    end
-    mgmt <--> eth0
-    eth1 <--> c0
-    eth1 ~~~ s0
-    c0 <--> s0
+    fw0 <--> c0
+    fw1 <--> s0
 ```
 
-- Three namespaces: `fw` (firewall + daemon), `client`, `server`, plus the host as management plane.
-- Links: host ↔ `fw` via `mgmt0/eth0` (management, API-free in MVP: only for setup, logs, reload signals); `fw` ↔ `client` and `fw` ↔ `server` via veth pairs `eth1/c0` and `eth2/s0`.
+- Three namespaces: `gsh_fw` (firewall + daemon), `gsh_client`, `gsh_server`. The lab script (`scripts/lab.sh`) creates them with `gsh_`-prefixed veth pairs and the forward-hook rule in the router namespace only.
 - The firewall forwards between `client` and `server` only. Host traffic never enters the FORWARD hook.
+- API/metrics bind to loopback inside `gsh_fw`; reach them from the host via `ip netns exec gsh_fw ...`.
 
 ### 7.2 Reliable setup/cleanup
 
@@ -299,11 +293,10 @@ flowchart LR
 
 | Library | Purpose | Status / note |
 | --- | --- | --- |
-| `github.com/florianl/go-nfnetlink` | NFQUEUE bind/read/verdict; ctnetlink event subscription | **Abandoned — the module does not exist** (repository 404, verified Phase 3). The committed path is the direct NFQUEUE implementation over `github.com/mdlayher/netlink` (`internal/packet/capture.go`, nfnetlink_queue subsystem, ~300 LOC). |
-| `github.com/mdlayher/netlink` | low-level netlink (the backend's only external dependency) | pinned v1.11.2; pure Go |
-| `github.com/google/nftables` | nftables ruleset provisioning | **Not used.** Hook provisioning shells out to the `nft` binary (`internal/hook`); simplest reliable path, and the ruleset is four lines. The library remains a possible future replacment; not needed. |
-| `gopkg.in/yaml.v3` | policy parsing (strict decode) | stable; `KnownFields(true)` for strictness |
+| `github.com/mdlayher/netlink` | low-level netlink; the NFQUEUE backend's only external dependency | pinned v1.11.2; pure Go |
+| `gopkg.in/yaml.v3` | policy/config parsing (strict decode) | stable; `KnownFields(true)` for strictness |
 | — (hand-rolled parser) | IPv4/TCP/UDP header parsing | no dependency; ~170 LOC; unit-tested incl. fuzz (`FuzzParse`); chosen over gopacket (heavy dep, more surface) |
+| `nft` binary | nftables ruleset provisioning (hook install/verify/cleanup) | `internal/hook`; one atomic `nft -f` transaction per install; no nftables Go library |
 | kernel modules | `nf_tables`, `nfnetlink_queue`, `nf_conntrack`, `nf_defrag_ipv4` | required at runtime; absence surfaces as a clear startup error (`nft` cache init / netlink dial failures) |
 
 Kernel/Go floor: Linux ≥ 5.6 (nf_tables per-netns queue semantics), Go ≥ 1.25 (required by the pinned netlink library versions; go.mod pins 1.25.0). The lab host must run a kernel with these modules loadable (or built-in). No build-time cgo dependency.
@@ -343,10 +336,10 @@ Implementation phases (full acceptance criteria in `mvp-scope.md` §5):
 | 4 | **done** | Stateful filtering: CONNTRACK metadata from the kernel (`NFQA_CT`/`NFQA_CT_INFO`), `state` matcher, direction + accepted-set semantics, SIGHUP reload, state integration tests; ICMP RELATED limitation documented |
 | 5 | **done** | REST API + metrics: localhost-bound API with bearer auth and version CAS, durable versioned policy store with restart recovery, audit logging, bounded-cardinality Prometheus metrics, liveness/readiness |
 | 6 | **done** | NAT + packaging: kernel DNAT/MASQUERADE in app-owned table (atomic `nft -f` transaction, docs rollback), pre/post-NAT semantics documented, NAT integration tests, multi-stage Dockerfile (no privileged mode) |
-| 7 | pending | Hardening & release: dependency pins, docs closure, final acceptance run |
+| 7 | in progress | Hardening & release: queue-overflow monitoring + counters, crash/restart hardening + readiness gating, supervisor examples (systemd/lab loop), dependency pins, docs closure, final acceptance run |
 
-Config-file keys currently recognized: `interface`, `policy_file`, `log_level`, `log_json`, `api_host`, `api_port`, `api_token`, `metrics_port`, `policy_dir` (see `internal/config`). The policy YAML schema in §4 is a separate file format, implemented by `internal/policy` (Phase 2) and wired into the packet path in Phase 3.
+Config-file keys currently recognized: `interface`, `policy_file`, `log_level`, `log_json`, `api_host`, `api_port`, `api_token`, `metrics_port`, `policy_dir`, `queue_maxlen`, `nat` (see `internal/config`). The policy YAML schema in §4 is a separate file format, implemented by `internal/policy` (Phase 2) and wired into the packet path in Phase 3.
 
 ## 10. Open questions (tracked, not blocking)
 - Whether the kernel's conntrack `ct_event` subscription (or a periodic `/proc/net/nf_conntrack` dump) is needed for "accepted-set expiry" or metrics in a later phase; the current accepted-set grows until daemon restart (bounded per connection, acceptable for the lab).
-- Queue maxlen default (1024) may need tuning for the lab's throughput; overflow counters will inform this.
+- Queue maxlen default (1024) may need tuning for the lab's throughput; the overflow counters (`goshisen_queue_overflow_total`) will inform this.

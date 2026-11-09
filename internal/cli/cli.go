@@ -55,6 +55,8 @@ FLAGS:
       --dst <ip>           Simulated destination IP (policy simulate; required)
       --source-port <n>    Simulated source port 1..65535 (policy simulate)
       --dest-port <n>      Simulated destination port 1..65535 (policy simulate)
+      --state <st>         Simulated connection state: new, established, related,
+                           invalid (policy simulate; default stateless)
 
 PRECEDENCE (low to high):
   built-in defaults < config file < environment < flags
@@ -72,7 +74,7 @@ EXAMPLES:
   goshisen config check -c goshisen.yaml   # validate without running
   goshisen policy validate --policy-file policies/my-rules.yaml
   goshisen policy simulate --policy-file policies/my-rules.yaml \
-    --protocol tcp --src 10.0.0.1 --dst 10.0.0.2 --dest-port 22
+    --protocol tcp --state new --src 10.0.0.1 --dst 10.0.0.2 --dest-port 22
 `
 
 // Options is the parsed CLI invocation.

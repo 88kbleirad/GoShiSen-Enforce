@@ -34,7 +34,7 @@ Commands:
 | `config show` | prints the resolved configuration, with the precedence source (`default`/`file`/`env`/`flag`) of each value |
 | `config check` | validates configuration and host read-only: policy file readable, interface present and up. Makes no system changes; exit code 0 on success |
 | `policy validate --policy-file <path>` | compiles the policy file, rejects invalid rules, prints a summary of the compiled rules. Makes no system changes |
-| `policy simulate --policy-file <path> --src <ip> --dst <ip> [--protocol tcp\|udp\|any] [--source-port <n>] [--dest-port <n>]` | evaluates a synthetic packet against the policy and prints the verdict and matching rule ID (or `(default)`). Makes no system changes |
+| `policy simulate --policy-file <path> --src <ip> --dst <ip> [--protocol tcp\|udp\|any] [--state new\|established\|related\|invalid] [--source-port <n>] [--dest-port <n>]` | evaluates a synthetic packet against the policy and prints the verdict and matching rule ID (or `(default)`). Stateful rules require `--state`; otherwise the packet is stateless and stateful rules do not match. Makes no system changes |
 | `hook status` | reports whether the application-owned nftables table (`ip goshisen`) is installed. Read-only; makes no changes |
 | `hook cleanup` | deletes only the application-owned nftables table (`ip goshisen`). Requires root (CAP_NET_ADMIN); never touches any other nftables state |
 | *(none)* | run the daemon |
@@ -154,17 +154,17 @@ The daemon exposes a management API (default `127.0.0.1:8080`). See `api/openapi
 - **Durability:** policies are stored as immutable versioned files with an atomically-updated active pointer; restart recovery reloads the active version. `policy_dir` configures the store.
 - **Audit:** every admin action is logged (action, outcome, version); tokens are never logged.
 
-Example:
+Example (the sample config ships no token; set one via env for the example):
 
 ```bash
-TOKEN=$(grep api_token configs/goshisen.yaml | awk '{print $2}' | tr -d '"')
+export GOSHISEN_API_TOKEN="set-a-real-token"
 # Validate first:
-curl -s -X POST -H "Authorization: Bearer $TOKEN" \
+curl -s -X POST -H "Authorization: Bearer $GOSHISEN_API_TOKEN" \
   -H 'Content-Type: application/json' \
   -d "{\"policy\": \"$(cat policies/examples/allow-lab.yaml | tr '\n' ' ')\"}" \
   http://127.0.0.1:8080/v1/policy/validate
 # Apply (version 1):
-curl -s -X POST -H "Authorization: Bearer $TOKEN" \
+curl -s -X POST -H "Authorization: Bearer $GOSHISEN_API_TOKEN" \
   -H 'Content-Type: application/json' \
   -d "{\"policy\": \"$(cat policies/examples/allow-lab.yaml | tr '\n' ' ')\", \"base_version\": \"\"}" \
   http://127.0.0.1:8080/v1/policy
@@ -215,15 +215,15 @@ goshisen -c configs/goshisen.yaml config show
 # Validate a policy and see the compiled rules:
 goshisen policy validate --policy-file policies/examples/allow-lab.yaml
 
-# Simulate a TCP packet to port 80:
+# Simulate a TCP packet to port 80 (NEW, so the allow-http rule matches):
 goshisen policy simulate --policy-file policies/examples/allow-lab.yaml \
-  --protocol tcp --src 10.0.0.5 --dst 10.0.0.2 --dest-port 80
+  --protocol tcp --state new --src 10.0.0.5 --dst 10.0.0.2 --dest-port 80
 #   verdict: ACCEPT
 #   matched rule: allow-http
 
 # Simulate a packet no rule matches (default action):
 goshisen policy simulate --policy-file policies/examples/allow-lab.yaml \
-  --protocol udp --src 10.0.0.5 --dst 10.0.0.2 --dest-port 9999
+  --protocol udp --state new --src 10.0.0.5 --dst 10.0.0.2 --dest-port 9999
 #   verdict: DROP
 #   matched rule: (default)
 ```
