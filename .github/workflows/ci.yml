@@ -53,6 +53,14 @@ jobs:
         with:
           go-version: "1.25"
           cache: true
-      - name: Run privileged integration tests
-        run: sudo -E env "PATH=$PATH" go test ./tests/integration/ -v -count=1
+      - name: Run privileged integration tests (must not skip)
+        run: |
+          out=$(sudo -E env "PATH=$PATH" go test ./tests/integration/ -v -count=1 2>&1)
+          rc=$?
+          printf '%s\n' "$out"
+          if printf '%s\n' "$out" | grep -q -- '--- SKIP'; then
+            echo "ERROR: privileged integration tests skipped; release gate cannot pass"
+            exit 1
+          fi
+          exit $rc
         timeout-minutes: 10
