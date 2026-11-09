@@ -1,0 +1,273 @@
+openapi: 3.0.3
+info:
+  title: GoShiSen-Enforce Management API
+  version: 0.5.0
+  description: |
+    REST API for managing the GoShiSen-Enforce firewall policy and
+    exposing metrics. Binds to 127.0.0.1 by default. Administrative
+    operations require a bearer token (config `api_token` or env
+    `GOSHISEN_API_TOKEN`); when no token is configured, administrative
+    operations are disabled. Policy versions are immutable files in the
+    durable store; the active version is tracked atomically. Applying a
+    new policy uses optimistic concurrency: include the `base_version`
+    you observed; if the active version has moved on, the request fails
+    with 409 so concurrent clients never silently overwrite each other.
+servers:
+  - url: http://127.0.0.1:8080/v1
+security: []
+tags:
+  - name: policy
+    description: Policy management
+  - name: health
+    description: Liveness and readiness
+  - name: metrics
+    description: Prometheus metrics
+paths:
+  /policy:
+    get:
+      tags: [policy]
+      operationId: getActivePolicy
+      summary: View the active policy
+      responses:
+        '200':
+          description: Active policy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivePolicy'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags: [policy]
+      operationId: applyPolicy
+      summary: Store and activate a new policy version
+      description: |
+        Compiles the policy first; invalid policies are rejected with 422
+        and the active policy is preserved. On success a new version is
+        stored immutably and activated. `base_version` must equal the
+        current active version or the request fails with 409.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplyRequest'
+      responses:
+        '201':
+          description: Policy applied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  applied: {type: string}
+                  previous: {type: string}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '422':
+          $ref: '#/components/responses/InvalidPolicy'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /policy/versions:
+    get:
+      tags: [policy]
+      operationId: listPolicyVersions
+      summary: List stored policy versions and the active one
+      responses:
+        '200':
+          description: Versions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active: {type: string, nullable: true}
+                  versions:
+                    type: array
+                    items: {type: string}
+  /policy/validate:
+    post:
+      tags: [policy]
+      operationId: validatePolicy
+      summary: Validate a policy without applying it
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [policy]
+              properties:
+                policy: {type: string}
+      responses:
+        '200':
+          description: Policy is valid
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid: {type: boolean}
+                  rules: {type: integer}
+                  default_action: {type: string}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '422':
+          $ref: '#/components/responses/InvalidPolicy'
+  /policy/versions/{version}/activate:
+    post:
+      tags: [policy]
+      operationId: activatePolicyVersion
+      summary: Activate an already-stored policy version (rollback)
+      description: |
+        Also guarded by `base_version` compare-and-swap. The stored
+        policy is recompiled before activation; a corrupt or tampered
+        stored policy is rejected with 422 and the active policy is
+        preserved.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: version
+          in: path
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                base_version: {type: string}
+      responses:
+        '200':
+          description: Activated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active: {type: string}
+                  previous: {type: string}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/InvalidPolicy'
+  /healthz:
+    get:
+      tags: [health]
+      operationId: liveness
+      summary: Liveness (process alive)
+      responses:
+        '200':
+          description: Alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string}
+  /readyz:
+    get:
+      tags: [health]
+      operationId: readiness
+      summary: Readiness (firewall fully operational)
+      responses:
+        '200':
+          description: Ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string}
+        '503':
+          description: Not ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string}
+                  reason: {type: string}
+  /metrics:
+    get:
+      tags: [metrics]
+      operationId: metrics
+      summary: Prometheus metrics (text exposition format)
+      responses:
+        '200':
+          description: Metrics
+          content:
+            text/plain: {}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    ActivePolicy:
+      type: object
+      properties:
+        version: {type: string}
+        policy: {type: string}
+        rules: {type: integer}
+        default_action: {type: string}
+    ApplyRequest:
+      type: object
+      required: [policy, base_version]
+      properties:
+        policy: {type: string}
+        base_version: {type: string}
+    Error:
+      type: object
+      properties:
+        error: {type: string}
+        detail: {type: string}
+  responses:
+    Unauthorized:
+      description: Missing or invalid bearer token
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Conflict:
+      description: Version conflict (base_version does not match active)
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    InvalidPolicy:
+      description: Policy failed to compile
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    TooLarge:
+      description: Request body exceeds limit
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    InternalError:
+      description: Internal error
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}

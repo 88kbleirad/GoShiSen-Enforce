@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build, vet, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+      - name: Verify modules
+        run: go mod verify
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "unformatted files:"
+            echo "$unformatted"
+            exit 1
+          fi
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test -race ./...
+      - name: Build
+        run: go build ./...
+      - name: Smoke test the CLI
+        run: |
+          go build -o /tmp/goshisen ./cmd/goshisen
+          /tmp/goshisen --help >/dev/null
+          /tmp/goshisen --version
+          # Missing policy_file must fail with a clear error.
+          if /tmp/goshisen 2>/dev/null; then
+            echo "expected non-zero exit for missing configuration"; exit 1
+          fi
+
+  integration:
+    name: integration (real netns lab)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+      - name: Run privileged integration tests
+        run: sudo -E env "PATH=$PATH" go test ./tests/integration/ -v -count=1
+        timeout-minutes: 10

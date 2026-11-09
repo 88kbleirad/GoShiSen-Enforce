@@ -1,0 +1,14 @@
+# Default policy: deny everything.
+#
+# Schema: docs/design/architecture.md §4. This file is a valid, minimal
+# policy; the `state`, `in_iface`, and `out_iface` fields are reserved
+# for later phases and must not appear yet. Try it offline:
+#   goshisen policy validate --policy-file policies/default/deny-all.yaml
+#   goshisen policy simulate --policy-file policies/default/deny-all.yaml \
+#     --protocol tcp --src 10.0.0.1 --dst 10.0.0.2 --dest-port 22
+version: 1
+default_action: DROP
+rules:
+  - id: drop-invalid
+    action: DROP
+    description: "Placeholder for conntrack-INVALID handling (later phase); here it drops everything not explicitly allowed"

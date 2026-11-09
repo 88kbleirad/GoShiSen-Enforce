@@ -1,0 +1,46 @@
+# Example policy demonstrating all implemented matchers, ordering, and
+# stateful filtering. Try offline:
+#   goshisen policy validate --policy-file policies/examples/allow-lab.yaml
+#   goshisen policy simulate --policy-file policies/examples/allow-lab.yaml \
+#     --protocol tcp --src 10.0.0.5 --dst 10.0.0.2 --dest-port 22
+version: 1
+default_action: DROP
+
+rules:
+  # Web server in the lab subnet: one host, one port.
+  - id: allow-http
+    action: ACCEPT
+    protocol: tcp
+    src: 10.0.0.0/24
+    dst: 10.0.0.2
+    dst_port: 80
+    state: [NEW]
+    description: "HTTP from lab subnet to web server"
+
+  # SSH from the management network only, on a port range.
+  - id: allow-ssh
+    action: ACCEPT
+    protocol: tcp
+    src: 192.168.10.0/24
+    dst: 10.0.0.0/24
+    dst_port: 22:2222
+    state: [NEW]
+    description: "SSH from management network"
+
+  # DNS: any host, UDP only, any source port.
+  - id: allow-dns
+    action: ACCEPT
+    protocol: udp
+    dst: 10.0.0.53
+    dst_port: 53
+    state: [NEW]
+    description: "UDP DNS to resolver"
+
+  # Stateful reply traffic for any connection accepted above.
+  - id: allow-established
+    action: ACCEPT
+    protocol: any
+    state: [ESTABLISHED, RELATED]
+    description: "Reply traffic for accepted connections"
+
+  # Everything else falls through to the implicit DROP.

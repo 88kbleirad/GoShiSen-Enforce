@@ -1,192 +1,100 @@
-# 🛡️ GoShiSen-Enforce
+# GoShiSen-Enforce
 
-<div align="center">
+**A Linux lab firewall: Go policy engine over NFQUEUE, kernel conntrack, nftables hooks.**
 
-**A high-performance, stateful firewall engine written in Go**
+> **Status: Phase 6 — NAT + operational packaging complete.** The foundation, policy engine, packet path, stateful filtering, management API/metrics, and now kernel-side NAT with container packaging (Phase 6) are implemented and unit-tested. NAT (DNAT + MASQUERADE) runs entirely in nftables — no addresses or checksums are rewritten in Go — applied atomically in the app-owned table only. All privileged integration tests (now 17 scenarios, including NAT) remain root-gated and were **not runnable in this environment** (non-root).
 
-[![Go Version](https://img.shields.io/github/go-mod/go-version/88kbleirad/GoShiSen-Enforce)](https://golang.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Go Report Card](https://goreportcard.com/badge/github.com/88kbleirad/GoShiSen-Enforce)](https://goreportcard.com/report/github.com/88kbleirad/GoShiSen-Enforce)
-[![GitHub release](https://img.shields.io/github/v/release/88kbleirad/GoShiSen-Enforce)](https://github.com/88kbleirad/GoShiSen-Enforce/releases)
+## What works today
 
-</div>
+- **NAT** (`internal/hook`, kernel nftables): DNAT (`dstnat` prerouting chain) and MASQUERADE (`srcnat` postrouting chain) configured under `nat:` in the daemon config. Applied as one `nft -f` transaction; failed apply changes nothing; only `table ip goshisen` is ever touched. Documented semantics: **the policy engine sees post-DNAT destination and pre-MASQUERADE source** (see `docs/design/architecture.md` §8.2).
+- **Packaging**: multi-stage `deployments/docker/Dockerfile` (Go builder + static nftables builder → distroless base), explicit `NET_ADMIN`/`NET_RAW` capabilities, **never privileged**, graceful TERM shutdown, health-check guidance (`/healthz`, `/readyz`), durable policy volume, restart/recovery notes. Operator cleanup: `goshisen hook status|cleanup` (app-owned table only). No install scripts (would need reliable uninstall/rollback first) and no Kubernetes manifests (CNI relationship must be defined first) — both documented as out of scope.
+- Phase 1–5 unchanged: policy engine, NFQUEUE enforcement, stateful filtering, REST API, metrics, durable store, reload.
 
----
-## Introduction
+## Integration tests & privileges
 
-**GoShiSen-Enforce** is a powerful, stateful firewall engine built from the ground up in Go. It combines the performance of a packet filter with the flexibility of dynamic policy management. Whether you're securing a single server, a microservices cluster, or an edge gateway, GoShiSen-Enforce provides the control and visibility you need.
-
-> The name **GoShiSen** derives from **"ShieldSentry"** – a guardian that stands watch over your network traffic.
-
-
-## Key Features
-
-| Feature                     | Description                                                                     |
-| --------------------------- | ------------------------------------------------------------------------------- |
-| **Stateful Inspection**     | Tracks connection states (NEW, ESTABLISHED, RELATED) for intelligent filtering  |
-| **Policy-as-Code**          | Define firewall rules using YAML, version-controlled and reproducible           |
-| **High Performance**        | Written in Go with Goroutine-based worker pool for concurrent packet processing |
-| **Dynamic Rule Management** | Add, update, or delete rules on-the-fly via REST API without restarting         |
-| **NAT Support**             | MASQUERADE and DNAT for network address translation                             |
-| **Prometheus Metrics**      | Real-time visibility into accepted/dropped packets, connection counts, and more |
-| **Web UI**                  | Intuitive dashboard for managing rules and monitoring traffic (optional)        |
-| **Cloud-Native Ready**      | Docker support and Kubernetes-ready design                                      |
-
-
-## Quick Start
-
-### Prerequisites
-
-- **Go 1.21+** for building from source
-- **Linux** (recommended) or macOS 
-- Root/Administrator privileges 
-
-### Installation
-
-#### Option 1: Download Binary
+The lab needs root (CAP_NET_ADMIN). As a non-root user, `go test ./...` compiles the suite and skips it with the reason `integration tests require root for CAP_NET_ADMIN`. Run it with:
 
 ```bash
-wget https://github.com/88kbleirad/GoShiSen-Enforce/releases/latest/download/goshisen-linux-amd64
-chmod +x goshisen-linux-amd64
-sudo ./goshisen-linux-amd64 --config ./policies/examples/sample.yaml
+sudo make integration
 ```
 
-Option 2: Build from Source
+This environment is unprivileged, so the 18 scenarios (Phase 3: traffic pass/drop, default DROP, no-listener, clean shutdown; Phase 4: handshake+echo, unsolicited inbound, invalid state, timeout/hold, UDP re-use, reload-while-established; Phase 6: DNAT, MASQUERADE, return traffic, NAT+filtering, reload-while-NAT-connections, hook cleanup scope) were **not executed here**; the code, lab script, and probes are real — no mocks, no faked verdicts.
+
+## Quick start
 
 ```bash
-git clone https://github.com/88kbleirad/GoShiSen-Enforce.git
-cd GoShiSen-Enforce
-make build
-sudo ./bin/goshisen --config ./policies/examples/sample.yaml
+make build                      # produces bin/goshisen (version from git describe)
+
+# Validate a config without starting the daemon:
+./bin/goshisen -c configs/goshisen.yaml config check
+
+# Validate a policy and inspect the compiled rules:
+./bin/goshisen policy validate --policy-file policies/examples/allow-lab.yaml
+
+# Simulate a packet — verdict + matching rule ID, no network changes:
+./bin/goshisen policy simulate --policy-file policies/examples/allow-lab.yaml \
+  --protocol tcp --src 10.0.0.5 --dst 10.0.0.2 --dest-port 80
+#   verdict: ACCEPT
+#   matched rule: allow-http
+
+# Run inside the lab router namespace (root). It installs the hook in
+# that namespace only; host firewall untouched.
+sudo scripts/lab.sh up
+sudo ip netns exec gsh_fw ./bin/goshisen \
+  --interface gsh-fw1 --policy-file policies/examples/allow-lab.yaml
+sudo scripts/lab.sh down
 ```
 
-Option 3: Run with Docker
-
-```bash
-docker run -it --rm --cap-add=NET_ADMIN -v $(pwd)/policies:/policies \
-  dariel/goshisen-enforce:latest \
-  --config /policies/examples/sample.yaml
-```
-
-## First Rule
-
-Create a policy file policies/my-rules.yaml:
-
-```yaml
-rules:
-  - id: allow-ssh
-    action: ACCEPT
-    protocol: TCP
-    src: 192.168.1.0/24
-    dst: any
-    port: 22
-    description: "Allow SSH from internal subnet"
-    
-  - id: allow-https
-    action: ACCEPT
-    protocol: TCP
-    src: any
-    dst: 10.0.0.1
-    port: 443
-    description: "Allow HTTPS to web server"
-    
-  - id: block-all
-    action: DROP
-    protocol: any
-    src: any
-    dst: any
-    description: "Default Deny (implicit policy)"
-```
-
-Run it:
-
-```bash
-sudo ./bin/goshisen --config policies/my-rules.yaml
-```
-
-## Documentation
-| Document                                                     | Description                                               |
-| ------------------------------------------------------------ | --------------------------------------------------------- |
-| [Architecture Design](https://./docs/design/architecture.md) | High-level design decisions and system flow               |
-| [User Guide](https://./docs/user-guide.md)                   | Complete usage guide with all configuration options       |
-| [Developer Guide](https://./docs/developer-guide.md)         | Setup, build, test, and contribution workflow             |
-| [API Reference](https://./api/openapi.yaml)                  | REST API endpoints for dynamic rule management            |
-| [Security Policy](https://./SECURITY.md)                     | How to report vulnerabilities and security best practices |
+Sample configuration: `configs/goshisen.yaml`. Sample policies: `policies/default/deny-all.yaml`, `policies/examples/allow-lab.yaml`.
 
 ## Configuration
 
-GoShiSen-Enforce supports multiple configuration methods:
+Precedence (lowest to highest):
 
-1. YAML Configuration File
-```yaml
+| Layer | Example |
+| --- | --- |
+| built-in defaults | `log_level: info`, `log_json: false` |
+| config file | `interface: eth0` |
+| environment | `GOSHISEN_INTERFACE=eth0` |
+| flags | `--interface eth0` |
 
-interface: eth0                # Network interface to capture
-listen: "0.0.0.0:8080"         # REST API listening address
-log-level: "info"              # debug, info, warn, error
-metrics-port: 9090             # Prometheus metrics port
-state-table-timeout: 60        # Connection timeout (seconds)
+| Key | Flag | Environment | Default |
+| --- | --- | --- | --- |
+| `interface` | `--interface` | `GOSHISEN_INTERFACE` | auto (first up, non-loopback) |
+| `policy_file` | `--policy-file` | `GOSHISEN_POLICY_FILE` | *(required)* |
+| `log_level` | `--log-level` | `GOSHISEN_LOG_LEVEL` | `info` |
+| `log_json` | `--log-json` | `GOSHISEN_LOG_JSON` | `false` |
 
-rules:
-  - id: rule-1
-    action: ACCEPT
-    protocol: TCP
-    src: 192.168.1.0/24
-    dst: any
-    port: 22
+Boolean env values accept `true/false`, `1/0`, `yes/no`, `on/off`.
+
+## Documentation
+
+| Document | Contents |
+| --- | --- |
+| [Architecture](docs/design/architecture.md) | Full design: packet flow, policy schema, rule semantics, failure modes, lab topology, library risks |
+| [MVP Scope](docs/design/mvp-scope.md) | Component inventory, scenarios S1–S12, per-phase acceptance criteria, non-goals |
+| [User Guide](docs/user-guide.md) | CLI, configuration, examples |
+| [Developer Guide](docs/developer-guide.md) | Build, test, CI, repository layout |
+
+## Repository layout
+
 ```
-
-2. Command Line Flags
-
-```bash
-./goshisen \
-  --config ./policies/prod.yaml \
-  --interface eth0 \
-  --api-port 8080 \
-  --metrics-port 9090
+cmd/goshisen/        daemon entry point
+internal/app/        daemon lifecycle: policy load, hook install, queue loop, shutdown
+internal/cli/        flag parsing, help/version, subcommand resolution
+internal/config/     configuration model, YAML file, precedence, validation
+internal/policy/     policy YAML parser + evaluation engine (snapshots, atomic replace)
+internal/packet/     NFQUEUE backend + IPv4/TCP/UDP parser
+internal/hook/       nftables hook provisioning (router namespace only)
+configs/             sample configuration
+policies/default/    deny-all policy example
+policies/examples/   worked policy example
+scripts/lab.sh       isolated netns lab (up/down/status)
+tests/integration/   real-traffic integration suite + probe helper
+docs/                design and user/developer guides
+.github/workflows/   CI
 ```
-
-3. Environment Variables
-
-```bash
-export GOSHISEN_CONFIG=./policies/prod.yaml
-export GOSHISEN_INTERFACE=eth0
-./goshisen
-```
-
-## Security Best Practices
-
-    Default-Deny Policy: Always end your rule list with a default DROP rule
-    Principle of Least Privilege: Only allow traffic that is absolutely necessary
-    Regular Audits: Review and update your ruleset periodically
-    Enable Logging: Use log-level: info in production for audit trails
-    Secure the API: Run the REST API on a management network or use a reverse proxy with authentication
-
-## Monitoring
-
-GoShiSen-Enforce exports Prometheus metrics at /metrics endpoint:
-
-```text
-# HELP goshisen_packets_total Total packets processed
-# TYPE goshisen_packets_total counter
-goshisen_packets_total{action="ACCEPT"} 12345
-goshisen_packets_total{action="DROP"} 6789
-
-# HELP goshisen_active_connections Currently active connections
-# TYPE goshisen_active_connections gauge
-goshisen_active_connections 42
-```
-
-## 🤝 Contributing
-
-We welcome contributions! Here's how you can help:
-
-    Report bugs: Open an issue with clear reproduction steps
-    Feature requests: Suggest new features with use cases
-    Code contributions: Fork the repo, make your changes, and submit a PR
-
-Please read our Contributing Guide and Code of Conduct first.
-
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
+MIT — see [LICENSE](LICENSE). © 2026 Lê Thanh Phong.

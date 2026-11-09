@@ -1,0 +1,55 @@
+# GoShiSen-Enforce sample configuration.
+#
+# Copy and edit for your host. Every value can also be supplied by a
+# flag or an environment variable; precedence, lowest to highest:
+#   built-in defaults < this file < GOSHISEN_* environment < CLI flags
+#
+# Validate without starting the daemon:
+#   goshisen --config configs/goshisen.yaml config check
+
+# Network interface the firewall attaches to.
+# Empty (or omitted) means auto: the first up, non-loopback interface.
+interface: eth0
+
+# Path to the YAML policy ruleset. Required.
+# A leading ~/ is expanded to the user's home directory.
+policy_file: policies/default/deny-all.yaml
+
+# debug, info, warn, error. Default: info.
+log_level: info
+
+# Emit structured JSON logs instead of the default text format.
+# Default: false.
+log_json: false
+
+# REST management API (localhost by default). api_port 0 disables it.
+# The token is required for policy changes; set it via this file or
+# GOSHISEN_API_TOKEN — deliberately NOT as a CLI flag (argv is visible
+# to other processes on the host).
+api_host: 127.0.0.1
+api_port: 8080
+api_token: "change-me"
+
+# Prometheus metrics port; 0 disables.
+metrics_port: 9090
+
+# Durable policy store directory (versioned policies + active pointer).
+# Restart recovery loads the active version from here.
+policy_dir: policy_store
+
+# NAT (kernel-side nftables; no address rewriting in Go).
+# Applied atomically with the filter ruleset in the app-owned table.
+nat:
+  enabled: false        # master switch
+  masquerade:
+    enabled: false
+    out_iface: eth1     # egress interface whose traffic is masqueraded
+  dnat:
+    # - name: web
+    #   protocol: tcp
+    #   pub_ip: 203.0.113.10
+    #   pub_port: 80
+    #   target_ip: 10.0.0.10
+    #   target_port: 8080
+    # NOTE: DNAT rewrites the destination BEFORE the filter hook, so
+    # policy rules must match the internal target (10.0.0.10:8080).
