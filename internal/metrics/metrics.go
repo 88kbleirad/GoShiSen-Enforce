@@ -98,11 +98,27 @@ func (r *Registry) ObserveVerdict(v VerdictLabels) {
 	r.counters["goshisen_packets_by_state_total"].values[skey]++
 }
 
+// BackendErrorKind is a bounded enum of backend error kinds. Using a
+// typed enum (not a free-form string) keeps metric label cardinality
+// bounded by construction.
+type BackendErrorKind string
+
+const (
+	// BackendErrReceive is a netlink receive error in the queue loop.
+	BackendErrReceive BackendErrorKind = "receive"
+	// BackendErrSend is a netlink send (verdict) error.
+	BackendErrSend BackendErrorKind = "send"
+	// BackendErrParse is a packet parse failure.
+	BackendErrParse BackendErrorKind = "parse"
+	// BackendErrPanic is a recovered engine panic.
+	BackendErrPanic BackendErrorKind = "panic"
+)
+
 // ObserveBackendError records a backend error by bounded kind.
-func (r *Registry) ObserveBackendError(kind string) {
+func (r *Registry) ObserveBackendError(kind BackendErrorKind) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.counters["goshisen_backend_errors_total"].values[kind]++
+	r.counters["goshisen_backend_errors_total"].values[string(kind)]++
 }
 
 // OverflowCause is a bounded enum of kernel queue-drop causes.

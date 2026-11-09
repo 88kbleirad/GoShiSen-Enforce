@@ -39,8 +39,8 @@ func TestRegistryBounds(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		r.ObserveVerdict(VerdictLabels{Action: "drop", Protocol: "tcp", State: "invalid"})
 	}
-	r.ObserveBackendError("parse")
-	r.ObserveBackendError("parse")
+	r.ObserveBackendError(BackendErrParse)
+	r.ObserveBackendError(BackendErrParse)
 	r.ObserveLatency(10 * time.Microsecond)
 	r.ObserveLatency(2 * time.Millisecond)
 	r.SetActivePolicyVersion(7)
