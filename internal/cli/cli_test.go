@@ -60,6 +60,16 @@ func TestParseFlagsAfterCommandIgnored(t *testing.T) {
 	}
 }
 
+func TestParseQueueMaxlenFlag(t *testing.T) {
+	o, err := Parse([]string{"--queue-maxlen", "8"}, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if o.Overrides.QueueMaxlen == nil || *o.Overrides.QueueMaxlen != 8 {
+		t.Errorf("Overrides.QueueMaxlen = %v, want 8", o.Overrides.QueueMaxlen)
+	}
+}
+
 func TestParseUnknownFlagErrors(t *testing.T) {
 	var buf bytes.Buffer
 	if _, err := Parse([]string{"--nope"}, &buf); err == nil {

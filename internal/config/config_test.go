@@ -45,6 +45,9 @@ func TestLoadDefaults(t *testing.T) {
 	if o.LogJSON {
 		t.Error("LogJSON = true, want false")
 	}
+	if o.QueueMaxlen != 1024 {
+		t.Errorf("QueueMaxlen = %d, want 1024", o.QueueMaxlen)
+	}
 	if o.Source("log_level") != "default" {
 		t.Errorf("log_level source = %q, want default", o.Source("log_level"))
 	}
@@ -197,9 +200,53 @@ func TestSourceSummaryStable(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	sum := o.SourceSummary()
-	for _, f := range []string{"interface", "policy_file", "log_level", "log_json"} {
+	for _, f := range []string{"interface", "policy_file", "log_level", "log_json", "queue_maxlen"} {
 		if !strings.Contains(sum, f+"=") {
 			t.Errorf("SourceSummary %q missing %s", sum, f)
+		}
+	}
+}
+
+func TestLoadQueueMaxlen(t *testing.T) {
+	p := writeTemp(t, "goshisen.yaml", `
+policy_file: /etc/goshisen/policy.yaml
+queue_maxlen: 64
+`)
+	o, err := Load(p, envStub(nil), Overrides{})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if o.QueueMaxlen != 64 {
+		t.Errorf("QueueMaxlen = %d, want 64", o.QueueMaxlen)
+	}
+	if o.Source("queue_maxlen") != "file" {
+		t.Errorf("queue_maxlen source = %q, want file", o.Source("queue_maxlen"))
+	}
+
+	env := policyEnv(map[string]string{EnvPrefix + "QUEUE_MAXLEN": "32"})
+	o, err = Load("", env, Overrides{})
+	if err != nil {
+		t.Fatalf("Load env: %v", err)
+	}
+	if o.QueueMaxlen != 32 {
+		t.Errorf("QueueMaxlen env = %d, want 32", o.QueueMaxlen)
+	}
+
+	q := 4
+	o, err = Load("", policyEnv(nil), Overrides{QueueMaxlen: &q})
+	if err != nil {
+		t.Fatalf("Load flag: %v", err)
+	}
+	if o.QueueMaxlen != 4 {
+		t.Errorf("QueueMaxlen flag = %d, want 4", o.QueueMaxlen)
+	}
+}
+
+func TestValidateQueueMaxlen(t *testing.T) {
+	for _, bad := range []int{0, -1, 65536} {
+		o := &Options{File: File{PolicyFile: "/etc/goshisen/policy.yaml", PolicyDir: "x", QueueMaxlen: bad}}
+		if err := o.validate(); err == nil || !strings.Contains(err.Error(), "queue_maxlen") {
+			t.Errorf("validate queue_maxlen=%d: err=%v, want queue_maxlen error", bad, err)
 		}
 	}
 }

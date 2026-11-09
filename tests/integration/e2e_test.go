@@ -133,9 +133,15 @@ func waitForPort(t *testing.T, ns, proto string, port int) {
 	t.Fatalf("probe listener %s:%d in ns %s did not come up", proto, port, ns)
 }
 
-// startFirewall starts the daemon in the router namespace with the given
-// policy file content, waits for it to bind, and registers cleanup.
-func startFirewall(t *testing.T, policyYAML string) {
+// firewallProc tracks a started daemon: its process and log file.
+type firewallProc struct {
+	cmd     *exec.Cmd
+	logPath string
+}
+
+// startFirewallFull is startFirewall but returns the daemon process and
+// log path so tests can inspect logs and signal the process.
+func startFirewallFull(t *testing.T, policyYAML string, extraArgs ...string) *firewallProc {
 	t.Helper()
 	root := repoRoot(t)
 	polPath := filepath.Join(t.TempDir(), "policy.yaml")
@@ -151,10 +157,12 @@ func startFirewall(t *testing.T, policyYAML string) {
 		}
 	}
 
-	cmd := exec.Command("ip", "netns", "exec", "gsh_fw", bin,
+	args := []string{"netns", "exec", "gsh_fw", bin,
 		"--interface", "gsh-fw1",
 		"--policy-file", polPath,
-		"--log-level", "debug")
+		"--log-level", "debug"}
+	args = append(args, extraArgs...)
+	cmd := exec.Command("ip", args...)
 	cmd.Dir = root
 	logFile, err := os.Create(filepath.Join(t.TempDir(), "daemon.log"))
 	if err != nil {
@@ -165,17 +173,26 @@ func startFirewall(t *testing.T, policyYAML string) {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start daemon: %v", err)
 	}
+	fp := &firewallProc{cmd: cmd, logPath: logFile.Name()}
 	t.Cleanup(func() {
-		_ = cmd.Process.Signal(os.Interrupt)
+		_ = fp.cmd.Process.Signal(os.Interrupt)
 		done := make(chan struct{})
-		go func() { _, _ = cmd.Process.Wait(); close(done) }()
+		go func() { _, _ = fp.cmd.Process.Wait(); close(done) }()
 		select {
 		case <-done:
 		case <-time.After(5 * time.Second):
-			_ = cmd.Process.Kill()
+			_ = fp.cmd.Process.Kill()
 		}
 	})
 	time.Sleep(800 * time.Millisecond) // allow hook install + queue bind
+	return fp
+}
+
+// startFirewall starts the daemon in the router namespace with the given
+// policy file content, waits for it to bind, and registers cleanup.
+func startFirewall(t *testing.T, policyYAML string) {
+	t.Helper()
+	startFirewallFull(t, policyYAML)
 }
 
 // probe runs one client-side probe and returns (exitcode, output).

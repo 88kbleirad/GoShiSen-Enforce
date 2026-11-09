@@ -49,6 +49,7 @@ FLAGS:
       --policy-file <path> Path to the YAML policy file
       --log-level <lvl>    debug, info, warn, error
       --log-json           Emit structured JSON logs
+      --queue-maxlen <n>  Kernel NFQUEUE queue length in packets (default 1024)
       --protocol <proto>   tcp, udp, or any (policy simulate; default any)
       --src <ip>           Simulated source IP (policy simulate; required)
       --dst <ip>           Simulated destination IP (policy simulate; required)
@@ -114,7 +115,7 @@ func Parse(args []string, stderr io.Writer) (*Options, error) {
 
 	var cfgPath, iface, policyFile, logLevel string
 	var apiHost, policyDir string
-	var apiPort, metricsPort int
+	var apiPort, metricsPort, queueMaxlen int
 	var logJSON bool
 	var simProto, simSrc, simDst, simSport, simDport string
 	fs.StringVar(&cfgPath, "config", "", "YAML configuration file")
@@ -127,6 +128,7 @@ func Parse(args []string, stderr io.Writer) (*Options, error) {
 	fs.IntVar(&apiPort, "api-port", 0, "API port; 0 disables (default 8080)")
 	fs.IntVar(&metricsPort, "metrics-port", 0, "metrics port; 0 disables (default 9090)")
 	fs.StringVar(&policyDir, "policy-dir", "", "durable policy store directory")
+	fs.IntVar(&queueMaxlen, "queue-maxlen", 0, "kernel NFQUEUE queue length in packets (default 1024)")
 	fs.StringVar(&simProto, "protocol", "", "simulated L4 protocol: tcp, udp, any (policy simulate)")
 	fs.StringVar(&simSrc, "src", "", "simulated source IP (policy simulate)")
 	fs.StringVar(&simDst, "dst", "", "simulated destination IP (policy simulate)")
@@ -174,6 +176,9 @@ func Parse(args []string, stderr io.Writer) (*Options, error) {
 	}
 	if policyDir != "" {
 		opts.Overrides.PolicyDir = &policyDir
+	}
+	if queueMaxlen != 0 {
+		opts.Overrides.QueueMaxlen = &queueMaxlen
 	}
 	opts.SimProto = simProto
 	opts.SimSrc = simSrc

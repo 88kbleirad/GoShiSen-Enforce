@@ -134,7 +134,8 @@ Each scenario is run against the lab topology (`fw`/`client`/`server`, §7 of ar
 - [ ] Acceptance: run `sudo make integration` on a privileged host/runner to execute the NAT scenarios (cannot be satisfied in this session — no root)
 
 ### Phase 7 — Hardening/release
-- [ ] Robustness: queue overflow handling + counters (S11); crash/restart hardening (S10; fail-closed + supervisor restart); lab teardown reliability under `kill -9` during traffic (D4)
+- [x] Robustness: queue overflow handling + counters (S11) — kernel drop stats via `/proc/net/netfilter/nfnetlink_queue`, bounded `goshisen_queue_overflow_total` metric, rate-limited warning logs, configurable `queue_maxlen`; fail-closed invariant pinned by unit test (never requests `NFQA_CFG_F_FAIL_OPEN`). Integration coverage in `tests/integration/overflow_test.go` (root-gated; skipped here as non-root).
+- [ ] Robustness: crash/restart hardening (S10; fail-closed + supervisor restart); lab teardown reliability under `kill -9` during traffic (D4)
 - [ ] Dependency pins in go.mod, `go mod verify` clean, `go vet`/`go test ./...` green (D5).
 - [ ] Docs closure: user guide (config, run, lab), developer guide (build, test, contribute), SECURITY.md, README status accurate.
 - [ ] Final acceptance: full scenario suite + lab cleanup + a cold-clone build.
@@ -172,7 +173,7 @@ See `docs/design/architecture.md` §8 for the full matrix. MVP pins:
 - Hand-rolled IPv4/TCP/UDP parser (no gopacket), fuzzed.
 - Hook provisioning via the `nft` binary (host tool), not a library.
 - Kernel modules `nf_tables`, `nfnetlink_queue`, `nf_conntrack`, `nf_defrag_ipv4`; refusal to start with clear diagnostic if absent.
-- Go ≥ 1.22, Linux ≥ 5.6.
+- Go ≥ 1.25 (go.mod pins 1.25.0), Linux ≥ 5.6.
 
 ---
 

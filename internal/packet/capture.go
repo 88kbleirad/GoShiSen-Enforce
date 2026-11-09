@@ -47,6 +47,13 @@ const (
 	// nfqnl_attr_config flags.
 	nfqaCfgFConnntrack = 1 << 1
 
+	// nfqaCfgFFailOpen is NFQA_CFG_F_FAIL_OPEN: when set, the kernel
+	// ACCEPTs packets it cannot deliver to userspace (queue full or
+	// unicast failure). The daemon must NEVER set it — doing so would
+	// break fail-closed behavior. It is defined here only so tests can
+	// assert it stays clear.
+	nfqaCfgFFailOpen = 1 << 0
+
 	// nfnetlink_conntrack attributes (subset).
 	ctaProtoInfo         = 4
 	ctaProtoInfoTCP      = 2
@@ -219,15 +226,25 @@ func (b *Backend) configure() error {
 		return fmt.Errorf("set maxlen queue %d: %w", b.queue, err)
 	}
 	// Ask the kernel to attach conntrack attributes (NFQA_CT,
-	// NFQA_CT_INFO) to every queued packet.
-	flags := make([]byte, 4)
-	binary.BigEndian.PutUint32(flags, nfqaCfgFConnntrack)
-	mask := make([]byte, 4)
-	binary.BigEndian.PutUint32(mask, nfqaCfgFConnntrack)
-	if err := b.send(configMsg(gen, attr(nfqaCfgMask, mask), attr(nfqaCfgFlags, flags))); err != nil {
+	// NFQA_CT_INFO) to every queued packet. Only the conntrack flag is
+	// requested; NFQA_CFG_F_FAIL_OPEN is deliberately never set
+	// (fail-closed).
+	flags, mask := ctConfigFlags()
+	flagsAttr := make([]byte, 4)
+	binary.BigEndian.PutUint32(flagsAttr, flags)
+	maskAttr := make([]byte, 4)
+	binary.BigEndian.PutUint32(maskAttr, mask)
+	if err := b.send(configMsg(gen, attr(nfqaCfgMask, maskAttr), attr(nfqaCfgFlags, flagsAttr))); err != nil {
 		return fmt.Errorf("enable conntrack attributes queue %d: %w", b.queue, err)
 	}
 	return nil
+}
+
+// ctConfigFlags returns the config flags/mask the backend requests from
+// the kernel. It exists so the fail-closed invariant (never requesting
+// NFQA_CFG_F_FAIL_OPEN) is directly testable.
+func ctConfigFlags() (flags, mask uint32) {
+	return nfqaCfgFConnntrack, nfqaCfgFConnntrack
 }
 
 func configMsg(gen nfgenmsg, attrs ...[]byte) netlink.Message {

@@ -306,7 +306,7 @@ flowchart LR
 | — (hand-rolled parser) | IPv4/TCP/UDP header parsing | no dependency; ~170 LOC; unit-tested incl. fuzz (`FuzzParse`); chosen over gopacket (heavy dep, more surface) |
 | kernel modules | `nf_tables`, `nfnetlink_queue`, `nf_conntrack`, `nf_defrag_ipv4` | required at runtime; absence surfaces as a clear startup error (`nft` cache init / netlink dial failures) |
 
-Kernel/Go floor: Linux ≥ 5.6 (nf_tables per-netns queue semantics), Go ≥ 1.22 (needed by netlink libraries). The lab host must run a kernel with these modules loadable (or built-in). No build-time cgo dependency.
+Kernel/Go floor: Linux ≥ 5.6 (nf_tables per-netns queue semantics), Go ≥ 1.25 (required by the pinned netlink library versions; go.mod pins 1.25.0). The lab host must run a kernel with these modules loadable (or built-in). No build-time cgo dependency.
 
 ### 8.1 Dependency checklist for acceptance
 - `go build ./...` succeeds from a clean checkout (no cgo).

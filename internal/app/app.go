@@ -41,6 +41,78 @@ type Queue interface {
 	Counters() packet.Counters
 }
 
+// queueStatsReader reads kernel NFQUEUE stats for queue 0. It returns an
+// error when the kernel does not expose queue stats (no procfs entry).
+type queueStatsReader func() (packet.QueueStats, error)
+
+// queueStatsPath is the kernel per-queue stats file. It is namespace-
+// scoped: when the daemon runs inside the lab router namespace, it
+// reports that namespace's queue stats.
+const queueStatsPath = "/proc/net/netfilter/nfnetlink_queue"
+
+// watchQueueOverflow polls the kernel queue stats and records overflow
+// (packets the kernel dropped before they reached the daemon) as
+// bounded metrics and rate-limited warning logs. It stops when ctx is
+// cancelled. It is best-effort: if the kernel does not support the
+// proc file, it logs once at debug level and stops.
+func (d *Daemon) watchQueueOverflow(ctx context.Context, read queueStatsReader) {
+	prev, err := read()
+	if err != nil {
+		d.log.Debug("queue stats unavailable; overflow monitoring disabled", "error", err)
+		return
+	}
+	var lastLog time.Time
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		cur, err := read()
+		if err != nil {
+			d.log.Debug("queue stats read failed; overflow monitoring suspended", "error", err)
+			return
+		}
+		kernelDrop := delta32(cur.Dropped, prev.Dropped)
+		userDrop := delta32(cur.UserDropped, prev.UserDropped)
+		prev = cur
+		if kernelDrop > 0 {
+			d.metrics.ObserveQueueOverflow(metrics.OverflowKernelDrop, uint64(kernelDrop))
+		}
+		if userDrop > 0 {
+			d.metrics.ObserveQueueOverflow(metrics.OverflowUserDrop, uint64(userDrop))
+		}
+		if (kernelDrop > 0 || userDrop > 0) && time.Since(lastLog) >= 10*time.Second {
+			lastLog = time.Now()
+			d.log.Warn("kernel queue dropped packets before userspace (fail-closed)",
+				"kernel_dropped", kernelDrop,
+				"user_dropped", userDrop,
+				"queue_total", cur.Total,
+				"queue_maxlen", d.opts.QueueMaxlen,
+			)
+		}
+	}
+}
+
+// delta32 returns the positive difference between two unsigned counters.
+// The kernel counters are 32-bit; under sustained flooding they can wrap.
+// Because we poll every second, a genuine wrap yields a small delta,
+// while a queue reset (re-bind/restart) resets the counter to 0 and
+// would otherwise look like a huge "wrap". Deltas over half the counter
+// range are treated as a reset (0 drops).
+func delta32(cur, prev uint32) uint32 {
+	if cur >= prev {
+		return cur - prev
+	}
+	wrap := cur + (^uint32(0) - prev) + 1
+	if wrap > 1<<31 {
+		return 0
+	}
+	return wrap
+}
+
 // Daemon is the running process. It owns the logger, the policy store,
 // and the packet backend lifecycle.
 type Daemon struct {
@@ -166,12 +238,18 @@ func (d *Daemon) Run(ctx context.Context) error {
 	d.log.Info("nftables hook installed", "table", hook.Table, "nat_enabled", d.opts.Nat.Enabled)
 	ready = func() bool { return true }
 
-	be, err := d.openQueue(packet.Options{Queue: 0, Maxlen: 1024})
+	be, err := d.openQueue(packet.Options{Queue: 0, Maxlen: d.opts.QueueMaxlen})
 	if err != nil {
 		return fmt.Errorf("nfqueue: %w", err)
 	}
 	defer be.Close()
-	d.log.Info("NFQUEUE bound", "queue", 0)
+	d.log.Info("NFQUEUE bound", "queue", 0, "maxlen", d.opts.QueueMaxlen)
+
+	qCtx, qCancel := context.WithCancel(ctx)
+	defer qCancel()
+	go d.watchQueueOverflow(qCtx, func() (packet.QueueStats, error) {
+		return packet.ReadQueueStats(queueStatsPath, 0)
+	})
 
 	be.SetDecider(func(p policy.Packet) policy.Verdict {
 		start := time.Now()

@@ -2,12 +2,13 @@
 
 **A Linux lab firewall: Go policy engine over NFQUEUE, kernel conntrack, nftables hooks.**
 
-> **Status: Phase 6 — NAT + operational packaging complete.** The foundation, policy engine, packet path, stateful filtering, management API/metrics, and now kernel-side NAT with container packaging (Phase 6) are implemented and unit-tested. NAT (DNAT + MASQUERADE) runs entirely in nftables — no addresses or checksums are rewritten in Go — applied atomically in the app-owned table only. All privileged integration tests (now 17 scenarios, including NAT) remain root-gated and were **not runnable in this environment** (non-root).
+> **Status: Phase 7 — hardening/release in progress.** The foundation, policy engine, packet path, stateful filtering, management API/metrics, kernel-side NAT with container packaging (Phases 1–6) are implemented and unit-tested. Phase 7 adds queue-overflow monitoring (kernel drop stats, bounded metrics, rate-limited warnings, configurable `queue_maxlen`) and crash/restart hardening. All privileged integration tests (17 scenarios + overflow/crash coverage) remain root-gated and were **not runnable in this environment** (non-root).
 
 ## What works today
 
 - **NAT** (`internal/hook`, kernel nftables): DNAT (`dstnat` prerouting chain) and MASQUERADE (`srcnat` postrouting chain) configured under `nat:` in the daemon config. Applied as one `nft -f` transaction; failed apply changes nothing; only `table ip goshisen` is ever touched. Documented semantics: **the policy engine sees post-DNAT destination and pre-MASQUERADE source** (see `docs/design/architecture.md` §8.2).
 - **Packaging**: multi-stage `deployments/docker/Dockerfile` (Go builder + static nftables builder → distroless base), explicit `NET_ADMIN`/`NET_RAW` capabilities, **never privileged**, graceful TERM shutdown, health-check guidance (`/healthz`, `/readyz`), durable policy volume, restart/recovery notes. Operator cleanup: `goshisen hook status|cleanup` (app-owned table only). No install scripts (would need reliable uninstall/rollback first) and no Kubernetes manifests (CNI relationship must be defined first) — both documented as out of scope.
+- **Queue overflow monitoring** (Phase 7): the daemon watches the kernel's per-queue stats (`/proc/net/netfilter/nfnetlink_queue`) and exports `goshisen_queue_overflow_total{cause="kernel_drop"|"user_drop"}` plus rate-limited `WARN` logs. The kernel drops overflowing packets by construction — the backend never sets `NFQA_CFG_F_FAIL_OPEN`, so overflow never bypasses the firewall. `queue_maxlen` (file/env/flag, default 1024) tunes the queue depth.
 - Phase 1–5 unchanged: policy engine, NFQUEUE enforcement, stateful filtering, REST API, metrics, durable store, reload.
 
 ## Integration tests & privileges
@@ -62,6 +63,7 @@ Precedence (lowest to highest):
 | --- | --- | --- | --- |
 | `interface` | `--interface` | `GOSHISEN_INTERFACE` | auto (first up, non-loopback) |
 | `policy_file` | `--policy-file` | `GOSHISEN_POLICY_FILE` | *(required)* |
+| `queue_maxlen` | `--queue-maxlen` | `GOSHISEN_QUEUE_MAXLEN` | `1024` |
 | `log_level` | `--log-level` | `GOSHISEN_LOG_LEVEL` | `info` |
 | `log_json` | `--log-json` | `GOSHISEN_LOG_JSON` | `false` |
 

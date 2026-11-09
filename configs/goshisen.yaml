@@ -25,13 +25,19 @@ log_json: false
 # REST management API (localhost by default). api_port 0 disables it.
 # The token is required for policy changes; set it via this file or
 # GOSHISEN_API_TOKEN — deliberately NOT as a CLI flag (argv is visible
-# to other processes on the host).
+# to other processes on the host). Leave empty to disable all admin
+# mutations (recommended unless you need the API to change policy).
 api_host: 127.0.0.1
 api_port: 8080
-api_token: "change-me"
+api_token: ""
 
 # Prometheus metrics port; 0 disables.
 metrics_port: 9090
+
+# Kernel NFQUEUE queue length in packets (1..65535). A smaller queue
+# spills earlier and is useful for overflow observability and testing.
+# Default: 1024.
+queue_maxlen: 1024
 
 # Durable policy store directory (versioned policies + active pointer).
 # Restart recovery loads the active version from here.

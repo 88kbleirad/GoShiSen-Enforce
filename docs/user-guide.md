@@ -1,6 +1,6 @@
 # GoShiSen-Enforce — User Guide
 
-Status: **Phase 1 (foundation).** This guide describes what exists today: the CLI, configuration, and daemon lifecycle. Firewall functionality is not yet implemented; nothing in this guide modifies your firewall or routing.
+Status: **Phase 7 (hardening/release).** This guide describes the daemon as built: CLI, configuration, lifecycle, policy engine, stateful filtering, REST API, metrics, NAT, and queue-overflow monitoring.
 
 ## Building
 
@@ -25,6 +25,7 @@ goshisen [flags] [command]
 | `--policy-file <path>` | path to the YAML policy file (overrides file/env) |
 | `--log-level <lvl>` | `debug` \| `info` \| `warn` \| `error` |
 | `--log-json` | emit structured JSON logs |
+| `--queue-maxlen <n>` | kernel NFQUEUE queue length in packets (default 1024; range 1–65535) |
 
 Commands:
 
@@ -49,6 +50,7 @@ interface: eth0          # empty/omitted = auto (first up, non-loopback)
 policy_file: policies/default/deny-all.yaml   # required
 log_level: info          # debug | info | warn | error
 log_json: false          # true = JSON logs, false = text
+queue_maxlen: 1024       # kernel NFQUEUE queue length (1..65535)
 ```
 
 Unknown keys are rejected at load time. `~` in `policy_file` is expanded to the user's home directory.
@@ -63,6 +65,7 @@ All use the `GOSHISEN_` prefix; they override file values but not flags.
 | `GOSHISEN_POLICY_FILE` | `--policy-file` |
 | `GOSHISEN_LOG_LEVEL` | `--log-level` |
 | `GOSHISEN_LOG_JSON` | `--log-json` |
+| `GOSHISEN_QUEUE_MAXLEN` | `--queue-maxlen` |
 
 Boolean values accept `true/false`, `1/0`, `yes/no`, `on/off`. An invalid env value is a startup error.
 
@@ -167,6 +170,17 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" \
 ## Metrics
 
 Prometheus text metrics at `GET /metrics` (API) and on `metrics_port` (default 9090): packet verdicts by action/protocol/state, backend errors, verdict-latency histogram, active policy version. Labels are bounded enums — no IPs, ports, or flow IDs.
+
+## Queue overflow monitoring
+
+When the kernel's NFQUEUE queue fills up (or the daemon's netlink socket cannot drain it), the kernel drops the excess packets — **it never accepts them**: the daemon never sets the kernel's fail-open flag. Dropped packets therefore never bypass the firewall.
+
+The daemon polls `/proc/net/netfilter/nfnetlink_queue` (the queue lives in the daemon's network namespace) once per second and:
+
+- records `goshisen_queue_overflow_total{cause="kernel_drop"}` (queue-full drops) and `{cause="user_drop"}` (netlink unicast failures);
+- logs a `WARN` line with the drop counters (rate-limited to one per 10 s).
+
+Queue statistics are only available when the kernel exposes the proc file; otherwise monitoring is disabled quietly. `queue_maxlen` configures the queue depth (smaller spills sooner — useful for validation/testing).
 
 ## Policy files
 

@@ -161,3 +161,14 @@ func TestApplyCTInfo(t *testing.T) {
 	}
 	_ = base
 }
+
+// TestFailClosedNeverRequestsFailOpen pins the fail-closed invariant:
+// the backend must never set NFQA_CFG_F_FAIL_OPEN in its config flags.
+// If it did, the kernel would ACCEPT packets the daemon never decided
+// (queue full / unicast failure) — a bypass.
+func TestFailClosedNeverRequestsFailOpen(t *testing.T) {
+	flags, _ := ctConfigFlags()
+	if flags&nfqaCfgFFailOpen != 0 {
+		t.Fatalf("config flags request FAIL_OPEN (flags=%#x): queue overflow would bypass the firewall", flags)
+	}
+}

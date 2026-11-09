@@ -186,6 +186,7 @@ func connectTCPEcho(host string, port int) {
 	fmt.Println("ECHOED")
 }
 
+// connectUDP sends one datagram and waits for an echo.
 func connectUDP(host string, port int) {
 	conn, err := net.DialTimeout("udp", net.JoinHostPort(host, strconv.Itoa(port)), 3*time.Second)
 	if err != nil {
@@ -203,9 +204,29 @@ func connectUDP(host string, port int) {
 	fmt.Println("REPLIED")
 }
 
+// floodUDP sends count datagrams to host:port without waiting for
+// replies, as fast as the kernel accepts them. It is used to overflow
+// the NFQUEUE queue: the kernel drops what the daemon cannot absorb.
+func floodUDP(host string, port, count int) {
+	conn, err := net.Dial("udp", net.JoinHostPort(host, strconv.Itoa(port)))
+	if err != nil {
+		die("dial udp flood: %v", err)
+	}
+	defer conn.Close()
+	payload := []byte("flood")
+	sent := 0
+	for range count {
+		if _, err := conn.Write(payload); err != nil {
+			break
+		}
+		sent++
+	}
+	fmt.Printf("FLOODED %d\n", sent)
+}
+
 func main() {
 	if len(os.Args) < 4 {
-		die("usage: probe {listen|connect} {tcp|udp} PORT|HOST [PORT]")
+		die("usage: probe {listen|connect|flood} {tcp|udp} PORT|HOST [PORT] [COUNT]")
 	}
 	op, proto := os.Args[1], os.Args[2]
 	port := func(s string) int {
@@ -239,6 +260,15 @@ func main() {
 		connectTCPEchoReport(os.Args[3], port(os.Args[4]))
 	case "hold":
 		talkHold(os.Args[3], port(os.Args[4]), port(os.Args[5]))
+	case "flood":
+		if proto != "udp" {
+			die("flood only supports udp")
+		}
+		count := 10000
+		if len(os.Args) > 5 {
+			count = port(os.Args[5])
+		}
+		floodUDP(os.Args[3], port(os.Args[4]), count)
 	default:
 		die("unknown op %q", op)
 	}

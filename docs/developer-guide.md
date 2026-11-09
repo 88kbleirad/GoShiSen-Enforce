@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Go ≥ 1.22 (developed on Go 1.27)
+- Go ≥ 1.25 (matches `go.mod`; CI and Docker use Go 1.25)
 - Linux (for the eventual lab namespace work, root)
 - `make` for the standard targets
 
@@ -61,16 +61,16 @@ NAT lives in `internal/hook` (kernel-side nftables chains in the app-owned table
 
 ## Testing
 
-- `internal/config`: precedence layering, strict YAML, env bool parsing, validation errors, source summary, redaction, `~` expansion.
-- `internal/cli`: help/version, flag parsing, subcommand validation, `policy simulate` target parsing.
-- `internal/app`: logger text/JSON, level filtering, lifecycle with the fake queue (policy-before-hook, graceful shutdown, queue-open failure), `-race` clean.
+- `internal/config`: precedence layering, strict YAML, env bool parsing, validation errors, source summary, redaction, `~` expansion, `queue_maxlen` (default/file/env/flag + bounds).
+- `internal/cli`: help/version, flag parsing, subcommand validation, `policy simulate` target parsing, `--queue-maxlen`.
+- `internal/app`: logger text/JSON, level filtering, lifecycle with the fake queue (policy-before-hook, graceful shutdown, queue-open failure), queue-overflow watcher (deltas, rate-limited warning, unavailable-stats exit), `-race` clean.
 - `internal/policy`: CIDR boundary, port boundary, overlapping rules/ordering, default deny, invalid configs, snapshot immutability, atomic replace, concurrency, stateful semantics (accepted-set, five-tuple-not-enough, reload-keeps-established).
-- `internal/packet`: parser (valid TCP/UDP, options, truncations, fragments, unsupported protocols, no-panic sweep); backend `evaluate` verdicts (accept/drop/parse-error/panic); `applyCTInfo` mapping; counters.
+- `internal/packet`: parser (valid TCP/UDP, options, truncations, fragments, unsupported protocols, no-panic sweep); backend `evaluate` verdicts (accept/drop/parse-error/panic); `applyCTInfo` mapping; counters; kernel queue-stats parser (`qstats.go`); fail-closed invariant (never requests `NFQA_CFG_F_FAIL_OPEN`).
 - `internal/packet` fuzz: `make fuzz` (30s) — `FuzzParse` clean.
 - `internal/store`: version validation, atomic writes (no stray temp files), active-pointer integrity.
 - `internal/api`: auth (missing/valid + audit + no token leak), invalid-policy preserves active, version conflict, concurrent apply (exactly one 201), restart recovery, activate/rollback, body limit, readiness, metrics; all under `-race`.
-- `internal/metrics`: bounded label cardinality, no secret/flow-derived labels, histogram/gauge/counter output.
-- `tests/integration`: twelve real-traffic scenarios (Phase 3 six + Phase 4 six). **Root-gated**: `checkPrereqs` skips with an explicit reason. Run with `sudo make integration` (CI has a dedicated privileged job).
+- `internal/metrics`: bounded label cardinality, no secret/flow-derived labels, histogram/gauge/counter output, queue-overflow counter (bounded `cause` enum).
+- `tests/integration`: real-traffic scenarios (Phase 3 six + Phase 4 six + Phase 6 five + Phase 7 overflow). **Root-gated**: `checkPrereqs` skips with an explicit reason. Run with `sudo make integration` (CI has a dedicated privileged job).
 - CLI smoke tests run in CI (help/version, missing-config error, invalid-policy error).
 
 ## Versioning
