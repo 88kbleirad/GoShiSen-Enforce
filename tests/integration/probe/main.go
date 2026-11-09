@@ -12,7 +12,9 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -224,9 +226,24 @@ func floodUDP(host string, port, count int) {
 	fmt.Printf("FLOODED %d\n", sent)
 }
 
+// httpGet performs an HTTP GET and prints "HTTP <code>"; exits nonzero
+// on transport errors. Used by integration tests to probe the daemon's
+// /healthz and /readyz inside the router namespace (no curl dependency).
+func httpGet(host string, port int, path string) {
+	url := fmt.Sprintf("http://%s:%d%s", host, port, path)
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		die("http get %s: %v", url, err)
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	fmt.Printf("HTTP %d\n", resp.StatusCode)
+}
+
 func main() {
 	if len(os.Args) < 4 {
-		die("usage: probe {listen|connect|flood} {tcp|udp} PORT|HOST [PORT] [COUNT]")
+		die("usage: probe {listen|connect|flood|httpget} {tcp|udp} PORT|HOST [PORT] [COUNT]")
 	}
 	op, proto := os.Args[1], os.Args[2]
 	port := func(s string) int {
@@ -269,6 +286,11 @@ func main() {
 			count = port(os.Args[5])
 		}
 		floodUDP(os.Args[3], port(os.Args[4]), count)
+	case "httpget":
+		if len(os.Args) < 5 {
+			die("httpget requires HOST PORT PATH")
+		}
+		httpGet(os.Args[3], port(os.Args[4]), os.Args[5])
 	default:
 		die("unknown op %q", op)
 	}

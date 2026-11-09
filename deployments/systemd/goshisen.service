@@ -1,0 +1,45 @@
+# GoShiSen-Enforce supervisor unit (systemd).
+#
+# Runs the daemon inside the lab router namespace (gsh_fw), which the
+# lab script creates. Install:
+#
+#   sudo cp deployments/systemd/goshisen.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo scripts/lab.sh up
+#   sudo systemctl start goshisen
+#   sudo systemctl enable goshisen   # optional: start at boot (lab must exist)
+#
+# The daemon is fail-closed by design: if it dies, the kernel keeps the
+# nftables hook and drops everything until the service is restarted.
+# With Restart=always, systemd restarts it automatically; the daemon
+# then reinstalls the hook and rebinds NFQUEUE (policy restored from the
+# durable store / policy file).
+#
+# Run the unit as root (it needs CAP_NET_ADMIN inside the namespace).
+# The API/metrics bind to loopback INSIDE the namespace; to reach them
+# from the host use `ip netns exec gsh_fw ...` or a host-side probe
+# against the mapped port.
+
+[Unit]
+Description=GoShiSen-Enforce firewall daemon (lab router namespace)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ip netns exec gsh_fw /usr/local/bin/goshisen \
+    --interface gsh-fw1 \
+    --policy-file /etc/goshisen/policy.yaml \
+    --log-level info
+# Graceful drain window; the daemon stops the queue and exits 0 on TERM.
+TimeoutStopSec=15
+KillSignal=SIGTERM
+# Fail-closed: always restart. Backoff avoids a tight crash loop.
+Restart=always
+RestartSec=2
+# The daemon never needs more than the defaults; no hardening directives
+# here that would break netlink/nft access inside the namespace.
+NoNewPrivileges=false
+
+[Install]
+WantedBy=multi-user.target

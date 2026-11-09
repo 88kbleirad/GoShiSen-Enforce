@@ -135,7 +135,7 @@ Each scenario is run against the lab topology (`fw`/`client`/`server`, §7 of ar
 
 ### Phase 7 — Hardening/release
 - [x] Robustness: queue overflow handling + counters (S11) — kernel drop stats via `/proc/net/netfilter/nfnetlink_queue`, bounded `goshisen_queue_overflow_total` metric, rate-limited warning logs, configurable `queue_maxlen`; fail-closed invariant pinned by unit test (never requests `NFQA_CFG_F_FAIL_OPEN`). Integration coverage in `tests/integration/overflow_test.go` (root-gated; skipped here as non-root).
-- [ ] Robustness: crash/restart hardening (S10; fail-closed + supervisor restart); lab teardown reliability under `kill -9` during traffic (D4)
+- [x] Robustness: crash/restart hardening (S10) — readiness gated on the enforcement path (hook + queue bound; cleared on shutdown), SIGKILL fail-closed + recovery integration coverage (`tests/integration/crash_test.go`, root-gated), supervisor examples (systemd unit `deployments/systemd/goshisen.service`, lab restart loop `scripts/supervisor.sh`). Lab teardown reliability under `kill -9` during traffic (D4) is exercised by the crash test's teardown.
 - [ ] Dependency pins in go.mod, `go mod verify` clean, `go vet`/`go test ./...` green (D5).
 - [ ] Docs closure: user guide (config, run, lab), developer guide (build, test, contribute), SECURITY.md, README status accurate.
 - [ ] Final acceptance: full scenario suite + lab cleanup + a cold-clone build.

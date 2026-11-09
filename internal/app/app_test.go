@@ -201,6 +201,96 @@ func TestDelta32Wrap(t *testing.T) {
 	}
 }
 
+// TestRunReadinessGatedOnQueueBind verifies /readyz semantics: false
+// until the queue is bound, true only after, and false again once
+// shutdown begins. This pins the fail-closed window — a daemon that is
+// not yet enforcing must never report ready.
+func TestRunReadinessGatedOnQueueBind(t *testing.T) {
+	opts := testOptions(t)
+	// Disable the API server for this test (readiness is exercised via
+	// d.Ready()).
+	opts.APIPort = 0
+	d, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hookReady := make(chan struct{})
+	queueOpen := make(chan struct{})
+	d.installHook = func(rs hook.Ruleset) error {
+		close(hookReady)
+		<-queueOpen // hold the queue bind until the test says go
+		return nil
+	}
+	fq := newFakeQueue()
+	d.openQueue = func(packet.Options) (Queue, error) { return fq, nil }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- d.Run(ctx) }()
+
+	select {
+	case <-hookReady:
+	case <-time.After(2 * time.Second):
+		t.Fatal("hook never installed")
+	}
+	// Hook installed, queue not yet open: must NOT be ready.
+	if d.Ready() {
+		t.Fatal("ready = true before queue bind")
+	}
+	close(queueOpen)
+
+	select {
+	case <-fq.ran:
+	case <-time.After(2 * time.Second):
+		t.Fatal("queue never started")
+	}
+	// Give Run a moment to set the ready flag.
+	deadline := time.Now().Add(2 * time.Second)
+	for !d.Ready() && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !d.Ready() {
+		t.Fatal("ready = false after queue bind")
+	}
+
+	// Shutdown must clear readiness immediately.
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("Run = %v, want nil", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run did not exit after cancel")
+	}
+	if d.Ready() {
+		t.Fatal("ready = true after shutdown")
+	}
+}
+
+// TestRunReadinessFalseWhenQueueOpenFails verifies the daemon never
+// reports ready when the queue cannot be bound.
+func TestRunReadinessFalseWhenQueueOpenFails(t *testing.T) {
+	opts := testOptions(t)
+	opts.APIPort = 0
+	d, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.installHook = func(rs hook.Ruleset) error { return nil }
+	d.openQueue = func(packet.Options) (Queue, error) {
+		return nil, os.ErrPermission
+	}
+	if err := d.Run(context.Background()); err == nil {
+		t.Fatal("Run succeeded despite queue open failure")
+	}
+	if d.Ready() {
+		t.Fatal("ready = true despite queue open failure")
+	}
+}
+
 // TestWatchQueueOverflow verifies the watcher converts kernel queue
 // drop deltas into bounded metrics and rate-limited warnings, and that
 // it stops on context cancellation.

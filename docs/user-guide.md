@@ -91,6 +91,9 @@ sudo scripts/lab.sh down
 - Startup order: resolve config → compile policy (invalid policy aborts before any change) → install the nftables hook (router namespace only) → bind NFQUEUE → enforce.
 - Every queued packet receives a verdict. Parse failures, engine errors, and panics fail closed (DROP).
 - `SIGINT`/`SIGTERM` stop the queue and exit gracefully (exit code 0). The hook stays in place — with no listener, the kernel drops (fail-closed) until the daemon returns.
+- **Crash behavior:** if the daemon dies abruptly (`SIGKILL`), the hook remains in the kernel and the queue has no listener, so traffic is dropped (fail-closed). Restarting the daemon reinstalls the hook and re-binds the queue; policy is restored from the durable store / policy file.
+- **Supervisor:** two options are provided. `deployments/systemd/goshisen.service` runs the daemon in the lab router namespace under systemd with `Restart=always` (auto-recovery on crash). `scripts/supervisor.sh` is a dependency-free restart loop for the lab: `sudo scripts/lab.sh up && sudo scripts/supervisor.sh`. Keep `--stop-timeout`/`TimeoutStopSec` at ≥ the graceful drain window (the daemon drains the queue on TERM).
+- **Readiness:** `GET /readyz` returns 200 only when the enforcement path is fully up (nftables hook installed *and* NFQUEUE bound); it returns 503 during startup, on hook/queue failure, and from the moment shutdown begins.
 - **The host firewall is never touched.** The hook touches only `table ip goshisen` in the current namespace; teardown deletes the namespaces and everything inside them.
 
 Integration tests exercise the same path with real traffic; they require root:

@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -122,6 +123,11 @@ type Daemon struct {
 	metrics *metrics.Registry
 	store   *store.Store
 
+	// ready reflects the enforcement path: false until the nftables hook
+	// is installed AND the NFQUEUE is bound, and false again once
+	// shutdown begins. Read by the API's /readyz handler.
+	ready atomic.Bool
+
 	// Seams (defaults set by New; overridable in tests).
 	installHook func(hook.Ruleset) error
 	openQueue   func(packet.Options) (Queue, error)
@@ -159,6 +165,10 @@ func (d *Daemon) Store() *store.Store { return d.store }
 
 // Logger exposes the daemon's logger.
 func (d *Daemon) Logger() *slog.Logger { return d.log }
+
+// Ready reports whether the enforcement path is fully up (hook installed
+// and NFQUEUE bound). The API's /readyz handler reads this.
+func (d *Daemon) Ready() bool { return d.ready.Load() }
 
 // Run starts the daemon and blocks until a termination signal arrives or
 // ctx is cancelled. In Phase 3 it installs the nftables hook, binds
@@ -200,7 +210,6 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// privileged hook work: they do not require CAP_NET_ADMIN and their
 	// readiness reflects enforcement state. If the hook fails, the API
 	// still reports not-ready and the daemon exits.
-	ready := func() bool { return false }
 	apiCtx, apiCancel := context.WithCancel(ctx)
 	defer apiCancel()
 	if d.opts.APIPort != 0 {
@@ -212,7 +221,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 			King:    d.king,
 			Metrics: d.metrics,
 			Log:     d.log,
-			Ready:   func() bool { return ready() },
+			Ready:   d.Ready,
 		})
 		if err != nil {
 			return fmt.Errorf("api: %w", err)
@@ -236,7 +245,6 @@ func (d *Daemon) Run(ctx context.Context) error {
 		return err
 	}
 	d.log.Info("nftables hook installed", "table", hook.Table, "nat_enabled", d.opts.Nat.Enabled)
-	ready = func() bool { return true }
 
 	be, err := d.openQueue(packet.Options{Queue: 0, Maxlen: d.opts.QueueMaxlen})
 	if err != nil {
@@ -244,6 +252,10 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}
 	defer be.Close()
 	d.log.Info("NFQUEUE bound", "queue", 0, "maxlen", d.opts.QueueMaxlen)
+
+	// The enforcement path is now fully up: hook installed and queue
+	// bound. Only now does readiness become true.
+	d.ready.Store(true)
 
 	qCtx, qCancel := context.WithCancel(ctx)
 	defer qCancel()
@@ -299,6 +311,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 			return nil
 		case <-ctx.Done():
 			d.log.Info("shutdown signal received, stopping queue")
+			d.ready.Store(false)
 			<-done
 			c := be.Counters()
 			d.log.Info("queue stopped; hook left in place (fail-closed)",
