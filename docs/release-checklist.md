@@ -14,7 +14,8 @@ Run in order. Every item must pass before tagging.
 
 ## 2. Privileged integration suite (root host, in the lab)
 
-- [x] Prereqs verification is now **functional**: `checkPrereqs` creates a throwaway namespace and asserts `nf_conntrack_count > 0` after a real TCP flow (skip with explicit reason otherwise). Reviewer: `tests/integration/e2e_test.go` `checkConntrackNFQUEUE`.
+- [x] Prereqs verification is now **functional**: `checkPrereqs` verifies an nftables queue rule installs in a throwaway namespace (NFQUEUE present) and asserts `nf_conntrack_count > 0` after a real TCP flow (skip with explicit reason otherwise). Reviewer: `tests/integration/e2e_test.go` `checkNFQUEUERule` / `checkConntrackNFQUEUE`.
+- [x] **Positive controls** added to every deny/fail-closed scenario (DeniedTraffic, DefaultDrop, QueueNoListener, StateUnsolicitedInbound, StateInvalidConnection) so a deny assertion cannot pass if the daemon/probe is broken. Verified PASS in the VM (5/5, exit 0). Evidence: `docs/release/phase8.7-positive-controls-ci.md`.
 - [ ] `sudo scripts/lab.sh up` succeeds; `sudo make integration` runs the full suite (all mandatory tests **must execute; skips are a release blocker**):
   - default DROP; explicit TCP/UDP allow; denied traffic; first-match semantics
   - stateful handshake+echo; unsolicited inbound; INVALID state; timeout/hold; UDP reuse
@@ -26,7 +27,7 @@ Run in order. Every item must pass before tagging.
 - [ ] `sudo scripts/lab.sh down` clean; `ip netns list` shows no `gsh_*` leftovers.
 - [ ] Teardown also runs after a killed/aborted test (cleanup traps).
 
-**Status note (Phase 8.5):** the VM (Debian 13, kernel 6.12.116, QEMU TCG) passes BIND/readiness/hook-cleanup/fail-closed-DROP but does not deliver conntrack metadata on queued packets (VM kernel/netns quirk; root-ns tracking works). Stateful allow/NAT/overflow/recovery therefore remain **unvalidated** pending a conntrack-capable runner (GitHub `ubuntu-24.04`). Evidence: `docs/release/phase8.5-conntrack-ci-validation.md`.
+**Status note (Phase 8.7):** the conntrack-metadata wire defects are fixed and verified (NFQA_CT_INFO 4-byte BE, 0-based ip_conntrack_info, direction-normalized accepted-set, parseAttrs truncation guard). In the VM (Debian 13, kernel 6.12.116, QEMU TCG): full suite 13/16 PASS; controls 5/5 PASS (NAT-reload, overflow, and state timeout/hold remain TCG-timeout-bound with fixes committed). Remaining gate: full privileged suite on the GitHub `ubuntu-24.04` runner with **zero skips**, then CI green. Evidence: `docs/release/phase8.6-final-ci-gate.md`, `docs/release/phase8.7-positive-controls-ci.md`, `docs/release/phase9-ci-validation.md`.
 
 ## 3. Security & hardening checks
 
