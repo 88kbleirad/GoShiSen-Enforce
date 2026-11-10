@@ -45,14 +45,25 @@ jobs:
           fi
 
   integration:
-    name: integration (real netns lab)
-    runs-on: ubuntu-latest
+    name: integration (real netns lab, privileged)
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"
           cache: true
+      - name: Install netfilter tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends nftables iproute2 procps kmod
+      - name: Kernel / capability preflight
+        run: |
+          uname -r
+          grep -E "CONFIG_NF_CONNTRACK|CONFIG_NETFILTER_NETLINK_QUEUE|CONFIG_NFT_CT|CONFIG_NF_TABLES" /boot/config-$(uname -r) || true
+          sudo modprobe nf_conntrack
+          sudo modprobe nf_conntrack_netlink
+          sudo cat /proc/sys/net/netfilter/nf_conntrack_count
       - name: Run privileged integration tests (must not skip)
         run: |
           out=$(sudo -E env "PATH=$PATH" go test ./tests/integration/ -v -count=1 2>&1)
@@ -63,4 +74,4 @@ jobs:
             exit 1
           fi
           exit $rc
-        timeout-minutes: 10
+        timeout-minutes: 20

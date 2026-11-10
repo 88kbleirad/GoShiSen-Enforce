@@ -49,6 +49,63 @@ func checkPrereqs(t *testing.T) string {
 	} else {
 		_ = exec.Command("ip", "netns", "del", probe).Run()
 	}
+	// Functional conntrack + NFQUEUE preflight in a throwaway netns:
+	// the suite depends on kernel conntrack being active in fresh
+	// namespaces and on NFQUEUE attaching CT attributes. If this probe
+	// fails, the environment cannot run the stateful/NAT/overflow
+	// scenarios, and skipping with this reason is correct.
+	return checkConntrackNFQUEUE(t)
+}
+
+// checkConntrackNFQUEUE creates a minimal namespace and verifies a real
+// TCP flow is tracked by kernel conntrack (nf_conntrack_count > 0). The
+// suite depends on conntrack being active in fresh namespaces; if this
+// fails the stateful/NAT/overflow scenarios cannot run, and skipping
+// with this reason is correct.
+func checkConntrackNFQUEUE(t *testing.T) string {
+	ns := "gsh_ct_preflight_" + fmt.Sprint(os.Getpid())
+	defer func() { _ = exec.Command("ip", "netns", "del", ns).Run() }()
+
+	if out, err := exec.Command("ip", "netns", "add", ns).CombinedOutput(); err != nil {
+		return fmt.Sprintf("cannot create conntrack probe namespace: %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+	_ = exec.Command("ip", "netns", "exec", ns, "ip", "link", "set", "lo", "up").Run()
+	// Best-effort: ensure the conntrack modules are present.
+	_ = exec.Command("modprobe", "nf_conntrack").Run()
+	_ = exec.Command("modprobe", "nf_conntrack_netlink").Run()
+
+	// Register a conntrack-touching chain in the namespace.
+	nftIn := `table ip gsh_ct_preflight {
+    chain c {
+        type filter hook output priority 0; policy accept;
+        ct state { new, established, related, invalid, untracked } counter
+    }
+}`
+	cmd := exec.Command("ip", "netns", "exec", ns, "nft", "-f", "-")
+	cmd.Stdin = strings.NewReader(nftIn)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Sprintf("conntrack preflight nft failed: %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+
+	// Run a real loopback TCP flow inside the namespace using the probe.
+	buildProbe(t)
+	listener := exec.Command("ip", "netns", "exec", ns, probeBin, "listen-echo", "tcp", "9097")
+	if err := listener.Start(); err != nil {
+		return fmt.Sprintf("conntrack preflight listener failed: %v", err)
+	}
+	defer func() { _ = listener.Process.Kill(); _, _ = listener.Process.Wait() }()
+	time.Sleep(500 * time.Millisecond)
+	_ = exec.Command("ip", "netns", "exec", ns, probeBin, "connect-echo", "tcp", "127.0.0.1", "9097").Run()
+	time.Sleep(200 * time.Millisecond)
+
+	out, err := exec.Command("ip", "netns", "exec", ns, "cat",
+		"/proc/sys/net/netfilter/nf_conntrack_count").CombinedOutput()
+	if err != nil {
+		return fmt.Sprintf("cannot read nf_conntrack_count: %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+	if strings.TrimSpace(string(out)) == "0" {
+		return "conntrack does not track traffic in fresh namespaces (nf_conntrack_count stayed 0); stateful/NAT/overflow scenarios cannot run here"
+	}
 	return ""
 }
 
