@@ -339,7 +339,8 @@ rules:
 			_ = cmd.Process.Kill()
 		}
 	})
-	time.Sleep(900 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
+	waitForDaemonReady(t, logFile.Name())
 
 	// Establish a connection.
 	code, out := runStateProbe(t, "connect-echo", "tcp", "10.99.0.100", "84")
