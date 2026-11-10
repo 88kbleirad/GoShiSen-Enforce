@@ -24,6 +24,12 @@ GoShiSen-Enforce is a fail-closed, stateful nftables/NFQUEUE firewall daemon wit
 - Conntrack timeouts are kernel defaults; the suite verifies behavior without waiting for full expiry.
 - See `docs/release-checklist.md` §2 for the full gate.
 
+## Verification
+- GitHub-hosted CI (ubuntu-24.04, kernel 7.0.0-1017-azure, Go 1.25.14): build/vet/race/build/smoke PASS; privileged integration 21/21 PASS, zero mandatory skips.
+- Three phase-8.7 leftovers now verified: NAT-reload (18.47s), queue overflow (23.70s), state timeout/hold (2.82s/1.81s); reload-while-established 18.48s.
+- Positive controls on every deny/fail-closed scenario pass; no test weakened or skipped to green.
+- Evidence: `docs/release/phase9-ci-validation.md`, `docs/release-checklist.md` §2.
+
 ## Instructions
 ```bash
 make build VERSION=v0.1.0

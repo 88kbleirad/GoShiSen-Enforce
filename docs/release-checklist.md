@@ -16,7 +16,7 @@ Run in order. Every item must pass before tagging.
 
 - [x] Prereqs verification is now **functional**: `checkPrereqs` verifies an nftables queue rule installs in a throwaway namespace (NFQUEUE present) and asserts `nf_conntrack_count > 0` after a real TCP flow (skip with explicit reason otherwise). Reviewer: `tests/integration/e2e_test.go` `checkNFQUEUERule` / `checkConntrackNFQUEUE`.
 - [x] **Positive controls** added to every deny/fail-closed scenario (DeniedTraffic, DefaultDrop, QueueNoListener, StateUnsolicitedInbound, StateInvalidConnection) so a deny assertion cannot pass if the daemon/probe is broken. Verified PASS in the VM (5/5, exit 0). Evidence: `docs/release/phase8.7-positive-controls-ci.md`.
-- [ ] `sudo scripts/lab.sh up` succeeds; `sudo make integration` runs the full suite (all mandatory tests **must execute; skips are a release blocker**):
+- [x] `sudo scripts/lab.sh up` succeeds; `sudo make integration` runs the full suite (all mandatory tests **must execute; skips are a release blocker**):
   - default DROP; explicit TCP/UDP allow; denied traffic; first-match semantics
   - stateful handshake+echo; unsolicited inbound; INVALID state; timeout/hold; UDP reuse
   - policy reload while established (SIGHUP atomic; old policy kept on failure)
@@ -24,10 +24,10 @@ Run in order. Every item must pass before tagging.
   - queue overflow (S11): kernel `queue_dropped` grows; warning logged; policy still enforced
   - daemon crash (SIGKILL) → fail-closed drop; restart → recovery; readiness gating
   - hook cleanup scope (host nftables untouched; foreign table survives)
-- [ ] `sudo scripts/lab.sh down` clean; `ip netns list` shows no `gsh_*` leftovers.
-- [ ] Teardown also runs after a killed/aborted test (cleanup traps).
+- [x] `sudo scripts/lab.sh down` clean; `ip netns list` shows no `gsh_*` leftovers.
+- [x] Teardown also runs after a killed/aborted test (cleanup traps).
 
-**Status note (Phase 8.7):** the conntrack-metadata wire defects are fixed and verified (NFQA_CT_INFO 4-byte BE, 0-based ip_conntrack_info, direction-normalized accepted-set, parseAttrs truncation guard). In the VM (Debian 13, kernel 6.12.116, QEMU TCG): full suite 13/16 PASS; controls 5/5 PASS (NAT-reload, overflow, and state timeout/hold remain TCG-timeout-bound with fixes committed). Remaining gate: full privileged suite on the GitHub `ubuntu-24.04` runner with **zero skips**, then CI green. Evidence: `docs/release/phase8.6-final-ci-gate.md`, `docs/release/phase8.7-positive-controls-ci.md`, `docs/release/phase9-ci-validation.md`.
+**Status note (Phase 9.2):** GitHub-hosted CI (ubuntu-24.04, kernel 7.0.0-1017-azure, Go 1.25.14) is green: build job PASS, integration job 21/21 PASS with zero mandatory skips. The three previously-TCG-timeout-bound scenarios are verified: NAT-reload (18.47s), queue overflow (23.70s), state timeout/hold (2.82s/1.81s) — plus reload-while-established (18.48s). Evidence: `docs/release/phase9-ci-validation.md`. Draft PR [#1](https://github.com/88kbleirad/GoShiSen-Enforce/pull/1) targets main; release gate is READY pending merge/tag authorization.
 
 ## 3. Security & hardening checks
 

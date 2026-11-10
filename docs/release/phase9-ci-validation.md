@@ -1,55 +1,62 @@
-# Phase 9 — CI Validation Evidence
+# Phase 9.2 — CI Validation Evidence (GitHub Hosted)
 
-Branch: `phase7-baseline` (HEAD `40fa5b3`, 33 commits ahead of `origin/main`).
+Branch: `phase7-baseline`
+HEAD: `e50602e2f66db3f90d46ce07b5936cbb1d67798a` (pushed, verified remote)
+Draft PR: [#1](https://github.com/88kbleirad/GoShiSen-Enforce/pull/1) — `test: harden fail-closed integration coverage for v0.1.0`
+CI workflow run: `42817150116` (PR on `e50602e`), plus push run `42817140460`
 Date: 2026-11-10.
 
-## Push / CI status
+## Host regression (Go 1.25.0, local)
+`go mod verify` PASS; `gofmt -l .` clean; `go vet ./...` PASS; `go test ./... -count=1` PASS; `go test -race ./... -count=1` PASS; `go build ./...` PASS; `git diff --check` clean.
 
-**BLOCKED at push**: the environment has no GitHub authentication (no `GH_TOKEN`, no `gh auth login`, no credential helper, no SSH key). `git push --dry-run` fails with "could not read Username ... terminal prompts disabled". The branch is ready to push; CI has **not executed** (UNVERIFIED). No workflow run IDs exist.
+## GitHub-hosted CI (ubuntu-24.04)
+- Runner kernel: `7.0.0-1017-azure` (`CONFIG_NETFILTER_NETLINK_QUEUE=m`, `CONFIG_NFT_QUEUE=m`, `CONFIG_NF_CONNTRACK=m`, `CONFIG_NET_NS=y`).
+- Go toolchain: `1.25.14` (setup-go cache hit).
+- NFQUEUE + conntrack preflight: PASS (queue rule installed in throwaway netns; `nf_conntrack_count` non-zero).
 
-Required to proceed (user action):
+### F1. Standard validation (build job) — PASS
+Verify modules, formatting, vet, `go test -race ./...`, build, CLI smoke (help/version/missing-config nonzero) all green.
 
-```bash
-# Option A: provide a token (repo scope), then:
-gh auth login --with-token < token.txt
-git push -u origin phase7-baseline
-gh pr create --draft --base main --head phase7-baseline \
-  --title "test: harden fail-closed integration coverage for v0.1.0" \
-  --body "Positive controls added to deny/fail-closed scenarios; NFQUEUE+conntrack preflight; see docs/release/phase8.7-positive-controls-ci.md"
+### F2. Privileged integration — 21/21 PASS, zero skips
+| # | Test | Result | Duration |
+|---|---|---|---|
+| 1 | TestCrashKillFailClosedAndRestart | PASS | 12.79s |
+| 2 | TestReadinessFalseUntilEnforced | PASS | 1.62s |
+| 3 | TestLabAllowedTCP | PASS | 1.80s |
+| 4 | TestLabAllowedUDP | PASS | 1.82s |
+| 5 | TestLabDeniedTraffic | PASS | 9.58s |
+| 6 | TestLabDefaultDrop | PASS | 10.52s |
+| 7 | TestLabQueueNoListener | PASS | 9.82s |
+| 8 | TestLabShutdownClean | PASS | 9.83s |
+| 9 | TestHookCleanupScope | PASS | 1.60s |
+| 10 | TestNATDnat | PASS | 2.55s |
+| 11 | TestNATMasquerade | PASS | 2.50s |
+| 12 | TestNATReturnTraffic | PASS | 2.51s |
+| 13 | TestNATWithFiltering | PASS | 2.51s |
+| 14 | TestNATReloadWhileConnections | PASS | 18.47s |
+| 15 | TestQueueOverflowKernelDrop | PASS | 23.70s |
+| 16 | TestStateTCPHandshakeAndReply | PASS | 1.83s |
+| 17 | TestStateUnsolicitedInbound | PASS | 2.32s |
+| 18 | TestStateInvalidConnection | PASS | 9.52s |
+| 19 | TestStateConnectionTimeout | PASS | 2.82s |
+| 20 | TestStateUDPTimeout | PASS | 1.81s |
+| 21 | TestStateReloadWhileEstablished | PASS | 18.48s |
 
-# Option B: user runs the push + PR themselves with the same commands.
-```
+### F3. Mandatory skip detection — enforced
+Workflow runs `go test -v`, streams output, and fails the job if any `--- SKIP` line appears. On the green run: 0 test-level skips. A green workflow without mandatory tests is therefore impossible by construction.
 
-## Local evidence (all verified)
+## The three previously-unverified scenarios (Phase 8.7 leftovers)
+| Scenario | Result | Evidence |
+|---|---|---|
+| NAT-reload | PASS | TestNATReloadWhileConnections 18.47s: hold probe stays connected across SIGHUP policy reload; final exchange completes (HELD); NEW denied after reload. |
+| Queue overflow | PASS | TestQueueOverflowKernelDrop 23.70s: SIGSTOP daemon, 2000-datagram UDP flood with queue_maxlen=4; kernel `queue_dropped` grows; overflow warning logged; allowed TCP still works and denied UDP still dropped after resume. |
+| State timeout/hold | PASS | TestStateConnectionTimeout 2.82s + TestStateUDPTimeout 1.81s + TestStateReloadWhileEstablished 18.48s: liveness under hold, reconnect allowed, second UDP exchange on same tuple (ESTABLISHED) allowed, established flow survives reload while NEW is denied. |
 
-### Host regression (Go 1.25.0)
-`go mod verify` PASS; `gofmt -l .` clean; `go vet ./...` PASS; `go test ./... -count=1` PASS (9 packages); `go test -race ./... -count=1` PASS (9 packages); `go build ./...` PASS; `git diff --check` clean.
+## CI failure history (fixes)
+1. Run `42810672781` – zero output, exit 1 at 10m: GitHub Actions terminates steps that emit no output ~10m; test output was captured in a shell var, never streamed. Fixed: stream via `tee` + explicit `-timeout 25m` (commit `aa14811`).
+2. Run `42812300831` – `TestNATReloadWhileConnections` hung in `t.Cleanup` at `nat_test.go:376`: `<-holdDone` block on a one-shot channel already consumed by the test body. Fixed: bounded cleanup wait (commit `dc140c0`).
+3. Run `42816127151` – three state tests failed: probe listeners (`listen-echo`, `listen-echo-report`, `listen` UDP) served exactly one exchange and exited, so reconnects/second exchanges got ECONNREFUSED or i/o timeout. Fixed: listeners loop until killed (commit `884e87b`).
+4. `TestStateReloadWhileEstablished` asserted a NEW connection succeeds after reload to ESTABLISHED-only policy — wrong expectation; rewrote to hold the established flow across reload and assert NEW is dropped (commit `e50602e`).
 
-### Fuzz + golden tests (added this phase)
-- `FuzzParseAttrs`: 10s run, 765k execs, no panic (guards the previously-panicking attribute parser).
-- `TestCTInfoUAPIGolden`: hard-coded UAPI values for `NFQA_CT_INFO` (4-byte BE) and the 0-based `ip_conntrack_info` enum; PASS.
-- `TestNFQNLAttrNumbersMatchUAPI`, `TestConfigCommandValuesUAPI`: PASS.
-
-### Privileged VM (Debian 13, kernel 6.12.116, QEMU TCG) — controls run
-| Test | Result |
-|---|---|
-| TestLabDeniedTraffic (with positive control) | PASS 15.71s |
-| TestLabDefaultDrop (allow-phase control + default-drop) | PASS 16.29s |
-| TestLabQueueNoListener (no-listener deny + daemon allow control) | PASS 13.09s |
-| TestStateUnsolicitedInbound (control NEW allow, reload, deny) | PASS 5.44s |
-| TestStateInvalidConnection (control allow + unmatched-port deny) | PASS 13.17s |
-
-### Prior full-suite VM result (suite6, same branch before controls)
-13/16 PASS: Crash/Restart, Readiness, LabAllowedTCP, LabAllowedUDP, LabDeniedTraffic, LabDefaultDrop, LabQueueNoListener, LabShutdownClean, HookCleanupScope, NATDnat, NATMasquerade, NATReturnTraffic, NATWithFiltering. Remaining 3 (TestNATReloadWhileConnections, TestQueueOverflowKernelDrop, state timeout/hold tests) were TCG-timeout-bound; their harness fixes are committed but not re-verified under TCG (component fixes verified: fresh-listener, daemon-readiness poll, 20s probe deadlines).
-
-### `TestHookCleanupScope` "queue rule not found" (old main run)
-Root cause was the CLI subcommand parsing bug (`hook cleanup` ran `hook status` → Verify). Fixed in `8f797bd` with regression `TestParseHookSubcommand`; `TestHookCleanupScope` PASSes in suite6 (8.26s). Not a product defect.
-
-## CI workflow (prepared)
-`.github/workflows/ci.yml`: `ubuntu-24.04`; installs `nftables iproute2 procps kmod`; preflight prints kernel config (`CONFIG_NETFILTER_NETLINK_QUEUE`, `CONFIG_NFT_QUEUE`, conntrack), loads `nfnetlink_queue`/`nf_conntrack`/`nf_conntrack_netlink`, installs a queue rule in a throwaway netns, reads `nf_conntrack_count`; suite rejects any SKIP (fails job). No secrets; `permissions: contents: read`.
-
-## Scenario inventory (16 privileged + 5 control-extended)
-TestCrashKillFailClosedAndRestart, TestReadinessFalseUntilEnforced, TestLabAllowedTCP, TestLabAllowedUDP, TestLabDeniedTraffic, TestLabDefaultDrop, TestLabQueueNoListener, TestLabShutdownClean, TestHookCleanupScope, TestNATDnat, TestNATMasquerade, TestNATReturnTraffic, TestNATWithFiltering, TestNATReloadWhileConnections, TestQueueOverflowKernelDrop, TestStateTCPHandshakeAndReply, TestStateUnsolicitedInbound, TestStateInvalidConnection, TestStateConnectionTimeout, TestStateUDPTimeout, TestStateReloadWhileEstablished.
-
-## Verdict: **BLOCKED**
-CI unexecuted (no auth to push). Local + VM evidence is strong: host regression green, controls all pass, 13/16 full-suite scenarios pass. Forcing a "READY" claim without CI is not permitted.
+## Verdict: GREEN
+All mandatory CI jobs pass; 21/21 privileged scenarios pass; zero mandatory skips; fail-closed semantics preserved (no test weakened or skipped to green). Release gate for v0.1.0: **READY** pending release checklist §3–§5 and explicit merge/tag authorization.
