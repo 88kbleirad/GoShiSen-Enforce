@@ -182,12 +182,36 @@ func TestStateUnsolicitedInbound(t *testing.T) {
 version: 1
 default_action: DROP
 rules:
+  - id: allow-new
+    action: ACCEPT
+    protocol: tcp
+    src: 10.99.0.0/24
+    dst: 10.99.1.0/24
+    dst_port: 9090
+    state: [NEW]
   - id: allow-estab
     action: ACCEPT
     protocol: tcp
     state: [ESTABLISHED, RELATED]
 `)
 	startStateFirewall(t, polPath)
+
+	// Positive control: client→server NEW is allowed; the engine and
+	// packet path must work so the deny below is meaningful.
+	if code, out := runStateProbe(t, "connect-echo", "tcp", "10.99.1.2", "9090"); code != 0 {
+		t.Fatalf("control: allowed inbound failed: %d %s", code, out)
+	}
+
+	// Reload to the no-NEW policy (only ESTABLISHED/RELATED).
+	reloadPolicy(t, polPath, `
+version: 1
+default_action: DROP
+rules:
+  - id: allow-estab
+    action: ACCEPT
+    protocol: tcp
+    state: [ESTABLISHED, RELATED]
+`)
 
 	// Server→client unsolicited connect: no NEW rule → default DROP.
 	code, out := runStateProbe(t, "connect", "tcp", "10.99.0.2", "1")
@@ -226,12 +250,19 @@ rules:
 `)
 	startStateFirewall(t, polPath)
 
-	// A packet that no rule matches (e.g. not allowed NEW) must drop;
-	// conntrack will classify the late/unanswered SYN as INVALID or NEW,
-	// either way it is not accepted.
-	code, out := runStateProbe(t, "connect-echo", "tcp", "10.99.1.2", "8081")
-	if code == 0 {
-		t.Fatalf("invalid/late connection succeeded: %s", out)
+	// Positive control: a valid NEW connection to the allowed port must
+	// succeed — proving the engine and packet path work, so the deny
+	// below is meaningful.
+	if code, out := runStateProbe(t, "connect-echo", "tcp", "10.99.1.2", "8081"); code != 0 {
+		t.Fatalf("control: allowed connection failed: %d %s", code, out)
+	}
+
+	// Deny: a connection to a port with no allow rule must drop. If the
+	// engine or conntrack handling were broken in a way that accepted
+	// everything (fail-open), this would succeed.
+	startStateProbe(t, "gsh_server", probeBin, "listen-echo", "tcp", "9091")
+	if code, out := runStateProbe(t, "connect-echo", "tcp", "10.99.1.2", "9091"); code == 0 {
+		t.Fatalf("unmatched connection succeeded (fail-open?): %s", out)
 	}
 }
 

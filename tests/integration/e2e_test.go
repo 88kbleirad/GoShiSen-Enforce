@@ -385,10 +385,21 @@ rules:
     src: 10.99.0.0/24
     dst: 10.99.1.0/24
     dst_port: 8080
+  - id: allow-estab
+    action: ACCEPT
+    protocol: tcp
+    state: [ESTABLISHED, RELATED]
 `)
+	// Positive control: the paired allowed flow must succeed, proving
+	// the daemon and probe path work; otherwise the deny assertion
+	// below would be meaningless.
+	code, _ := probe(t, "tcp", "10.99.1.2", 8080)
+	if code != 0 {
+		t.Fatal("control: allowed TCP probe failed; daemon/probe broken")
+	}
 	// Different port: no rule matches → default DROP.
 	startProbe(t, "gsh_server", "tcp", 9090)
-	code, _ := probe(t, "tcp", "10.99.1.2", 9090)
+	code, _ = probe(t, "tcp", "10.99.1.2", 9090)
 	if code == 0 {
 		t.Fatal("denied TCP probe unexpectedly succeeded")
 	}
@@ -403,13 +414,36 @@ func TestLabDefaultDrop(t *testing.T) {
 	runLab(t, true)
 	defer runLab(t, false)
 	startProbe(t, "gsh_server", "tcp", 8080)
-	// No rules at all → default DROP.
+
+	// Positive control first: with an allow policy the same flow must
+	// succeed, proving the daemon/probe path works; then default DROP
+	// is meaningful.
+	startFirewall(t, `
+version: 1
+rules:
+  - id: allow-http
+    action: ACCEPT
+    protocol: tcp
+    src: 10.99.0.0/24
+    dst: 10.99.1.0/24
+    dst_port: 8080
+  - id: allow-estab
+    action: ACCEPT
+    protocol: tcp
+    state: [ESTABLISHED, RELATED]
+`)
+	if code, _ := probe(t, "tcp", "10.99.1.2", 8080); code != 0 {
+		t.Fatal("control: allowed TCP probe failed; daemon/probe broken")
+	}
+	// Stop the daemon (hook remains) and restart it with an empty
+	// ruleset → default DROP.
+	runNs(t, "gsh_fw", "pkill", "-INT", "goshisen")
+	time.Sleep(500 * time.Millisecond)
 	startFirewall(t, `
 version: 1
 rules: []
 `)
-	code, _ := probe(t, "tcp", "10.99.1.2", 8080)
-	if code == 0 {
+	if code, _ := probe(t, "tcp", "10.99.1.2", 8080); code == 0 {
 		t.Fatal("default DROP probe unexpectedly succeeded")
 	}
 }
@@ -429,6 +463,31 @@ func TestLabQueueNoListener(t *testing.T) {
 	code, _ := probe(t, "tcp", "10.99.1.2", 8080)
 	if code == 0 {
 		t.Fatal("traffic passed with no NFQUEUE listener")
+	}
+
+	// Positive control: start the daemon, which binds the same queue 0
+	// that the lab's gsh_lab hook queues to (the daemon's own table is
+	// an additional queue rule on the same queue). With an explicit
+	// allow policy, the same client→server path must now succeed —
+	// proving the earlier block was the missing listener (kernel
+	// fail-closed drop), not a broken route/path.
+	startFirewall(t, `
+version: 1
+rules:
+  - id: allow-http
+    action: ACCEPT
+    protocol: tcp
+    src: 10.99.0.0/24
+    dst: 10.99.1.0/24
+    dst_port: 8080
+  - id: allow-estab
+    action: ACCEPT
+    protocol: tcp
+    state: [ESTABLISHED, RELATED]
+`)
+	code, _ = probe(t, "tcp", "10.99.1.2", 8080)
+	if code != 0 {
+		t.Fatal("control: allowed TCP probe failed after daemon start; path broken")
 	}
 }
 
