@@ -41,61 +41,72 @@ func listenTCP(port int) {
 	_, _ = conn.Read(buf)
 }
 
-// listenTCPEcho accepts one connection, echoes every chunk back, and
-// keeps the connection until the peer closes it (TCP handshake +
-// response traffic exercise).
+// listenTCPEcho accepts connections, echoes every chunk back, and keeps
+// each connection until the peer closes it (TCP handshake + response
+// traffic exercise). It serves any number of connections until killed:
+// tests exercise multiple exchanges (hold+reconnect, reload-while-
+// established) against a single listener.
 func listenTCPEcho(port int) {
 	l, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", port))
 	if err != nil {
 		die("listen tcp-echo %d: %v", port, err)
 	}
 	defer l.Close()
-	conn, err := l.Accept()
-	if err != nil {
-		die("accept echo: %v", err)
-	}
-	defer conn.Close()
-	buf := make([]byte, 256)
 	for {
-		n, err := conn.Read(buf)
+		conn, err := l.Accept()
 		if err != nil {
 			return
 		}
-		if _, err := conn.Write(buf[:n]); err != nil {
-			return
-		}
+		go func() {
+			defer conn.Close()
+			buf := make([]byte, 256)
+			for {
+				n, err := conn.Read(buf)
+				if err != nil {
+					return
+				}
+				if _, err := conn.Write(buf[:n]); err != nil {
+					return
+				}
+			}
+		}()
 	}
 }
 
-// listenTCPEchoReport accepts one connection, reports the remote address
-// to the client, then echoes until close.
+// listenTCPEchoReport accepts connections, reports the remote address to
+// the client, then echoes until close. Serves any number of connections
+// until killed.
 func listenTCPEchoReport(port int) {
 	l, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", port))
 	if err != nil {
 		die("listen tcp-echo-report %d: %v", port, err)
 	}
 	defer l.Close()
-	conn, err := l.Accept()
-	if err != nil {
-		die("accept echo-report: %v", err)
-	}
-	defer conn.Close()
-	host, _, err := net.SplitHostPort(conn.RemoteAddr().String())
-	if err != nil {
-		host = conn.RemoteAddr().String()
-	}
-	if _, err := fmt.Fprintf(conn, "from %s\n", host); err != nil {
-		return
-	}
-	buf := make([]byte, 256)
 	for {
-		n, err := conn.Read(buf)
+		conn, err := l.Accept()
 		if err != nil {
 			return
 		}
-		if _, err := conn.Write(buf[:n]); err != nil {
-			return
-		}
+		go func() {
+			defer conn.Close()
+			host, _, err := net.SplitHostPort(conn.RemoteAddr().String())
+			if err != nil {
+				host = conn.RemoteAddr().String()
+			}
+			if _, err := fmt.Fprintf(conn, "from %s\n", host); err != nil {
+				return
+			}
+			buf := make([]byte, 256)
+			for {
+				n, err := conn.Read(buf)
+				if err != nil {
+					return
+				}
+				if _, err := conn.Write(buf[:n]); err != nil {
+					return
+				}
+			}
+		}()
 	}
 }
 
@@ -152,12 +163,14 @@ func listenUDP(port int) {
 	}
 	defer pc.Close()
 	buf := make([]byte, 64)
-	n, addr, err := pc.ReadFrom(buf)
-	if err != nil {
-		die("read udp: %v", err)
-	}
-	if _, err := pc.WriteTo(buf[:n], addr); err != nil {
-		die("echo udp: %v", err)
+	for {
+		n, addr, err := pc.ReadFrom(buf)
+		if err != nil {
+			return
+		}
+		if _, err := pc.WriteTo(buf[:n], addr); err != nil {
+			return
+		}
 	}
 }
 
