@@ -18,7 +18,7 @@ authorization).
 
 | # | Finding | Evidence |
 | --- | --- | --- |
-| 1 | `NFQA_CT_INFO` is a **`__be32`** (`ctnetlink_glue_build` uses `nla_put_be32(..., htonl(ctinfo))`); the parser read only the first byte → always 0 → every packet INVALID. | Raw NFQUEUE dumper (`tests/ctdump`) showed type 12 present with `ctInfo=0`; after fix, state distribution became `new`/`established`. |
+| 1 | `NFQA_CT_INFO` is a **`__be32`** (`ctnetlink_glue_build` uses `nla_put_be32(..., htonl(ctinfo))`); the parser read only the first byte → always 0 → every packet INVALID. | The raw NFQUEUE attribute dumper built during the investigation showed type 12 present with `ctInfo=0`; after fix, state distribution became `new`/`established`. |
 | 2 | `enum ip_conntrack_info` is **0-based** (ESTABLISHED=0, RELATED=1, NEW=2, IS_REPLY=3, additive replies). Constants were 1/2/3/4 with a bitwise reply check → after fix #1, NEW(2) decoded as "related". | Fixed constants + threshold-based reply decode; unit tests cover all state/direction combos. |
 | 3 | The accepted-set tuple key was not direction-normalized → reply packets (endpoints swapped) never matched → ESTABLISHED/RELATED replies dropped. | Fixed `tupleKey` to canonicalize on `DirReply`; `TestStatefulKingProcess`/`TestPolicyReloadKeepsEstablished` (now modeling real replies) fail without the fix. |
 | 4 | `parseAttrs` panicked on a truncated trailing attribute (`slice bounds out of range [72:71]`) → daemon crashed mid-flow, breaking reply paths. | Fixed aligned-length guard; `TestParseAttrsTruncatedNoPanic`. |
