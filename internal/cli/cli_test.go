@@ -124,4 +124,7 @@ func TestPrintVersion(t *testing.T) {
 	if !strings.HasPrefix(buf.String(), Program+" ") {
 		t.Errorf("version output %q does not start with program name", buf.String())
 	}
+	if strings.TrimSpace(buf.String()) != Program+" "+Version {
+		t.Errorf("version output %q does not match %q", buf.String(), Program+" "+Version)
+	}
 }

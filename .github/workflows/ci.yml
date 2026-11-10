@@ -45,6 +45,17 @@ jobs:
           if /tmp/goshisen 2>/dev/null; then
             echo "expected non-zero exit for missing configuration"; exit 1
           fi
+      - name: Verify version stamp
+        run: |
+          # -ldflags -X can only set string variables, not constants; a
+          # const Version silently stays "dev". Build with an explicit
+          # VERSION and assert the CLI reports it.
+          go build -ldflags "-X github.com/88kbleirad/GoShiSen-Enforce/internal/cli.Version=stamp-test" \
+            -o /tmp/goshisen-stamped ./cmd/goshisen
+          out=$(/tmp/goshisen-stamped --version)
+          if [ "$out" != "goshisen stamp-test" ]; then
+            echo "version stamp not applied: got $out"; exit 1
+          fi
 
   integration:
     name: integration (real netns lab, privileged)

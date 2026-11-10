@@ -14,7 +14,7 @@ import (
 
 // Version is the daemon version; set at build time with
 // -ldflags "-X github.com/88kbleirad/GoShiSen-Enforce/internal/cli.Version=…".
-const Version = "dev"
+var Version = "dev"
 
 // Program is the binary name shown in help and error messages.
 const Program = "goshisen"
