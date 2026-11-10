@@ -62,10 +62,14 @@ fi
 # Checksums for every archive.
 (cd "$DIST" && sha256sum goshisen-linux-*.tar.gz > checksums.txt)
 
-# SBOM over the source tree (pure Go module inventory).
-if command -v syft >/dev/null 2>&1; then
-    syft scan -q -o spdx-json="$DIST/sbom.spdx.json" .
+# SBOM over the source tree (pure Go module inventory). It is a
+# required release artifact; fail if syft is unavailable rather than
+# silently shipping a release without one.
+if ! command -v syft >/dev/null 2>&1; then
+    echo "ERROR: syft not found in PATH (required for the SBOM)" >&2
+    exit 1
 fi
+syft scan -q -o spdx-json="$DIST/sbom.spdx.json" .
 
 echo "packaged $VERSION:"
 ls -la "$DIST"

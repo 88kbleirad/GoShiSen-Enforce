@@ -43,6 +43,11 @@ func hostArch(t *testing.T) string {
 }
 
 func TestPackageArchive(t *testing.T) {
+	// package.sh requires syft for the SBOM. Skip with a clear reason
+	// when it is not installed (CI installs it).
+	if _, err := exec.LookPath("syft"); err != nil {
+		t.Skip("syft not installed; SBOM generation unavailable")
+	}
 	root := repoRoot(t)
 	version := "test-v0.0.0"
 	arch := hostArch(t)
