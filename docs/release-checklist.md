@@ -45,9 +45,9 @@ Run in order. Every item must pass before tagging.
 
 ## 5. Release mechanics
 
-- [ ] Tag format: `v0.1.0` (semver). `make build VERSION=v0.1.0` stamps the version.
+- [ ] Tag format: `v0.1.0` (semver). `make build VERSION=v0.1.0` stamps the version. CI workflow now triggers on `v*` tags (added in `f1f09c1`).
 - [ ] `git tag v0.1.0 && git push origin v0.1.0` (after privileged suite passes).
-- [ ] CI on the tag runs green (build + integration jobs).
+- [ ] CI on the tag runs green (build + integration jobs, zero mandatory skips).
 - [ ] Publish the container image (optional) from the tagged checkout with `--cap-drop=ALL --cap-add=NET_ADMIN --cap-add=NET_RAW` per the Dockerfile guidance.
 
 ## 6. Release notes (draft)
