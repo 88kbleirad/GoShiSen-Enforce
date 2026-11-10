@@ -95,17 +95,16 @@ rules: []
 	startStateFirewall(t, polPath)
 
 	// The daemon is ready (waitForDaemonReady ensures queue bind); the
-	// API listener may take a moment to open. Retry briefly.
-	var code int
-	var out string
+	// API binds loopback inside gsh_fw, so the probe must run in that
+	// namespace (not gsh_client). Retry briefly for the listener.
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		code, out = runStateProbe(t, "httpget", "tcp", "127.0.0.1", "8080", "/readyz")
-		if code == 0 && strings.Contains(out, "HTTP 200") {
-			break
+		out, err := runNs(t, "gsh_fw", probeBin, "httpget", "tcp", "127.0.0.1", "8080", "/readyz")
+		if err == nil && strings.Contains(out, "HTTP 200") {
+			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("readyz never 200: code=%d out=%s", code, out)
+			t.Fatalf("readyz never 200: err=%v out=%s", err, out)
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
