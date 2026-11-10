@@ -36,7 +36,9 @@ const (
 	nfqaCTInfo         = 12
 
 	nfqnlCfgCmdBind   = 1
-	nfqnlCfgCmdPfBind = 2
+	nfqnlCfgCmdUnbind = 2
+	nfqnlCfgCmdPfBind = 3
+	// nfqnlCfgCmdPfUnbind = 4 (unused)
 
 	nfqnlCopyPacket = 2
 
@@ -92,24 +94,30 @@ func (n nfgenmsg) marshal() []byte {
 }
 
 // attr is one netlink attribute (len + type + payload, 4-byte aligned).
+// The struct nlattr header (nla_len/nla_type) is read by the kernel in
+// native byte order on the raw wire bytes; only the payload fields use
+// explicit big-endian where the UAPI declares __be16/__be32.
 func attr(typ uint16, payload []byte) []byte {
 	l := 4 + len(payload)
 	pad := (4 - l%4) % 4
 	out := make([]byte, l+pad)
-	binary.BigEndian.PutUint16(out[0:], uint16(l+pad))
-	binary.BigEndian.PutUint16(out[2:], typ)
+	// Native endian (host order) for the attribute header.
+	binary.NativeEndian.PutUint16(out[0:], uint16(l+pad))
+	binary.NativeEndian.PutUint16(out[2:], typ)
 	copy(out[4:], payload)
 	return out
 }
 
-// parseAttrs walks an attribute stream.
+// parseAttrs walks an attribute stream. Attribute headers are in native
+// byte order (see attr); payload fields use the endianness declared by
+// their UAPI types.
 func parseAttrs(b []byte, fn func(typ uint16, payload []byte) bool) {
 	for len(b) >= 4 {
-		l := int(binary.BigEndian.Uint16(b[0:]))
+		l := int(binary.NativeEndian.Uint16(b[0:]))
 		if l < 4 || l > len(b) {
 			return
 		}
-		typ := binary.BigEndian.Uint16(b[2:])
+		typ := binary.NativeEndian.Uint16(b[2:])
 		if !fn(typ, b[4:l]) {
 			return
 		}
@@ -199,45 +207,55 @@ func Open(opts Options) (*Backend, error) {
 
 // configure binds the queue, sets copy mode, and sets maxlen.
 func (b *Backend) configure() error {
-	gen := nfgenmsg{family: afInet, version: 0, resID: b.queue}
+	for _, m := range b.configMessages() {
+		if err := b.send(m); err != nil {
+			return fmt.Errorf("nfqueue config: %w", err)
+		}
+	}
+	return nil
+}
 
-	// Bind: NFQNL_CFG_CMD_BIND with pf=AF_INET (nftables queue binding
-	// is per-family; we bind IPv4).
-	cmd := attr(nfqaCfgCmd, []byte{nfqnlCfgCmdBind, 0, afInet, 0})
-	if err := b.send(configMsg(gen, cmd)); err != nil {
-		return fmt.Errorf("bind queue %d: %w", b.queue, err)
-	}
-	// PF_BIND is required before queues deliver (kernel requirement).
-	pfBind := attr(nfqaCfgCmd, []byte{nfqnlCfgCmdPfBind, 0, afInet, 0})
-	if err := b.send(configMsg(gen, pfBind)); err != nil {
-		return fmt.Errorf("pf bind queue %d: %w", b.queue, err)
-	}
-	// Copy mode: NFQNL_COPY_PACKET (copy whole packet).
+// configMessages builds the exact NFQUEUE configuration sequence the
+// kernel expects, in order:
+//
+//  1. BIND the queue (NFQNL_CFG_CMD_BIND).
+//  2. Set copy mode to NFQNL_COPY_PACKET (copy whole packets).
+//  3. Set the queue maximum length.
+//  4. Request conntrack attributes (NFQA_CFG_F_CONNTRACK).
+//
+// The obsolete PF_BIND/PF_UNBIND commands are deliberately NOT sent:
+// they are no-ops on modern kernels, and the old implementation sent a
+// byte that the kernel decodes as UNBIND (2) — destroying the queue
+// instance right after BIND. See Phase 8.4 report for the byte-level
+// evidence.
+func (b *Backend) configMessages() []netlink.Message {
+	gen := nfgenmsg{family: afInet, version: 0, resID: b.queue}
+	msgs := make([]netlink.Message, 0, 4)
+
+	// 1. BIND (command=1). pf is __be16 (AF_INET = 2).
+	msgs = append(msgs, configMsg(gen,
+		attr(nfqaCfgCmd, []byte{nfqnlCfgCmdBind, 0, 0, afInet})))
+
+	// 2. Copy mode: copy_range=0xffff, copy_mode=NFQNL_COPY_PACKET.
 	params := make([]byte, 8)
 	binary.BigEndian.PutUint32(params[0:], 0xffff)
 	params[4] = nfqnlCopyPacket
-	if err := b.send(configMsg(gen, attr(nfqaCfgParams, params))); err != nil {
-		return fmt.Errorf("set copy mode queue %d: %w", b.queue, err)
-	}
-	// Maxlen.
+	msgs = append(msgs, configMsg(gen, attr(nfqaCfgParams, params)))
+
+	// 3. Maxlen.
 	maxlen := make([]byte, 4)
 	binary.BigEndian.PutUint32(maxlen, uint32(b.maxlen))
-	if err := b.send(configMsg(gen, attr(nfqaCfgQueueMaxlen, maxlen))); err != nil {
-		return fmt.Errorf("set maxlen queue %d: %w", b.queue, err)
-	}
-	// Ask the kernel to attach conntrack attributes (NFQA_CT,
-	// NFQA_CT_INFO) to every queued packet. Only the conntrack flag is
-	// requested; NFQA_CFG_F_FAIL_OPEN is deliberately never set
-	// (fail-closed).
+	msgs = append(msgs, configMsg(gen, attr(nfqaCfgQueueMaxlen, maxlen)))
+
+	// 4. Conntrack config flags (never FAIL_OPEN).
 	flags, mask := ctConfigFlags()
 	flagsAttr := make([]byte, 4)
 	binary.BigEndian.PutUint32(flagsAttr, flags)
 	maskAttr := make([]byte, 4)
 	binary.BigEndian.PutUint32(maskAttr, mask)
-	if err := b.send(configMsg(gen, attr(nfqaCfgMask, maskAttr), attr(nfqaCfgFlags, flagsAttr))); err != nil {
-		return fmt.Errorf("enable conntrack attributes queue %d: %w", b.queue, err)
-	}
-	return nil
+	msgs = append(msgs, configMsg(gen, attr(nfqaCfgMask, maskAttr), attr(nfqaCfgFlags, flagsAttr)))
+
+	return msgs
 }
 
 // ctConfigFlags returns the config flags/mask the backend requests from
@@ -254,8 +272,11 @@ func configMsg(gen nfgenmsg, attrs ...[]byte) netlink.Message {
 	}
 	return netlink.Message{
 		Header: netlink.Header{
-			Type:  queueMsg(nfqnlMsgConfig),
-			Flags: netlink.Request,
+			Type: queueMsg(nfqnlMsgConfig),
+			// NLM_F_REQUEST | NLM_F_ACK: the kernel only sends a
+			// reply when ACK is requested (errors are always
+			// reported). b.send waits for that ACK.
+			Flags: netlink.Request | netlink.Acknowledge,
 		},
 		Data: data,
 	}
@@ -265,15 +286,19 @@ func (b *Backend) send(m netlink.Message) error {
 	if _, err := b.conn.Send(m); err != nil {
 		return err
 	}
-	// Wait for the ACK so configuration errors surface immediately.
+	// Wait for the kernel acknowledgment. A netlink ACK is an
+	// NLMSG_ERROR message (type Error) with error=0; an error response
+	// has error!=0 and is surfaced by conn.Receive as an error (see
+	// mdlayher checkMessage). So the first message we successfully
+	// receive after a request is the ACK.
 	for {
 		msgs, err := b.conn.Receive()
 		if err != nil {
 			return err
 		}
 		for _, m := range msgs {
-			if m.Header.Type == 0 {
-				return nil // ACK
+			if m.Header.Type == netlink.Error {
+				return nil
 			}
 		}
 	}

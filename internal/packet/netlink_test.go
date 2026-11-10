@@ -47,47 +47,52 @@ func TestNFGenmsgMarshal(t *testing.T) {
 }
 
 func TestAttrEncoding(t *testing.T) {
-	// attr(type, payload): 2 bytes len (incl. 4-byte header + alignment
-	// padding), 2 bytes type (big-endian), payload, padded to 4-byte
-	// alignment. The kernel's nla_len includes the header and padding.
+	// attr(type, payload): 2 bytes len + 2 bytes type in NATIVE byte
+	// order (the kernel reads struct nlattr on the raw wire bytes), then
+	// payload, padded to 4-byte alignment. On little-endian hosts the
+	// header bytes are therefore reversed relative to big-endian.
+	if !isLittleEndian() {
+		t.Skip("test assumes little-endian host")
+	}
 	a := attr(1, []byte{0xaa, 0xbb})
-	want := []byte{0, 8, 0, 1, 0xaa, 0xbb, 0, 0}
+	want := []byte{8, 0, 1, 0, 0xaa, 0xbb, 0, 0}
 	if string(a) != string(want) {
 		t.Errorf("attr(1,{aa bb}) = % x, want % x", a, want)
 	}
-	// Type encoding is big-endian and must match the UAPI enum values.
-	// This is the core regression: these were previously shifted by +3
-	// (nfqaCfgCmd=4 instead of 1, nfqaPayload=3 instead of 10).
-	cmd := attr(nfqaCfgCmd, []byte{nfqnlCfgCmdBind, 0, afInet, 0})
+	// Type field: native order. cmd type = NFQA_CFG_CMD(1).
+	cmd := attr(nfqaCfgCmd, []byte{nfqnlCfgCmdBind, 0, 0, afInet})
 	if len(cmd) != 8 {
 		t.Errorf("cmd attr length = %d, want 8", len(cmd))
 	}
-	if binary.BigEndian.Uint16(cmd[2:]) != 1 {
-		t.Errorf("NFQA_CFG_CMD type = %d, want 1", binary.BigEndian.Uint16(cmd[2:]))
+	if binary.NativeEndian.Uint16(cmd[2:]) != 1 {
+		t.Errorf("NFQA_CFG_CMD type = %d, want 1", binary.NativeEndian.Uint16(cmd[2:]))
 	}
 	if cmd[4] != nfqnlCfgCmdBind {
 		t.Errorf("cmd byte = %d, want BIND(1)", cmd[4])
 	}
-	if cmd[6] != afInet {
-		t.Errorf("pf byte = %d, want AF_INET(2)", cmd[6])
+	if cmd[6] != 0 || cmd[7] != afInet {
+		t.Errorf("pf bytes = %d,%d, want 0,AF_INET(2) (BE16)", cmd[6], cmd[7])
 	}
 }
 
 func TestConfigMessageGolden(t *testing.T) {
 	// Full config message for BIND: nlmsghdr(16) + nfgenmsg(4) + attr.
+	if !isLittleEndian() {
+		t.Skip("test assumes little-endian host")
+	}
 	gen := nfgenmsg{family: afInet, version: 0, resID: 0}
-	m := configMsg(gen, attr(nfqaCfgCmd, []byte{nfqnlCfgCmdBind, 0, afInet, 0}))
+	m := configMsg(gen, attr(nfqaCfgCmd, []byte{nfqnlCfgCmdBind, 0, 0, afInet}))
 
 	if m.Header.Type != queueMsg(nfqnlMsgConfig) {
 		t.Errorf("header type = %#x, want config", m.Header.Type)
 	}
-	if m.Header.Flags != netlink.Request {
-		t.Errorf("header flags = %#x, want REQUEST", m.Header.Flags)
+	if m.Header.Flags != netlink.Request|netlink.Acknowledge {
+		t.Errorf("header flags = %#x, want REQUEST|ACK", m.Header.Flags)
 	}
 	wantData := []byte{
-		2, 0, 0, 0, // nfgenmsg: family=AF_INET, version=0, res_id=0
-		0, 8, 0, 1, // attr: len=8, type=NFQA_CFG_CMD(1)
-		1, 0, 2, 0, // nfqnl_msg_config_cmd: command=BIND(1), pad, pf=AF_INET
+		2, 0, 0, 0, // nfgenmsg: family=AF_INET, version=0, res_id=0 (BE)
+		8, 0, 1, 0, // attr (native): len=8, type=NFQA_CFG_CMD(1)
+		1, 0, 0, 2, // nfqnl_msg_config_cmd: command=BIND(1), pad, pf=AF_INET (BE16)
 	}
 	if string(m.Data) != string(wantData) {
 		t.Errorf("config data = % x\nwant % x", m.Data, wantData)
@@ -97,12 +102,15 @@ func TestConfigMessageGolden(t *testing.T) {
 func TestConfigParamsGolden(t *testing.T) {
 	// Verify the copy-mode param attribute: copy_range=0xffff,
 	// copy_mode=NFQNL_COPY_PACKET(2), type=NFQA_CFG_PARAMS(2).
+	if !isLittleEndian() {
+		t.Skip("test assumes little-endian host")
+	}
 	params := make([]byte, 8)
 	binary.BigEndian.PutUint32(params[0:], 0xffff)
 	params[4] = nfqnlCopyPacket
 	a := attr(nfqaCfgParams, params)
-	if binary.BigEndian.Uint16(a[2:]) != 2 {
-		t.Errorf("NFQA_CFG_PARAMS type = %d, want 2", binary.BigEndian.Uint16(a[2:]))
+	if binary.NativeEndian.Uint16(a[2:]) != 2 {
+		t.Errorf("NFQA_CFG_PARAMS type = %d, want 2", binary.NativeEndian.Uint16(a[2:]))
 	}
 	if binary.BigEndian.Uint32(a[4:]) != 0xffff {
 		t.Errorf("copy_range = %#x, want 0xffff", binary.BigEndian.Uint32(a[4:]))
@@ -114,6 +122,9 @@ func TestConfigParamsGolden(t *testing.T) {
 
 func TestVerdictMessageGolden(t *testing.T) {
 	// Verdict message for queue 0, packet id 0xDEADBEEF, verdict DROP(0).
+	if !isLittleEndian() {
+		t.Skip("test assumes little-endian host")
+	}
 	gen := nfgenmsg{family: afInet, version: 0, resID: 0}
 	hdr := make([]byte, 8)
 	binary.BigEndian.PutUint32(hdr[0:], uint32(nfDrop))
@@ -122,7 +133,7 @@ func TestVerdictMessageGolden(t *testing.T) {
 	data = append(data, attr(nfqaVerdictHdr, hdr)...)
 
 	// nfgenmsg + NFQA_VERDICT_HDR(2): verdict DROP(0), id 0xDEADBEEF.
-	wantPrefix := []byte{2, 0, 0, 0, 0, 12, 0, 2}
+	wantPrefix := []byte{2, 0, 0, 0, 12, 0, 2, 0}
 	if string(data[:8]) != string(wantPrefix) {
 		t.Errorf("verdict prefix = % x, want % x", data[:8], wantPrefix)
 	}
@@ -136,23 +147,27 @@ func TestVerdictMessageGolden(t *testing.T) {
 
 func TestCTAttrsGolden(t *testing.T) {
 	// Nested conntrack attrs: CTA_PROTOINFO(4) -> CTA_PROTOINFO_TCP(2)
-	// -> CTA_PROTOINFO_TCP_STATE(1) = 5 (ESTABLISHED).
+	// -> CTA_PROTOINFO_TCP_STATE(1) = 5 (ESTABLISHED). Attribute
+	// headers are native byte order; the state payload is a u8.
+	if !isLittleEndian() {
+		t.Skip("test assumes little-endian host")
+	}
 	inner := synthCTAttr(5)
 	if len(inner) != 16 {
 		t.Errorf("synthCTAttr length = %d, want 16", len(inner))
 	}
 	// Outer attr: len=16, type=CTA_PROTOINFO(4); nested inner attr.
-	if binary.BigEndian.Uint16(inner[0:]) != 16 {
-		t.Errorf("outer len = %d, want 16", binary.BigEndian.Uint16(inner[0:]))
+	if binary.NativeEndian.Uint16(inner[0:]) != 16 {
+		t.Errorf("outer len = %d, want 16", binary.NativeEndian.Uint16(inner[0:]))
 	}
-	if binary.BigEndian.Uint16(inner[2:]) != ctaProtoInfo {
-		t.Errorf("outer type = %d, want CTA_PROTOINFO(4)", binary.BigEndian.Uint16(inner[2:]))
+	if binary.NativeEndian.Uint16(inner[2:]) != ctaProtoInfo {
+		t.Errorf("outer type = %d, want CTA_PROTOINFO(4)", binary.NativeEndian.Uint16(inner[2:]))
 	}
-	if binary.BigEndian.Uint16(inner[6:]) != ctaProtoInfoTCP {
-		t.Errorf("middle type = %d, want CTA_PROTOINFO_TCP(2)", binary.BigEndian.Uint16(inner[6:]))
+	if binary.NativeEndian.Uint16(inner[6:]) != ctaProtoInfoTCP {
+		t.Errorf("middle type = %d, want CTA_PROTOINFO_TCP(2)", binary.NativeEndian.Uint16(inner[6:]))
 	}
-	if binary.BigEndian.Uint16(inner[10:]) != ctaProtoInfoTCPState {
-		t.Errorf("inner type = %d, want CTA_PROTOINFO_TCP_STATE(1)", binary.BigEndian.Uint16(inner[10:]))
+	if binary.NativeEndian.Uint16(inner[10:]) != ctaProtoInfoTCPState {
+		t.Errorf("inner type = %d, want CTA_PROTOINFO_TCP_STATE(1)", binary.NativeEndian.Uint16(inner[10:]))
 	}
 	// Layout: outer attr header(4) -> tcp attr header(4) -> state attr
 	// header(4); state payload at offset 12.
@@ -212,5 +227,131 @@ func TestNFQNLConfigFlagsGolden(t *testing.T) {
 	}
 	if flags&nfqaCfgFFailOpen != 0 {
 		t.Fatal("FAIL_OPEN requested")
+	}
+}
+
+func isLittleEndian() bool {
+	return binary.NativeEndian.Uint16([]byte{1, 0}) == 1
+}
+
+// TestConfigSequenceGolden validates the exact outgoing configuration
+// sequence against hard-coded Linux UAPI values (not derived from the
+// implementation constants, so a duplicated wrong constant cannot make
+// the test pass).
+func TestConfigSequenceGolden(t *testing.T) {
+	if !isLittleEndian() {
+		t.Skip("test assumes little-endian host")
+	}
+	b := &Backend{queue: 0, maxlen: 1024}
+	msgs := b.configMessages()
+
+	if len(msgs) != 4 {
+		t.Fatalf("configMessages() = %d messages, want 4", len(msgs))
+	}
+
+	// All messages must be NFQNL_MSG_CONFIG (subsys 3 << 8 | type 2).
+	for i, m := range msgs {
+		if m.Header.Type != netlink.HeaderType(3<<8|2) {
+			t.Errorf("msg %d: type = %#x, want 0x0302", i, m.Header.Type)
+		}
+		if m.Header.Flags != netlink.Request|netlink.Acknowledge {
+			t.Errorf("msg %d: flags = %#x, want REQUEST|ACK", i, m.Header.Flags)
+		}
+		// nfgenmsg: family=AF_INET(2), version=0, res_id=0.
+		gen := m.Data[:4]
+		if gen[0] != 2 || gen[1] != 0 || gen[2] != 0 || gen[3] != 0 {
+			t.Errorf("msg %d: nfgenmsg = % x, want 02 00 00 00", i, gen)
+		}
+	}
+
+	// Message 1: BIND. Command attr type=1, payload command=1 (BIND),
+	// pf=AF_INET as __be16 (00 02).
+	m1 := msgs[0].Data[4:]
+	if m1[0] != 8 || m1[1] != 0 || m1[2] != 1 || m1[3] != 0 {
+		t.Errorf("BIND attr header = % x, want 08 00 01 00 (native)", m1[:4])
+	}
+	if m1[4] != 1 {
+		t.Errorf("BIND command = %d, want NFQNL_CFG_CMD_BIND(1)", m1[4])
+	}
+	if m1[6] != 0 || m1[7] != 2 {
+		t.Errorf("BIND pf = % x, want 00 02 (BE16 AF_INET)", m1[6:8])
+	}
+
+	// Message 2: PARAMS. Attr type=2, copy_range=0xffff (BE), copy_mode=2.
+	m2 := msgs[1].Data[4:]
+	if m2[2] != 2 || m2[3] != 0 {
+		t.Errorf("PARAMS attr type = %d, want NFQA_CFG_PARAMS(2)", m2[2])
+	}
+	if m2[4] != 0 || m2[5] != 0 || m2[6] != 0xff || m2[7] != 0xff {
+		t.Errorf("PARAMS copy_range = % x, want 00 00 ff ff (BE)", m2[4:8])
+	}
+	if m2[8] != 2 {
+		t.Errorf("PARAMS copy_mode = %d, want NFQNL_COPY_PACKET(2)", m2[8])
+	}
+
+	// Message 3: MAXLEN. Attr type=3, payload = maxlen BE.
+	m3 := msgs[2].Data[4:]
+	if m3[2] != 3 || m3[3] != 0 {
+		t.Errorf("MAXLEN attr type = %d, want NFQA_CFG_QUEUE_MAXLEN(3)", m3[2])
+	}
+	wantMaxlen := []byte{0, 0, 4, 0} // 1024 BE
+	if string(m3[4:8]) != string(wantMaxlen) {
+		t.Errorf("MAXLEN = % x, want % x (1024 BE)", m3[4:8], wantMaxlen)
+	}
+
+	// Message 4: MASK + FLAGS. Two attrs: type=4 (mask), type=5
+	// (flags), both with payload = CONNTRACK (1<<1). FAIL_OPEN never set.
+	m4 := msgs[3].Data[4:]
+	maskAttr := m4[0:8]
+	flagsAttr := m4[8:16]
+	if maskAttr[2] != 4 || maskAttr[3] != 0 {
+		t.Errorf("MASK attr type = %d, want NFQA_CFG_MASK(4)", maskAttr[2])
+	}
+	if flagsAttr[2] != 5 || flagsAttr[3] != 0 {
+		t.Errorf("FLAGS attr type = %d, want NFQA_CFG_FLAGS(5)", flagsAttr[2])
+	}
+	maskVal := binary.BigEndian.Uint32(maskAttr[4:8])
+	flagsVal := binary.BigEndian.Uint32(flagsAttr[4:8])
+	if maskVal != 2 || flagsVal != 2 {
+		t.Errorf("mask/flags = %d/%d, want 2/2 (CONNTRACK 1<<1)", maskVal, flagsVal)
+	}
+	if flagsVal&1 != 0 {
+		t.Error("FAIL_OPEN (1<<0) requested in flags")
+	}
+}
+
+// TestConfigCommandValuesUAPI pins the command mapping against the Linux
+// UAPI so a duplicated wrong constant cannot pass unnoticed.
+func TestConfigCommandValuesUAPI(t *testing.T) {
+	if nfqnlCfgCmdBind != 1 {
+		t.Errorf("nfqnlCfgCmdBind = %d, want NFQNL_CFG_CMD_BIND(1)", nfqnlCfgCmdBind)
+	}
+	if nfqnlCfgCmdUnbind != 2 {
+		t.Errorf("nfqnlCfgCmdUnbind = %d, want NFQNL_CFG_CMD_UNBIND(2)", nfqnlCfgCmdUnbind)
+	}
+	if nfqnlCfgCmdPfBind != 3 {
+		t.Errorf("nfqnlCfgCmdPfBind = %d, want NFQNL_CFG_CMD_PF_BIND(3)", nfqnlCfgCmdPfBind)
+	}
+}
+
+// TestConfigSequenceNoUnbind asserts the initialization never sends an
+// UNBIND or PF_BIND command (the original defect sent command byte 2,
+// which the kernel decodes as UNBIND, destroying the queue).
+func TestConfigSequenceNoUnbind(t *testing.T) {
+	b := &Backend{queue: 0, maxlen: 1024}
+	for i, m := range b.configMessages() {
+		data := m.Data[4:]
+		for off := 0; off+8 <= len(data); {
+			if data[off+2] == 1 && data[off+3] == 0 {
+				cmd := data[off+4]
+				if cmd == nfqnlCfgCmdUnbind {
+					t.Errorf("msg %d: UNBIND(2) command present", i)
+				}
+				if cmd == nfqnlCfgCmdPfBind {
+					t.Errorf("msg %d: PF_BIND(3) command present", i)
+				}
+			}
+			off += 4
+		}
 	}
 }
