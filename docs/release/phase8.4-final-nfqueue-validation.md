@@ -2,7 +2,9 @@
 
 Date: 2026-11-10. Branch: `phase7-baseline`.
 
-## Verdict: **PENDING privileged integration results** (final VM run in progress)
+## Verdict: **BLOCKED** (release gate)
+
+Host regression, protocol fixes, and unit/golden tests: PASS. The privileged integration suite on the Debian VM proves BIND/config/readiness/hook-cleanup/fail-closed-DROP all work, but **conntrack-dependent scenarios (stateful allow path, overflow, NAT, recovery) cannot be validated in this VM**: the VM kernel's conntrack hooks do not run in fresh lab netns (root-ns tracking works; lab netns stays empty with zero stat counters). These scenarios require a conntrack-capable netns environment (e.g., GitHub `ubuntu-latest` runner). CI for this branch is UNVERIFIED (unpushed).
 
 ---
 
@@ -53,9 +55,23 @@ Temporary `debugWire` instrumentation and the `tests/bindprobe` diagnostic progr
 
 ## D. VM privileged integration
 
-(Final run in progress — results appended.)
+Final suite runs (Debian 13 VM, kernel 6.12.116, source verified by SHA-256 against the working tree):
+
+| Scenario | Result | Evidence |
+| --- | --- | --- |
+| NFQUEUE BIND + config | PASS | standalone probe: BIND→PARAMS→MAXLEN→FLAGS all ACK; `/proc/net/netfilter/nfnetlink_queue` shows queue 0 (copy_mode 2) |
+| Readiness lifecycle | PASS | `TestReadinessFalseUntilEnforced` passes (API /readyz 200 only after queue bound) |
+| Hook/cleanup scope | PASS | `TestHookCleanupScope` passes (foreign table survives; app table removed) |
+| Fail-closed DROP (state) | PASS | `TestStateUnsolicitedInbound`, `TestStateInvalidConnection` pass; metrics show denied traffic dropped |
+| Fail-closed after kill | PARTIAL | crash test pre-crash allow-path fails (see conntrack environment limitation); the SIGKILL fail-closed *drop* path is covered by `TestLabQueueNoListener`/default-drop semantics (kernel chain drop) |
+| Allowed TCP/UDP flow | BLOCKED (environment) | `ct` rule installs and matches, but VM netns conntrack hooks do not run (empty `nf_conntrack`, zero stat counters) → packets untracked → engine (correctly) fails closed. Not validated here |
+| Queue overflow | BLOCKED (environment) | depends on live packet flow; same conntrack-neutered netns |
+| Conntrack states | BLOCKED (environment) | same root cause |
+| Cleanup | PASS | `scripts/lab.sh down` clean; no leftover `gsh_*` netns/veth/nft state; host (VM root ns) untouched |
+
+Verdict on the VM: **environment-blocked for conntrack-dependent scenarios** — not a product regression. The 4 passing tests plus root-ns conntrack success demonstrate the kernel supports CT; the fresh-netns hook non-run is a VM-kernel quirk.
 
 ## E. Remaining blockers
 
-- Final VM integration results.
-- GitHub Actions CI (branch unpushed; no push authorization).
+1. **Privileged suite on a conntrack-capable netns environment** (GitHub `ubuntu-latest` runner or a standard Linux host): required to complete stateful allow-path, overflow, NAT, crash/restart-recovery validation. The CI integration job (`cbd4aee`) fails on any SKIP, so it cannot pass with skipped tests.
+2. **GitHub Actions CI verification**: branch unpushed; no push authorization. CI is UNVERIFIED for this branch.
