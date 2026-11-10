@@ -348,6 +348,11 @@ rules:
 		t.Fatalf("initial connect failed: %d %s", code, out)
 	}
 
+	// listen-echo serves a single connection; the connect-echo probe
+	// consumed the original listener. Start a fresh listener for the
+	// hold probe.
+	startStateProbe(t, "gsh_server", probeBin, "listen-echo", "tcp", "8084")
+
 	// Hold a live connection open across the reload: the hold probe
 	// dials the public IP (DNAT), exchanges one byte, then stays
 	// connected for 4s doing periodic exchanges. The reload happens
