@@ -172,3 +172,32 @@ func TestFailClosedNeverRequestsFailOpen(t *testing.T) {
 		t.Fatalf("config flags request FAIL_OPEN (flags=%#x): queue overflow would bypass the firewall", flags)
 	}
 }
+
+// TestHandlePacketKernelFraming verifies packetAttrs strips the 4-byte
+// nfgenmsg prefix before attribute parsing, as the kernel frames packet
+// messages (nlmsghdr + nfgenmsg + attributes). Without this, the parser
+// reads the nfgenmsg as garbage attribute headers and drops every packet.
+func TestHandlePacketKernelFraming(t *testing.T) {
+	tcpOK := buildIPv4(0, 6, "10.0.0.1", "10.0.0.2", 0, 0, 5, tcp4(12345, 80, 0x02))
+	// Kernel layout: nfgenmsg(4) + NFQA_PACKET_HDR + NFQA_PAYLOAD.
+	hdr := make([]byte, 8)
+	binary.BigEndian.PutUint32(hdr[0:], 42)
+	var attrStream []byte
+	attrStream = append(attrStream, attr(nfqaPacketHdr, hdr)...)
+	attrStream = append(attrStream, attr(nfqaPayload, tcpOK)...)
+	// Full kernel message Data (after nlmsghdr): nfgenmsg + attrs.
+	kernelData := append([]byte{2, 0, 0, 0}, attrStream...)
+
+	b := &Backend{}
+	b.decide = func(policy.Packet) policy.Verdict { return policy.Verdict{Action: policy.ActionAccept} }
+	id, v := b.evaluate(packetAttrs(kernelData))
+	if v != nfAccept {
+		t.Errorf("verdict = %d, want accept", v)
+	}
+	if id != 42 {
+		t.Errorf("packet id = %d, want 42", id)
+	}
+	if b.Stats.ParseErrors.Load() != 0 {
+		t.Errorf("ParseErrors = %d, want 0", b.Stats.ParseErrors.Load())
+	}
+}

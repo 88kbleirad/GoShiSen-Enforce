@@ -343,10 +343,12 @@ func (b *Backend) Run(ctx context.Context) error {
 }
 
 // handlePacket processes one queued packet. It never returns without
-// sending a verdict.
+// sending a verdict. Kernel NFQUEUE packet messages are framed as
+// nlmsghdr + nfgenmsg(4) + attributes; the nfgenmsg must be skipped
+// before attribute parsing.
 func (b *Backend) handlePacket(m netlink.Message) {
 	b.Stats.PacketsSeen.Add(1)
-	pktID, verdict := b.evaluate(m.Data)
+	pktID, verdict := b.evaluate(packetAttrs(m.Data))
 	if err := b.sendVerdict(pktID, verdict); err != nil {
 		b.Stats.SendErrors.Add(1)
 	}
@@ -356,6 +358,18 @@ func (b *Backend) handlePacket(m netlink.Message) {
 	} else {
 		b.Stats.Dropped.Add(1)
 	}
+}
+
+// packetAttrs returns the attribute stream of an NFQUEUE message. The
+// kernel frames packet messages as nlmsghdr + nfgenmsg(4) + attributes
+// (mdlayher strips the nlmsghdr into Header, leaving nfgenmsg first in
+// Data), so the leading 4-byte nfgenmsg must be skipped before
+// attribute parsing.
+func packetAttrs(data []byte) []byte {
+	if len(data) >= 4 {
+		return data[4:]
+	}
+	return data
 }
 
 // evaluate parses the payload and decides. It recovers from any panic and
