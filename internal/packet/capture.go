@@ -125,6 +125,11 @@ func parseAttrs(b []byte, fn func(typ uint16, payload []byte) bool) {
 			return
 		}
 		al := (l + 3) &^ 3
+		// A malformed/truncated trailing attribute may have an aligned
+		// length beyond the buffer; bail out instead of panicking.
+		if al > len(b) {
+			return
+		}
 		b = b[al:]
 	}
 }

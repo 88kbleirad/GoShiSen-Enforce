@@ -268,3 +268,21 @@ func TestCTInfoWireEncoding(t *testing.T) {
 		}
 	})
 }
+
+// TestParseAttrsTruncatedNoPanic verifies a malformed trailing attribute
+// (aligned length beyond the buffer) is skipped without panicking. This
+// previously crashed the daemon with "slice bounds out of range".
+func TestParseAttrsTruncatedNoPanic(t *testing.T) {
+	// A valid 12-byte attr followed by a truncated attr whose header
+	// declares length 72 (payload extends past the buffer).
+	stream := attr(nfqaPacketHdr, make([]byte, 8))
+	stream = append(stream, 72, 0, 0, 0) // len=72, type=0
+	count := 0
+	parseAttrs(stream, func(typ uint16, p []byte) bool {
+		count++
+		return true
+	})
+	if count != 1 {
+		t.Errorf("parsed %d attrs, want 1 (trailing truncated attr skipped)", count)
+	}
+}
