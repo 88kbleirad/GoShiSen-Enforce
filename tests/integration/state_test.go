@@ -98,7 +98,8 @@ func startStateFirewall(t *testing.T, polPath string) {
 			_ = cmd.Process.Kill()
 		}
 	})
-	time.Sleep(800 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond) // allow exec
+	waitForDaemonReady(t, logFile.Name())
 }
 
 // reloadPolicy rewrites the policy file and signals the daemon (SIGHUP).

@@ -94,13 +94,19 @@ rules: []
 `)
 	startStateFirewall(t, polPath)
 
-	// The daemon is fully bound by the time startStateFirewall returns
-	// (it sleeps 800ms after exec). Assert readiness is 200 now.
-	code, out := runStateProbe(t, "httpget", "tcp", "127.0.0.1", "8080", "/readyz")
-	if code != 0 {
-		t.Fatalf("readyz probe failed: %d %s", code, out)
-	}
-	if !strings.Contains(out, "HTTP 200") {
-		t.Errorf("readyz = %s, want HTTP 200 (enforcement up)", out)
+	// The daemon is ready (waitForDaemonReady ensures queue bind); the
+	// API listener may take a moment to open. Retry briefly.
+	var code int
+	var out string
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		code, out = runStateProbe(t, "httpget", "tcp", "127.0.0.1", "8080", "/readyz")
+		if code == 0 && strings.Contains(out, "HTTP 200") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("readyz never 200: code=%d out=%s", code, out)
+		}
+		time.Sleep(200 * time.Millisecond)
 	}
 }

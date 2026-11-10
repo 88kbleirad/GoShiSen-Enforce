@@ -102,7 +102,7 @@ func listenTCPEchoReport(port int) {
 // connectTCPEchoReport connects, reads the "from" greeting, prints it,
 // and exits 0.
 func connectTCPEchoReport(host string, port int) {
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, strconv.Itoa(port)), 3*time.Second)
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, strconv.Itoa(port)), 8*time.Second)
 	if err != nil {
 		die("connect tcp-echo-report %s:%d: %v", host, port, err)
 	}
@@ -123,7 +123,7 @@ func connectTCPEchoReport(host string, port int) {
 // talkHold connects to the target, exchanges one byte, then stays
 // connected for hold seconds (keeps the conntrack entry alive).
 func talkHold(host string, port, hold int) {
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, strconv.Itoa(port)), 3*time.Second)
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, strconv.Itoa(port)), 8*time.Second)
 	if err != nil {
 		die("dial hold: %v", err)
 	}
@@ -162,7 +162,7 @@ func listenUDP(port int) {
 }
 
 func connectTCP(host string, port int) {
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, strconv.Itoa(port)), 3*time.Second)
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, strconv.Itoa(port)), 8*time.Second)
 	if err != nil {
 		die("connect tcp %s:%d: %v", host, port, err)
 	}
@@ -171,7 +171,7 @@ func connectTCP(host string, port int) {
 }
 
 func connectTCPEcho(host string, port int) {
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, strconv.Itoa(port)), 3*time.Second)
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, strconv.Itoa(port)), 8*time.Second)
 	if err != nil {
 		die("connect tcp-echo %s:%d: %v", host, port, err)
 	}
@@ -190,7 +190,7 @@ func connectTCPEcho(host string, port int) {
 
 // connectUDP sends one datagram and waits for an echo.
 func connectUDP(host string, port int) {
-	conn, err := net.DialTimeout("udp", net.JoinHostPort(host, strconv.Itoa(port)), 3*time.Second)
+	conn, err := net.DialTimeout("udp", net.JoinHostPort(host, strconv.Itoa(port)), 8*time.Second)
 	if err != nil {
 		die("dial udp: %v", err)
 	}

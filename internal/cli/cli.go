@@ -81,7 +81,7 @@ EXAMPLES:
 type Options struct {
 	ConfigFile string
 	Command    string // "" | "config" | "policy"
-	Subcommand string // "" | "show" | "check" | "validate" | "simulate"
+	Subcommand string // "" | "show" | "check" | "validate" | "simulate" | "status" | "cleanup"
 	ShowHelp   bool
 	ShowVer    bool
 	Overrides  config.Overrides
@@ -150,7 +150,7 @@ func Parse(args []string, stderr io.Writer) (*Options, error) {
 	if len(rest) > 0 {
 		opts.Command = rest[0]
 	}
-	if opts.Command == "config" || opts.Command == "policy" {
+	if opts.Command == "config" || opts.Command == "policy" || opts.Command == "hook" {
 		if len(rest) > 1 {
 			opts.Subcommand = rest[1]
 		}

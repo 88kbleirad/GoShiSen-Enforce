@@ -9,7 +9,6 @@ package integration
 
 import (
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -59,11 +58,14 @@ func buildProbe(t *testing.T) {
 		return
 	}
 	root := repoRoot(t)
+	// The probe binary is a package-level artifact shared by every test.
+	// It must NOT be cleaned up when the first test finishes (a
+	// t.Cleanup registered here would delete it before later tests use
+	// it). It lives in a per-run temp dir for the process lifetime.
 	tmp, err := os.MkdirTemp("", "gsh-probe-")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(tmp) })
 	probeBin = filepath.Join(tmp, "probe")
 	cmd := exec.Command("go", "build", "-o", probeBin, "./tests/integration/probe")
 	cmd.Dir = root
@@ -112,23 +114,32 @@ func startProbe(t *testing.T, ns, proto string, port int) {
 
 func waitForPort(t *testing.T, ns, proto string, port int) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	// The listener runs inside the namespace; the host has no route to
+	// 10.99.1.2, so readiness must be checked from inside the ns. Read
+	// the ns's socket table (no side effects, unlike a connect probe
+	// which would consume the single-accept listener).
+	procFile := "/proc/net/tcp"
+	if proto == "udp" {
+		procFile = "/proc/net/udp"
+	}
+	needle := fmt.Sprintf(":%04X", port) // local_address port, upper-case hex
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		addr := net.JoinHostPort("10.99.1.2", fmt.Sprint(port))
-		if proto == "tcp" {
-			conn, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
-			if err == nil {
-				conn.Close()
-				return
-			}
-		} else {
-			conn, err := net.DialTimeout("udp", addr, 200*time.Millisecond)
-			if err == nil {
-				conn.Close()
+		out, err := runNs(t, ns, "cat", procFile)
+		if err == nil {
+			for _, line := range strings.Split(out, "\n") {
+				f := strings.Fields(line)
+				if len(f) < 4 || !strings.Contains(f[1], needle) {
+					continue
+				}
+				// TCP: only a LISTEN socket (state 0A) counts.
+				if proto == "tcp" && f[3] != "0A" {
+					continue
+				}
 				return
 			}
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 	}
 	t.Fatalf("probe listener %s:%d in ns %s did not come up", proto, port, ns)
 }
@@ -184,7 +195,7 @@ func startFirewallFull(t *testing.T, policyYAML string, extraArgs ...string) *fi
 			_ = fp.cmd.Process.Kill()
 		}
 	})
-	time.Sleep(800 * time.Millisecond) // allow hook install + queue bind
+	time.Sleep(200 * time.Millisecond) // allow exec + startup log line
 	return fp
 }
 
@@ -192,7 +203,32 @@ func startFirewallFull(t *testing.T, policyYAML string, extraArgs ...string) *fi
 // policy file content, waits for it to bind, and registers cleanup.
 func startFirewall(t *testing.T, policyYAML string) {
 	t.Helper()
-	startFirewallFull(t, policyYAML)
+	fp := startFirewallFull(t, policyYAML)
+	waitForDaemonReady(t, fp.logPath)
+}
+
+// waitForDaemonReady polls the daemon log until the NFQUEUE is bound
+// (the enforcement path is up). This replaces fixed sleeps, which are
+// unreliable under slow emulation (TCG) or loaded hosts.
+func waitForDaemonReady(t *testing.T, logPath string) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		data, err := os.ReadFile(logPath)
+		if err == nil && strings.Contains(string(data), "NFQUEUE bound") {
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	t.Fatalf("daemon did not become ready (no NFQUEUE bound in log):\n%s", mustReadLog(logPath))
+}
+
+func mustReadLog(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Sprintf("<read %s: %v>", path, err)
+	}
+	return string(data)
 }
 
 // probe runs one client-side probe and returns (exitcode, output).
