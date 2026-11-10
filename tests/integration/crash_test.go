@@ -66,6 +66,11 @@ rules:
 	// reinstalled by Install atomically).
 	startStateFirewall(t, polPath)
 
+	// listen-echo serves a single connection; the pre-crash probe
+	// consumed the original listener. Start a fresh listener for the
+	// post-restart probe.
+	startStateProbe(t, "gsh_server", probeBin, "listen-echo", "tcp", "8080")
+
 	code, out = runStateProbe(t, "connect-echo", "tcp", "10.99.1.2", "8080")
 	if code != 0 {
 		t.Fatalf("post-restart probe failed: %d %s", code, out)

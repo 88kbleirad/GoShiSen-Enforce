@@ -356,6 +356,10 @@ rules:
     protocol: udp
     dst: 10.99.1.2
     dst_port: 5353
+  - id: allow-estab
+    action: ACCEPT
+    protocol: udp
+    state: [ESTABLISHED, RELATED]
 `)
 	code, out := probe(t, "udp", "10.99.1.2", 5353)
 	if code != 0 {

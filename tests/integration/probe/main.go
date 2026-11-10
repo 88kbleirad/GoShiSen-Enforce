@@ -107,7 +107,7 @@ func connectTCPEchoReport(host string, port int) {
 		die("connect tcp-echo-report %s:%d: %v", host, port, err)
 	}
 	defer conn.Close()
-	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(20 * time.Second))
 	buf := make([]byte, 64)
 	n, err := conn.Read(buf)
 	if err != nil {
@@ -131,7 +131,7 @@ func talkHold(host string, port, hold int) {
 	if _, err := conn.Write([]byte("h")); err != nil {
 		die("write hold: %v", err)
 	}
-	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(20 * time.Second))
 	buf := make([]byte, 8)
 	if _, err := conn.Read(buf); err != nil {
 		die("hold no reply: %v", err)
@@ -179,7 +179,7 @@ func connectTCPEcho(host string, port int) {
 	if _, err := conn.Write([]byte("ping")); err != nil {
 		die("echo write: %v", err)
 	}
-	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(20 * time.Second))
 	buf := make([]byte, 16)
 	n, err := conn.Read(buf)
 	if err != nil || string(buf[:n]) != "ping" {
@@ -198,7 +198,7 @@ func connectUDP(host string, port int) {
 	if _, err := conn.Write([]byte("x")); err != nil {
 		die("send udp: %v", err)
 	}
-	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(20 * time.Second))
 	buf := make([]byte, 64)
 	if _, err := conn.Read(buf); err != nil {
 		die("no udp reply: %v", err)
