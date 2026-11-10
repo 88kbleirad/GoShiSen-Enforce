@@ -23,7 +23,10 @@ import (
 // startProbe but for the stateful echo modes.
 func startStateProbe(t *testing.T, ns string, args ...string) {
 	t.Helper()
-	full := append([]string{"netns", "exec", ns, probeBin}, args...)
+	// Callers pass the probe binary as args[0]; do NOT prepend it
+	// again (that would run `probe probe listen-echo …` and the probe
+	// would exit with "unknown op").
+	full := append([]string{"netns", "exec", ns}, args...)
 	cmd := exec.Command("ip", full...)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start state probe %v: %v", args, err)
