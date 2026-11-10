@@ -63,11 +63,12 @@ const (
 	ctaProtoInfoTCP      = 2
 	ctaProtoInfoTCPState = 1
 
-	// ip_conntrack_info bits (nf_conntrack_common.h).
-	ipCTEstablished = 1
-	ipCTRelated     = 2
-	ipCTNew         = 3
-	ipCTIsReply     = 4
+	// ip_conntrack_info bits (nf_conntrack_common.h). The enum is
+	// 0-based: ESTABLISHED=0, RELATED=1, NEW=2, IS_REPLY=3.
+	ipCTEstablished = 0
+	ipCTRelated     = 1
+	ipCTNew         = 2
+	ipCTIsReply     = 3
 
 	nfAccept = 1
 	nfDrop   = 0
@@ -381,6 +382,7 @@ func (b *Backend) evaluate(payload []byte) (uint32, int) {
 	var pktID uint32
 	var copyBuf []byte
 	var ctInfo byte
+	var ctPresent bool
 	var ctAttr []byte
 	parseAttrs(payload, func(typ uint16, p []byte) bool {
 		switch typ {
@@ -391,8 +393,12 @@ func (b *Backend) evaluate(payload []byte) (uint32, int) {
 		case nfqaPayload:
 			copyBuf = p
 		case nfqaCTInfo:
-			if len(p) >= 1 {
-				ctInfo = p[0]
+			// NFQA_CT_INFO is a __be32 (see ctnetlink_glue_build:
+			// nla_put_be32(..., htonl(ctinfo))). Reading only the first
+			// byte would always yield 0 for valid ctinfo values.
+			if len(p) >= 4 {
+				ctInfo = byte(binary.BigEndian.Uint32(p[0:4]))
+				ctPresent = true
 			}
 		case nfqaCT:
 			ctAttr = p
@@ -417,7 +423,7 @@ func (b *Backend) evaluate(payload []byte) (uint32, int) {
 		return pktID, nfDrop
 	}
 	p := res.Packet
-	applyCTInfo(&p, ctInfo, ctAttr)
+	applyCTInfo(&p, ctInfo, ctPresent, ctAttr)
 	v := b.decide(p)
 	switch v.Action {
 	case policy.ActionAccept:
@@ -431,20 +437,31 @@ func (b *Backend) evaluate(payload []byte) (uint32, int) {
 // packet's state/direction fields. When conntrack attrs are absent, the
 // packet is INVALID (untracked) unless it is a NEW original-direction
 // packet, which we leave stateless so stateless rules can still accept it.
-func applyCTInfo(p *policy.Packet, ctInfo byte, ctAttr []byte) {
-	if ctInfo == 0 {
+// applyCTInfo maps the kernel's conntrack attributes onto the engine
+// packet's state/direction fields.
+//
+// ctInfo is enum ip_conntrack_info (nf_conntrack_common.h): the values
+// are additive — 0..2 are original direction (ESTABLISHED, RELATED,
+// NEW) and IP_CT_IS_REPLY(3) is a threshold; reply packets have
+// ctInfo >= 3 with base = ctInfo - IP_CT_IS_REPLY. present reports
+// whether NFQA_CT_INFO was attached at all (a packet with no
+// conntrack entry has none, and is INVALID/untracked).
+func applyCTInfo(p *policy.Packet, ctInfo byte, present bool, ctAttr []byte) {
+	if !present {
 		p.State = policy.StateInvalid
 		p.TCPState = -1
 		return
 	}
 	info := int(ctInfo)
-	reply := info&ipCTIsReply != 0
+	reply := info >= ipCTIsReply
+	base := info
 	if reply {
+		base = info - ipCTIsReply
 		p.Direction = policy.DirReply
 	} else {
 		p.Direction = policy.DirOriginal
 	}
-	switch info &^ ipCTIsReply {
+	switch base {
 	case ipCTNew:
 		p.State = policy.StateNew
 	case ipCTEstablished:

@@ -111,22 +111,24 @@ func TestApplyCTInfo(t *testing.T) {
 	cases := []struct {
 		name         string
 		ctInfo       byte
+		present      bool
 		ctAttr       []byte
 		wantState    policy.State
 		wantDir      policy.Direction
 		wantTCPState int
 	}{
-		{"no ct attrs", 0, nil, policy.StateInvalid, policy.DirOriginal, -1},
-		{"new original", ipCTNew, ctAttr, policy.StateNew, policy.DirOriginal, 5},
-		{"established original", ipCTEstablished, ctAttr, policy.StateEstablished, policy.DirOriginal, 5},
-		{"established reply", ipCTEstablished | ipCTIsReply, ctAttr, policy.StateEstablished, policy.DirReply, 5},
-		{"related reply", ipCTRelated | ipCTIsReply, ctAttr, policy.StateRelated, policy.DirReply, 5},
-		{"no tcp protoinfo", ipCTEstablished, nil, policy.StateEstablished, policy.DirOriginal, -1},
+		{"no ct attrs", 0, false, nil, policy.StateInvalid, policy.DirOriginal, -1},
+		{"new original", ipCTNew, true, ctAttr, policy.StateNew, policy.DirOriginal, 5},
+		{"established original", ipCTEstablished, true, ctAttr, policy.StateEstablished, policy.DirOriginal, 5},
+		{"established reply", ipCTEstablished + ipCTIsReply, true, ctAttr, policy.StateEstablished, policy.DirReply, 5},
+		{"related reply", ipCTRelated + ipCTIsReply, true, ctAttr, policy.StateRelated, policy.DirReply, 5},
+		{"new reply", ipCTNew + ipCTIsReply, true, ctAttr, policy.StateNew, policy.DirReply, 5},
+		{"no tcp protoinfo", ipCTEstablished, true, nil, policy.StateEstablished, policy.DirOriginal, -1},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			p := policy.Packet{}
-			applyCTInfo(&p, tc.ctInfo, tc.ctAttr)
+			applyCTInfo(&p, tc.ctInfo, tc.present, tc.ctAttr)
 			if p.State != tc.wantState {
 				t.Errorf("state = %v, want %v", p.State, tc.wantState)
 			}
@@ -148,7 +150,11 @@ func TestApplyCTInfo(t *testing.T) {
 		return policy.Verdict{Action: policy.ActionAccept}
 	}
 	hdr := attr(nfqaPacketHdr, []byte{0, 0, 0, 7})
-	payload := append(append(hdr, attr(nfqaPayload, base)...), attr(nfqaCTInfo, []byte{ipCTEstablished | ipCTIsReply})...)
+	// NFQA_CT_INFO is a __be32 (ctnetlink_glue_build uses
+	// nla_put_be32(..., htonl(ctinfo))), not a single byte.
+	ctInfo := make([]byte, 4)
+	binary.BigEndian.PutUint32(ctInfo, uint32(ipCTEstablished+ipCTIsReply))
+	payload := append(append(hdr, attr(nfqaPayload, base)...), attr(nfqaCTInfo, ctInfo)...)
 	id, v := b.evaluate(payload)
 	if v != nfAccept {
 		t.Fatalf("verdict = %d, want accept", v)
@@ -200,4 +206,65 @@ func TestHandlePacketKernelFraming(t *testing.T) {
 	if b.Stats.ParseErrors.Load() != 0 {
 		t.Errorf("ParseErrors = %d, want 0", b.Stats.ParseErrors.Load())
 	}
+}
+
+// TestCTInfoWireEncoding pins the NFQA_CT_INFO wire format: a __be32
+// (ctnetlink_glue_build writes nla_put_be32(..., htonl(ctinfo))).
+// Parsing it as a single byte yields 0 for valid ctinfo values, which
+// caused every packet to be classified INVALID.
+func TestCTInfoWireEncoding(t *testing.T) {
+	tcpOK := buildIPv4(0, 6, "10.0.0.1", "10.0.0.2", 0, 0, 5, tcp4(12345, 80, 0x02))
+	cases := []struct {
+		name      string
+		ctinfo    uint32
+		wantState policy.State
+		wantDir   policy.Direction
+	}{
+		{"new original", ipCTNew, policy.StateNew, policy.DirOriginal},
+		{"established original", ipCTEstablished, policy.StateEstablished, policy.DirOriginal},
+		{"established reply", ipCTEstablished + ipCTIsReply, policy.StateEstablished, policy.DirReply},
+		{"related reply", ipCTRelated + ipCTIsReply, policy.StateRelated, policy.DirReply},
+		{"new reply", ipCTNew + ipCTIsReply, policy.StateNew, policy.DirReply},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctInfo := make([]byte, 4)
+			binary.BigEndian.PutUint32(ctInfo, tc.ctinfo)
+			b := &Backend{}
+			var got policy.Packet
+			b.decide = func(p policy.Packet) policy.Verdict {
+				got = p
+				return policy.Verdict{Action: policy.ActionAccept}
+			}
+			hdr := attr(nfqaPacketHdr, []byte{0, 0, 0, 1})
+			payload := append(append(hdr, attr(nfqaPayload, tcpOK)...), attr(nfqaCTInfo, ctInfo)...)
+			if _, v := b.evaluate(payload); v != nfAccept {
+				t.Fatalf("verdict = %d, want accept", v)
+			}
+			if got.State != tc.wantState {
+				t.Errorf("state = %v, want %v", got.State, tc.wantState)
+			}
+			if got.Direction != tc.wantDir {
+				t.Errorf("direction = %v, want %v", got.Direction, tc.wantDir)
+			}
+		})
+	}
+
+	// Untracked: no NFQA_CT_INFO attribute -> INVALID (fail-closed).
+	t.Run("untracked", func(t *testing.T) {
+		b := &Backend{}
+		var got policy.Packet
+		b.decide = func(p policy.Packet) policy.Verdict {
+			got = p
+			return policy.Verdict{Action: policy.ActionAccept}
+		}
+		hdr := attr(nfqaPacketHdr, []byte{0, 0, 0, 1})
+		payload := append(hdr, attr(nfqaPayload, tcpOK)...)
+		if _, v := b.evaluate(payload); v != nfAccept {
+			t.Fatalf("verdict = %d, want accept", v)
+		}
+		if got.State != policy.StateInvalid {
+			t.Errorf("state = %v, want INVALID", got.State)
+		}
+	})
 }
