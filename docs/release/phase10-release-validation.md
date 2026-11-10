@@ -10,6 +10,8 @@ Date: 2026-11-10. Status: in progress — merge/tag/release pending explicit aut
 ## Tag CI trigger (Step B)
 - Added `tags: ["v*"]` to `.github/workflows/ci.yml` push trigger; committed `f1f09c1a5db024d33ea5d4c2730363bd900c7170`.
 - Workflow YAML validated; all jobs preserved (build/vet/race/integration, skip-rejection, streamed output, cleanup).
+- Candidate PR run: `42819392387`; push run: `42819383699`.
+- Final head (docs evidence commit): `77ce4d2dfb6dba4807e44f83fcd72c00d47c64d8`; PR run `42819556665`, push run `42819546461`.
 
 ## Final release gate (Step C)
 | Gate | Result |
