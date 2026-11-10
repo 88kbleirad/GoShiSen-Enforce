@@ -14,8 +14,8 @@ Run in order. Every item must pass before tagging.
 
 ## 2. Privileged integration suite (root host, in the lab)
 
-- [ ] Prereqs: root/CAP_NET_ADMIN, `ip`, `nft`, network namespaces, veth, `nf_tables`/`nfnetlink_queue`/`nf_conntrack`, Go ≥ 1.25.
-- [ ] `sudo scripts/lab.sh up` succeeds; `sudo make integration` runs the full suite:
+- [x] Prereqs verification is now **functional**: `checkPrereqs` creates a throwaway namespace and asserts `nf_conntrack_count > 0` after a real TCP flow (skip with explicit reason otherwise). Reviewer: `tests/integration/e2e_test.go` `checkConntrackNFQUEUE`.
+- [ ] `sudo scripts/lab.sh up` succeeds; `sudo make integration` runs the full suite (all mandatory tests **must execute; skips are a release blocker**):
   - default DROP; explicit TCP/UDP allow; denied traffic; first-match semantics
   - stateful handshake+echo; unsolicited inbound; INVALID state; timeout/hold; UDP reuse
   - policy reload while established (SIGHUP atomic; old policy kept on failure)
@@ -25,6 +25,8 @@ Run in order. Every item must pass before tagging.
   - hook cleanup scope (host nftables untouched; foreign table survives)
 - [ ] `sudo scripts/lab.sh down` clean; `ip netns list` shows no `gsh_*` leftovers.
 - [ ] Teardown also runs after a killed/aborted test (cleanup traps).
+
+**Status note (Phase 8.5):** the VM (Debian 13, kernel 6.12.116, QEMU TCG) passes BIND/readiness/hook-cleanup/fail-closed-DROP but does not deliver conntrack metadata on queued packets (VM kernel/netns quirk; root-ns tracking works). Stateful allow/NAT/overflow/recovery therefore remain **unvalidated** pending a conntrack-capable runner (GitHub `ubuntu-24.04`). Evidence: `docs/release/phase8.5-conntrack-ci-validation.md`.
 
 ## 3. Security & hardening checks
 
