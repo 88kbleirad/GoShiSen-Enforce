@@ -118,15 +118,22 @@ func waitForPort(t *testing.T, ns, proto string, port int) {
 	// 10.99.1.2, so readiness must be checked from inside the ns. Read
 	// the ns's socket table (no side effects, unlike a connect probe
 	// which would consume the single-accept listener).
-	procFile := "/proc/net/tcp"
+	//
+	// Go's net.Listen("tcp", "0.0.0.0:port") creates a dual-stack
+	// socket that appears in /proc/net/tcp6 (as an IPv6-mapped address),
+	// NOT /proc/net/tcp. Scan both files.
+	procFiles := []string{"/proc/net/tcp", "/proc/net/tcp6"}
 	if proto == "udp" {
-		procFile = "/proc/net/udp"
+		procFiles = []string{"/proc/net/udp", "/proc/net/udp6"}
 	}
 	needle := fmt.Sprintf(":%04X", port) // local_address port, upper-case hex
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		out, err := runNs(t, ns, "cat", procFile)
-		if err == nil {
+		for _, procFile := range procFiles {
+			out, err := runNs(t, ns, "cat", procFile)
+			if err != nil {
+				continue
+			}
 			for _, line := range strings.Split(out, "\n") {
 				f := strings.Fields(line)
 				if len(f) < 4 || !strings.Contains(f[1], needle) {
