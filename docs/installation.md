@@ -182,7 +182,7 @@ sudo rm /etc/systemd/system/goshisen.service
 sudo systemctl daemon-reload
 ```
 
-The hook (nftables table) is removed on daemon shutdown? no — by
+The hook (nftables table) is not removed on daemon shutdown — by
 design the daemon leaves the hook in place for fail-closed behavior.
 Remove it explicitly with:
 
