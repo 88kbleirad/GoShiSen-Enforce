@@ -17,10 +17,13 @@ make check      # fmt + vet + test + build (the full local gate)
 make run        # build and run with configs/goshisen.yaml
 make clean      # remove bin/
 make tidy       # go mod tidy
+make package     # build all release archives (amd64+arm64) + checksums + SBOM
+make verify-package  # validate the archives: arch, static linkage, version, checksums, SBOM
+make sbom       # (re)generate the SPDX SBOM (requires syft)
 make help       # list all targets
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same gate on Ubuntu: `go mod verify`, gofmt check, `go vet`, `go test -race`, `go build`, and a CLI smoke test.
+CI (`.github/workflows/ci.yml`) runs the same gate on Ubuntu: `go mod verify`, gofmt check, `go vet`, `go test -race`, `go build`, and a CLI smoke test. A `package` job additionally builds + verifies the release archives on every PR (artifacts uploaded for inspection, never published). The `release` workflow (`.github/workflows/release.yml`) runs only on `v*` tags: it builds + verifies and attaches artifacts to a **draft** release for the tag — publication remains a manual, authorized step.
 
 ## Repository layout
 
@@ -43,7 +46,7 @@ scripts/lab.sh       isolated netns lab (up/down/status)
 tests/integration/   real-traffic integration suite + probe helper (root-gated)
 docs/design/         architecture.md, mvp-scope.md (normative design)
 docs/                user guide, this guide
-.github/workflows/   CI (build job + privileged integration job)
+.github/workflows/   CI (build + package + privileged integration jobs); release (tag-triggered, draft-only)
 ```
 
 NAT lives in `internal/hook` (kernel-side nftables chains in the app-owned table); `internal/nat` does not exist — NAT has no separate package. The hook package renders the complete ruleset (filter + NAT) as one atomic `nft -f` transaction.

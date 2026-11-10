@@ -49,6 +49,8 @@ Run in order. Every item must pass before tagging.
 - [ ] `git tag v0.1.0 && git push origin v0.1.0` (after privileged suite passes).
 - [ ] CI on the tag runs green (build + integration jobs, zero mandatory skips).
 - [ ] Version stamp: `make build VERSION=v0.1.0` then `bin/goshisen --version` must print `goshisen v0.1.0` (not `dev`). Guarded in CI (`Verify version stamp` step; `internal/cli.Version` must be a `var`, not a `const` — ldflags `-X` cannot set constants).
+- [ ] Packaging: `make package VERSION=$TAG` builds `goshisen-linux-amd64.tar.gz` + `goshisen-linux-arm64.tar.gz` + `checksums.txt` + `sbom.spdx.json`; `make verify-package VERSION=$TAG` validates arch, static linkage, version stamp, checksums, SBOM; archives byte-reproducible. Guarded by the CI `package` job and `tests/package`.
+- [ ] Release workflow (`.github/workflows/release.yml`) runs on `v*` tags, builds + verifies, and attaches artifacts to the tag's release as a **draft** (never auto-publishes).
 - [ ] Publish the container image (optional) from the tagged checkout with `--cap-drop=ALL --cap-add=NET_ADMIN --cap-add=NET_RAW` per the Dockerfile guidance.
 
 ## 6. Release notes (draft)

@@ -18,7 +18,8 @@ LDFLAGS := -s -w \
 	-X $(PKG)/internal/cli.Version=$(VERSION) \
 	-X $(PKG)/internal/app.Version=$(VERSION)
 
-.PHONY: all build test vet fmt fmt-fix check clean run tidy help test-integration fuzz
+.PHONY: all build test vet fmt fmt-fix check clean run tidy help test-integration fuzz \
+	package package-dist verify-package sbom
 
 .PHONY: integration
 integration: build ## Run the real netns integration suite (requires root)
@@ -63,6 +64,19 @@ run: build ## Build and run the daemon with the sample config
 
 tidy: ## Tidy go.mod / go.sum
 	$(GO) mod tidy
+
+package: ## Build reproducible release archives (amd64 + arm64)
+	VERSION=$(VERSION) ARCH=all bash scripts/package.sh
+
+package-dist: ## Build only the current GOARCH archive
+	VERSION=$(VERSION) bash scripts/package.sh
+
+verify-package: package-dist ## Build and validate the archive (arch, version, checksums, SBOM)
+	@bash scripts/verify-package.sh
+
+sbom: ## Generate an SPDX SBOM over the source tree
+	@syft scan -o spdx-json=sbom.spdx.json . 2>/dev/null || \
+		echo "ERROR: syft not installed (see scripts/package.sh)" >&2
 
 help: ## List targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \

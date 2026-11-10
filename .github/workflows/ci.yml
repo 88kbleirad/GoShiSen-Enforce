@@ -15,8 +15,8 @@ jobs:
     name: build, vet, test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.0.0
         with:
           go-version: "1.25"
           cache: true
@@ -57,12 +57,55 @@ jobs:
             echo "version stamp not applied: got $out"; exit 1
           fi
 
+  package:
+    name: package + verify release archives
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.0.0
+        with:
+          go-version: "1.25"
+          cache: true
+      - name: Install packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends jq
+          # syft pinned to a reviewed immutable version; verify its
+          # published checksum before use.
+          curl -fsSL -o /tmp/syft.tar.gz \
+            https://github.com/anchore/syft/releases/download/v1.30.0/syft_1.30.0_linux_amd64.tar.gz
+          curl -fsSL -o /tmp/syft-checksums.txt \
+            https://github.com/anchore/syft/releases/download/v1.30.0/syft_1.30.0_checksums.txt
+          grep 'syft_1.30.0_linux_amd64.tar.gz' /tmp/syft-checksums.txt > /tmp/expected.sha
+          (cd /tmp && sha256sum -c expected.sha)
+          tar xzf /tmp/syft.tar.gz -C /usr/local/bin syft
+      - name: Build archives
+        run: make package VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
+      - name: Verify archives (arch, version, checksums, SBOM)
+        run: make verify-package VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
+      - name: Verify reproducibility (rebuild must be byte-identical)
+        run: |
+          cp dist/goshisen-linux-amd64.tar.gz /tmp/amd64-first.tar.gz
+          make package VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev) >/dev/null
+          cmp /tmp/amd64-first.tar.gz dist/goshisen-linux-amd64.tar.gz
+      - name: Upload package artifacts (PR validation, never published)
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: goshisen-release-archives
+          path: |
+            dist/goshisen-linux-*.tar.gz
+            dist/checksums.txt
+            dist/sbom.spdx.json
+
   integration:
     name: integration (real netns lab, privileged)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.0.0
         with:
           go-version: "1.25"
           cache: true

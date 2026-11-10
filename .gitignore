@@ -1,3 +1,4 @@
 bin/
-bin/
 probe
+dist/
+sbom.spdx.json
