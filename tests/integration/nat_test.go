@@ -369,11 +369,20 @@ rules:
 	holdDone := make(chan error, 1)
 	go func() { holdDone <- hold.Wait() }()
 	t.Cleanup(func() {
+		// holdDone is a one-shot channel: the test body consumes the
+		// single send. If the body already did, the process is done —
+		// never block waiting for a second send. If it hasn't, kill
+		// and wait with a bound (killing `ip netns exec` may orphan
+		// the probe inside the namespace; the lab teardown reaps it).
 		select {
 		case <-holdDone:
+			return
 		default:
-			_ = hold.Process.Kill()
-			<-holdDone
+		}
+		_ = hold.Process.Kill()
+		select {
+		case <-holdDone:
+		case <-time.After(5 * time.Second):
 		}
 	})
 	time.Sleep(1500 * time.Millisecond) // handshake + first exchange done, holding
