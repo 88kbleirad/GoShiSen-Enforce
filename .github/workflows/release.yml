@@ -24,13 +24,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends jq
-          curl -fsSL -o /tmp/syft.tar.gz \
+          curl -fsSL -o /tmp/syft_1.30.0_linux_amd64.tar.gz \
             https://github.com/anchore/syft/releases/download/v1.30.0/syft_1.30.0_linux_amd64.tar.gz
           curl -fsSL -o /tmp/syft-checksums.txt \
             https://github.com/anchore/syft/releases/download/v1.30.0/syft_1.30.0_checksums.txt
           grep 'syft_1.30.0_linux_amd64.tar.gz' /tmp/syft-checksums.txt > /tmp/expected.sha
           (cd /tmp && sha256sum -c expected.sha)
-          tar xzf /tmp/syft.tar.gz -C /usr/local/bin syft
+          tar xzf /tmp/syft_1.30.0_linux_amd64.tar.gz -C /usr/local/bin syft
       - name: Build archives
         run: make package VERSION=${{ github.ref_name }}
       - name: Verify archives (arch, version, checksums, SBOM)
