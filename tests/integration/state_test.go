@@ -34,11 +34,12 @@ func startStateProbe(t *testing.T, ns string, args ...string) {
 	})
 	// If this is a listener mode, wait until the port is actually bound
 	// (a fixed sleep is unreliable under slow emulation: the client can
-	// receive ECONNREFUSED if the listener is not yet up).
-	if len(args) >= 3 && (args[0] == "listen" || args[0] == "listen-echo" || args[0] == "listen-echo-report") {
-		proto := args[1]
+	// receive ECONNREFUSED if the listener is not yet up). args are
+	// [probeBin, mode, proto, port, ...].
+	if len(args) >= 4 && (args[1] == "listen" || args[1] == "listen-echo" || args[1] == "listen-echo-report") {
+		proto := args[2]
 		port := 0
-		fmt.Sscanf(args[2], "%d", &port)
+		fmt.Sscanf(args[3], "%d", &port)
 		waitForPort(t, ns, proto, port)
 		return
 	}
