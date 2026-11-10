@@ -11,13 +11,13 @@ Date: 2026-11-10. Status: in progress — merge/tag/release pending explicit aut
 - Added `tags: ["v*"]` to `.github/workflows/ci.yml` push trigger; committed `f1f09c1a5db024d33ea5d4c2730363bd900c7170`.
 - Workflow YAML validated; all jobs preserved (build/vet/race/integration, skip-rejection, streamed output, cleanup).
 - Candidate PR run: `42819392387`; push run: `42819383699`.
-- Final head (docs evidence commit): `77ce4d2dfb6dba4807e44f83fcd72c00d47c64d8`; PR run `42819556665`, push run `42819546461`.
+- Final head: `30489782ba49702fbb533c369b03f11aac6ac234`; PR run `42820325126` — build PASS, integration 21/21 PASS, 0 skips (Go 1.25.14, kernel 7.0.0-1017-azure).
 
 ## Final release gate (Step C)
 | Gate | Result |
 |---|---|
-| Final PR CI (f1f09c1) | pending |
-| Mandatory skips | 0 (21/21 at 5bd1c57) |
+| Final PR CI (3048978) | PASS (build + integration 21/21) |
+| Mandatory skips | 0 (21/21 on 3048978) |
 | Review requirements | none (main unprotected) |
 | Secret scan | clean (no credentials in diff) |
 | Release notes | `docs/release-notes-v0.1.0.md` present, reviewed |
