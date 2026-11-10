@@ -28,10 +28,10 @@ const (
 
 	nfqaPacketHdr      = 1
 	nfqaVerdictHdr     = 2
-	nfqaPayload        = 3
-	nfqaCfgCmd         = 4
-	nfqaCfgParams      = 5
-	nfqaCfgQueueMaxlen = 6
+	nfqaPayload        = 10
+	nfqaCfgCmd         = 1
+	nfqaCfgParams      = 2
+	nfqaCfgQueueMaxlen = 3
 	nfqaCT             = 11
 	nfqaCTInfo         = 12
 
