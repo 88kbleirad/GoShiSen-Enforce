@@ -49,12 +49,37 @@ func checkPrereqs(t *testing.T) string {
 	} else {
 		_ = exec.Command("ip", "netns", "del", probe).Run()
 	}
-	// Functional conntrack + NFQUEUE preflight in a throwaway netns:
-	// the suite depends on kernel conntrack being active in fresh
-	// namespaces and on NFQUEUE attaching CT attributes. If this probe
-	// fails, the environment cannot run the stateful/NAT/overflow
-	// scenarios, and skipping with this reason is correct.
+	// Functional NFQUEUE + conntrack preflight in throwaway netns. If
+	// either probe fails, the environment cannot run the integration
+	// scenarios and skipping with this reason is correct; CI rejects
+	// skips.
+	if reason := checkNFQUEUERule(); reason != "" {
+		return reason
+	}
 	return checkConntrackNFQUEUE(t)
+}
+
+// checkNFQUEUERule verifies the kernel accepts an nftables queue rule
+// in a fresh namespace (NFQUEUE subsystem present). Without it, no
+// integration scenario can run.
+func checkNFQUEUERule() string {
+	ns := "gsh_nfq_preflight_" + fmt.Sprint(os.Getpid())
+	defer func() { _ = exec.Command("ip", "netns", "del", ns).Run() }()
+	if out, err := exec.Command("ip", "netns", "add", ns).CombinedOutput(); err != nil {
+		return fmt.Sprintf("cannot create NFQUEUE probe namespace: %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+	nftIn := `table ip gsh_nfq_preflight {
+    chain c {
+        type filter hook forward priority 0; policy accept;
+        meta l4proto { tcp, udp } queue num 0
+    }
+}`
+	cmd := exec.Command("ip", "netns", "exec", ns, "nft", "-f", "-")
+	cmd.Stdin = strings.NewReader(nftIn)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Sprintf("nftables queue rule failed (NFQUEUE unavailable): %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+	return ""
 }
 
 // checkConntrackNFQUEUE creates a minimal namespace and verifies a real

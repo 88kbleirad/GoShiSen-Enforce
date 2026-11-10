@@ -59,11 +59,24 @@ jobs:
           sudo apt-get install -y --no-install-recommends nftables iproute2 procps kmod
       - name: Kernel / capability preflight
         run: |
+          set -e
           uname -r
-          grep -E "CONFIG_NF_CONNTRACK|CONFIG_NETFILTER_NETLINK_QUEUE|CONFIG_NFT_CT|CONFIG_NF_TABLES" /boot/config-$(uname -r) || true
+          echo "== kernel config =="
+          grep -E "CONFIG_NETFILTER_NETLINK_QUEUE|CONFIG_NFT_QUEUE|CONFIG_NF_CONNTRACK|CONFIG_NFT_CT|CONFIG_NF_TABLES|CONFIG_NET_NS" /boot/config-$(uname -r) || true
+          echo "== load modules =="
+          sudo modprobe nfnetlink_queue
           sudo modprobe nf_conntrack
           sudo modprobe nf_conntrack_netlink
+          echo "== NFQUEUE queue-rule probe (netns) =="
+          NS=gsh_ci_probe_$$
+          sudo ip netns add $NS
+          trap 'sudo ip netns del $NS 2>/dev/null || true' EXIT
+          printf 'table ip gsh_ci {\n  chain c {\n    type filter hook forward priority 0; policy accept;\n    meta l4proto { tcp, udp } queue num 0\n  }\n}\n' | \
+            sudo ip netns exec $NS nft -f -
+          echo "queue rule installed OK"
+          echo "== conntrack count =="
           sudo cat /proc/sys/net/netfilter/nf_conntrack_count
+          echo "NFQUEUE/conntrack preflight OK"
       - name: Run privileged integration tests (must not skip)
         run: |
           out=$(sudo -E env "PATH=$PATH" go test ./tests/integration/ -v -count=1 2>&1)
