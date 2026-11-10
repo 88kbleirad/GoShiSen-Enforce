@@ -32,8 +32,16 @@ func startStateProbe(t *testing.T, ns string, args ...string) {
 		_ = cmd.Process.Kill()
 		_, _ = cmd.Process.Wait()
 	})
-	// Wait for the listener to accept (echo server) or for inclination to
-	// be ready (server side of the handshake probe uses a plain listener).
+	// If this is a listener mode, wait until the port is actually bound
+	// (a fixed sleep is unreliable under slow emulation: the client can
+	// receive ECONNREFUSED if the listener is not yet up).
+	if len(args) >= 3 && (args[0] == "listen" || args[0] == "listen-echo" || args[0] == "listen-echo-report") {
+		proto := args[1]
+		port := 0
+		fmt.Sscanf(args[2], "%d", &port)
+		waitForPort(t, ns, proto, port)
+		return
+	}
 	time.Sleep(600 * time.Millisecond)
 }
 

@@ -328,6 +328,10 @@ rules:
     src: 10.99.0.0/24
     dst: 10.99.1.0/24
     dst_port: 8080
+  - id: allow-estab
+    action: ACCEPT
+    protocol: tcp
+    state: [ESTABLISHED, RELATED]
 `)
 	code, out := probe(t, "tcp", "10.99.1.2", 8080)
 	if code != 0 {
@@ -442,6 +446,10 @@ rules:
     src: 10.99.0.0/24
     dst: 10.99.1.0/24
     dst_port: 8080
+  - id: allow-estab
+    action: ACCEPT
+    protocol: tcp
+    state: [ESTABLISHED, RELATED]
 `)
 	code, out := probe(t, "tcp", "10.99.1.2", 8080)
 	if code != 0 {
