@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -179,5 +180,209 @@ func TestRunQueueStartFailure(t *testing.T) {
 	}
 	if err := d.Run(context.Background()); err == nil {
 		t.Fatal("Run succeeded despite queue open failure")
+	}
+}
+
+func TestDelta32Wrap(t *testing.T) {
+	// prev near max, cur wrapped past zero: delta must still be the
+	// real number of drops.
+	if got := delta32(5, ^uint32(0)-10); got != 16 {
+		t.Errorf("delta32(wrap) = %d, want 16", got)
+	}
+	if got := delta32(20, 10); got != 10 {
+		t.Errorf("delta32(20,10) = %d, want 10", got)
+	}
+	if got := delta32(10, 20); got != 0 {
+		t.Errorf("delta32(10,20) = %d, want 0 (counter went backwards)", got)
+	}
+	// A queue reset (counter back to 0) must not be read as a 4B wrap.
+	if got := delta32(0, 100); got != 0 {
+		t.Errorf("delta32(0,100) = %d, want 0 (reset)", got)
+	}
+}
+
+// TestRunReadinessGatedOnQueueBind verifies /readyz semantics: false
+// until the queue is bound, true only after, and false again once
+// shutdown begins. This pins the fail-closed window — a daemon that is
+// not yet enforcing must never report ready.
+func TestRunReadinessGatedOnQueueBind(t *testing.T) {
+	opts := testOptions(t)
+	// Disable the API server for this test (readiness is exercised via
+	// d.Ready()).
+	opts.APIPort = 0
+	d, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hookReady := make(chan struct{})
+	queueOpen := make(chan struct{})
+	d.installHook = func(rs hook.Ruleset) error {
+		close(hookReady)
+		<-queueOpen // hold the queue bind until the test says go
+		return nil
+	}
+	fq := newFakeQueue()
+	d.openQueue = func(packet.Options) (Queue, error) { return fq, nil }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- d.Run(ctx) }()
+
+	select {
+	case <-hookReady:
+	case <-time.After(2 * time.Second):
+		t.Fatal("hook never installed")
+	}
+	// Hook installed, queue not yet open: must NOT be ready.
+	if d.Ready() {
+		t.Fatal("ready = true before queue bind")
+	}
+	close(queueOpen)
+
+	select {
+	case <-fq.ran:
+	case <-time.After(2 * time.Second):
+		t.Fatal("queue never started")
+	}
+	// Give Run a moment to set the ready flag.
+	deadline := time.Now().Add(2 * time.Second)
+	for !d.Ready() && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !d.Ready() {
+		t.Fatal("ready = false after queue bind")
+	}
+
+	// Shutdown must clear readiness immediately.
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("Run = %v, want nil", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run did not exit after cancel")
+	}
+	if d.Ready() {
+		t.Fatal("ready = true after shutdown")
+	}
+}
+
+// TestRunReadinessFalseWhenQueueOpenFails verifies the daemon never
+// reports ready when the queue cannot be bound.
+func TestRunReadinessFalseWhenQueueOpenFails(t *testing.T) {
+	opts := testOptions(t)
+	opts.APIPort = 0
+	d, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.installHook = func(rs hook.Ruleset) error { return nil }
+	d.openQueue = func(packet.Options) (Queue, error) {
+		return nil, os.ErrPermission
+	}
+	if err := d.Run(context.Background()); err == nil {
+		t.Fatal("Run succeeded despite queue open failure")
+	}
+	if d.Ready() {
+		t.Fatal("ready = true despite queue open failure")
+	}
+}
+
+// TestWatchQueueOverflow verifies the watcher converts kernel queue
+// drop deltas into bounded metrics and rate-limited warnings, and that
+// it stops on context cancellation.
+func TestWatchQueueOverflow(t *testing.T) {
+	opts := testOptions(t)
+	d, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Log to a buffer so we can assert warning content.
+	var logBuf bytes.Buffer
+	d.log = newLoggerTo(&logBuf, opts)
+
+	stats := []packet.QueueStats{
+		{QueueNum: 0, Total: 5, Dropped: 0, UserDropped: 0, Sequence: 100},
+		{QueueNum: 0, Total: 5, Dropped: 10, UserDropped: 0, Sequence: 100},
+		{QueueNum: 0, Total: 5, Dropped: 10, UserDropped: 3, Sequence: 100},
+		{QueueNum: 0, Total: 5, Dropped: 12, UserDropped: 3, Sequence: 100},
+	}
+	idx := 0
+	read := func() (packet.QueueStats, error) {
+		if idx >= len(stats) {
+			return packet.QueueStats{}, nil
+		}
+		s := stats[idx]
+		idx++
+		return s, nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	watched := make(chan struct{})
+	go func() {
+		defer close(watched)
+		d.watchQueueOverflow(ctx, read)
+	}()
+
+	// Poll the (mutex-guarded) registry until the expected overflow
+	// counters appear; then stop the watcher.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		var buf bytes.Buffer
+		d.metrics.WritePrometheus(&buf)
+		out := buf.String()
+		if strings.Contains(out, `goshisen_queue_overflow_total{cause="kernel_drop"} 12`) &&
+			strings.Contains(out, `goshisen_queue_overflow_total{cause="user_drop"} 3`) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	cancel()
+	select {
+	case <-watched:
+	case <-time.After(2 * time.Second):
+		t.Fatal("watcher did not stop after cancel")
+	}
+
+	var buf bytes.Buffer
+	d.metrics.WritePrometheus(&buf)
+	out := buf.String()
+	if !strings.Contains(out, `goshisen_queue_overflow_total{cause="kernel_drop"} 12`) {
+		t.Errorf("kernel_drop overflow counter wrong:\n%s", out)
+	}
+	if !strings.Contains(out, `goshisen_queue_overflow_total{cause="user_drop"} 3`) {
+		t.Errorf("user_drop overflow counter wrong:\n%s", out)
+	}
+	if !strings.Contains(logBuf.String(), "kernel queue dropped packets before userspace") {
+		t.Errorf("expected warning log, got:\n%s", logBuf.String())
+	}
+}
+
+// TestWatchQueueOverflowUnavailable verifies that when the kernel does
+// not expose queue stats (proc file missing), the watcher exits quietly
+// without error.
+func TestWatchQueueOverflowUnavailable(t *testing.T) {
+	opts := testOptions(t)
+	d, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	read := func() (packet.QueueStats, error) {
+		return packet.QueueStats{}, errors.New("no such file")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		d.watchQueueOverflow(ctx, read)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("watcher did not exit when stats unavailable")
 	}
 }

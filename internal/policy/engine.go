@@ -180,7 +180,17 @@ func (k *King) IsAccepted(p Packet) bool {
 
 // tupleKey reduces a packet to its 5-tuple.
 func tupleKey(p Packet) string {
-	return fmt.Sprintf("%s|%d|%s|%d|%d", p.Src, p.Protocol, p.Dst, p.SrcPort, p.DstPort)
+	// Canonicalize so reply packets (src/dst swapped) map to the same
+	// connection as the original direction. Without this, the reply
+	// direction never matches the accepted-set and ESTABLISHED/RELATED
+	// replies are dropped.
+	src, dst := p.Src, p.Dst
+	sport, dport := p.SrcPort, p.DstPort
+	if p.Direction == DirReply {
+		src, dst = dst, src
+		sport, dport = dport, sport
+	}
+	return fmt.Sprintf("%s|%d|%s|%d|%d", src, p.Protocol, dst, sport, dport)
 }
 
 // Process is the stateful decision surface. It evaluates p against the

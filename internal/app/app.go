@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -41,6 +42,78 @@ type Queue interface {
 	Counters() packet.Counters
 }
 
+// queueStatsReader reads kernel NFQUEUE stats for queue 0. It returns an
+// error when the kernel does not expose queue stats (no procfs entry).
+type queueStatsReader func() (packet.QueueStats, error)
+
+// queueStatsPath is the kernel per-queue stats file. It is namespace-
+// scoped: when the daemon runs inside the lab router namespace, it
+// reports that namespace's queue stats.
+const queueStatsPath = "/proc/net/netfilter/nfnetlink_queue"
+
+// watchQueueOverflow polls the kernel queue stats and records overflow
+// (packets the kernel dropped before they reached the daemon) as
+// bounded metrics and rate-limited warning logs. It stops when ctx is
+// cancelled. It is best-effort: if the kernel does not support the
+// proc file, it logs once at debug level and stops.
+func (d *Daemon) watchQueueOverflow(ctx context.Context, read queueStatsReader) {
+	prev, err := read()
+	if err != nil {
+		d.log.Debug("queue stats unavailable; overflow monitoring disabled", "error", err)
+		return
+	}
+	var lastLog time.Time
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		cur, err := read()
+		if err != nil {
+			d.log.Debug("queue stats read failed; overflow monitoring suspended", "error", err)
+			return
+		}
+		kernelDrop := delta32(cur.Dropped, prev.Dropped)
+		userDrop := delta32(cur.UserDropped, prev.UserDropped)
+		prev = cur
+		if kernelDrop > 0 {
+			d.metrics.ObserveQueueOverflow(metrics.OverflowKernelDrop, uint64(kernelDrop))
+		}
+		if userDrop > 0 {
+			d.metrics.ObserveQueueOverflow(metrics.OverflowUserDrop, uint64(userDrop))
+		}
+		if (kernelDrop > 0 || userDrop > 0) && time.Since(lastLog) >= 10*time.Second {
+			lastLog = time.Now()
+			d.log.Warn("kernel queue dropped packets before userspace (fail-closed)",
+				"kernel_dropped", kernelDrop,
+				"user_dropped", userDrop,
+				"queue_total", cur.Total,
+				"queue_maxlen", d.opts.QueueMaxlen,
+			)
+		}
+	}
+}
+
+// delta32 returns the positive difference between two unsigned counters.
+// The kernel counters are 32-bit; under sustained flooding they can wrap.
+// Because we poll every second, a genuine wrap yields a small delta,
+// while a queue reset (re-bind/restart) resets the counter to 0 and
+// would otherwise look like a huge "wrap". Deltas over half the counter
+// range are treated as a reset (0 drops).
+func delta32(cur, prev uint32) uint32 {
+	if cur >= prev {
+		return cur - prev
+	}
+	wrap := cur + (^uint32(0) - prev) + 1
+	if wrap > 1<<31 {
+		return 0
+	}
+	return wrap
+}
+
 // Daemon is the running process. It owns the logger, the policy store,
 // and the packet backend lifecycle.
 type Daemon struct {
@@ -49,6 +122,11 @@ type Daemon struct {
 	king    *policy.King
 	metrics *metrics.Registry
 	store   *store.Store
+
+	// ready reflects the enforcement path: false until the nftables hook
+	// is installed AND the NFQUEUE is bound, and false again once
+	// shutdown begins. Read by the API's /readyz handler.
+	ready atomic.Bool
 
 	// Seams (defaults set by New; overridable in tests).
 	installHook func(hook.Ruleset) error
@@ -87,6 +165,10 @@ func (d *Daemon) Store() *store.Store { return d.store }
 
 // Logger exposes the daemon's logger.
 func (d *Daemon) Logger() *slog.Logger { return d.log }
+
+// Ready reports whether the enforcement path is fully up (hook installed
+// and NFQUEUE bound). The API's /readyz handler reads this.
+func (d *Daemon) Ready() bool { return d.ready.Load() }
 
 // Run starts the daemon and blocks until a termination signal arrives or
 // ctx is cancelled. In Phase 3 it installs the nftables hook, binds
@@ -128,7 +210,6 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// privileged hook work: they do not require CAP_NET_ADMIN and their
 	// readiness reflects enforcement state. If the hook fails, the API
 	// still reports not-ready and the daemon exits.
-	ready := func() bool { return false }
 	apiCtx, apiCancel := context.WithCancel(ctx)
 	defer apiCancel()
 	if d.opts.APIPort != 0 {
@@ -140,7 +221,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 			King:    d.king,
 			Metrics: d.metrics,
 			Log:     d.log,
-			Ready:   func() bool { return ready() },
+			Ready:   d.Ready,
 		})
 		if err != nil {
 			return fmt.Errorf("api: %w", err)
@@ -164,14 +245,23 @@ func (d *Daemon) Run(ctx context.Context) error {
 		return err
 	}
 	d.log.Info("nftables hook installed", "table", hook.Table, "nat_enabled", d.opts.Nat.Enabled)
-	ready = func() bool { return true }
 
-	be, err := d.openQueue(packet.Options{Queue: 0, Maxlen: 1024})
+	be, err := d.openQueue(packet.Options{Queue: 0, Maxlen: d.opts.QueueMaxlen})
 	if err != nil {
 		return fmt.Errorf("nfqueue: %w", err)
 	}
 	defer be.Close()
-	d.log.Info("NFQUEUE bound", "queue", 0)
+	d.log.Info("NFQUEUE bound", "queue", 0, "maxlen", d.opts.QueueMaxlen)
+
+	// The enforcement path is now fully up: hook installed and queue
+	// bound. Only now does readiness become true.
+	d.ready.Store(true)
+
+	qCtx, qCancel := context.WithCancel(ctx)
+	defer qCancel()
+	go d.watchQueueOverflow(qCtx, func() (packet.QueueStats, error) {
+		return packet.ReadQueueStats(queueStatsPath, 0)
+	})
 
 	be.SetDecider(func(p policy.Packet) policy.Verdict {
 		start := time.Now()
@@ -221,6 +311,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 			return nil
 		case <-ctx.Done():
 			d.log.Info("shutdown signal received, stopping queue")
+			d.ready.Store(false)
 			<-done
 			c := be.Counters()
 			d.log.Info("queue stopped; hook left in place (fail-closed)",

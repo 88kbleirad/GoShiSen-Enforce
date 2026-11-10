@@ -563,8 +563,10 @@ func TestStatefulKingProcess(t *testing.T) {
 		t.Fatalf("Process(NEW) = %+v", v)
 	}
 
-	// Reply traffic now passes.
+	// Reply traffic now passes (a real reply swaps src/dst).
 	ep := statePacket()
+	ep.Src, ep.Dst = ep.Dst, ep.Src
+	ep.SrcPort, ep.DstPort = ep.DstPort, ep.SrcPort
 	ep.State = StateEstablished
 	ep.Direction = DirReply
 	v = k.Process(ep)
@@ -656,6 +658,8 @@ rules:
 	}
 
 	ep := statePacket()
+	ep.Src, ep.Dst = ep.Dst, ep.Src
+	ep.SrcPort, ep.DstPort = ep.DstPort, ep.SrcPort
 	ep.State = StateEstablished
 	ep.Direction = DirReply
 	if v := k.Process(ep); v.Action != ActionAccept {

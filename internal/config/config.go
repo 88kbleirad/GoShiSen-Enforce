@@ -11,6 +11,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -28,6 +29,7 @@ const (
 	DefaultAPIPort     = 8080
 	DefaultMetricsPort = 9090
 	DefaultPolicyDir   = "policy_store"
+	DefaultQueueMaxlen = 1024
 )
 
 // File is the YAML configuration file schema. Unknown keys are rejected.
@@ -63,6 +65,11 @@ type File struct {
 	// PolicyDir is the durable policy store directory (versioned policy
 	// files + active pointer). Default "policy_store".
 	PolicyDir string `yaml:"policy_dir"`
+
+	// QueueMaxlen is the kernel NFQUEUE queue length in packets. A
+	// smaller queue spills earlier and is useful for overflow
+	// observability and testing. Default 1024.
+	QueueMaxlen int `yaml:"queue_maxlen"`
 
 	// Nat configures kernel-side NAT (nftables dstnat/srcnat chains).
 	Nat NatConfig `yaml:"nat"`
@@ -110,6 +117,7 @@ type Overrides struct {
 	APIPort     *int
 	MetricsPort *int
 	PolicyDir   *string
+	QueueMaxlen *int
 }
 
 // Options is the resolved, validated runtime configuration.
@@ -134,6 +142,7 @@ func Load(configFile string, env func(string) (string, bool), ov Overrides) (*Op
 			APIPort:     DefaultAPIPort,
 			MetricsPort: DefaultMetricsPort,
 			PolicyDir:   DefaultPolicyDir,
+			QueueMaxlen: DefaultQueueMaxlen,
 		},
 		ConfigFile: configFile,
 		Sources: map[string]string{
@@ -146,6 +155,7 @@ func Load(configFile string, env func(string) (string, bool), ov Overrides) (*Op
 			"api_token":    "default",
 			"metrics_port": "default",
 			"policy_dir":   "default",
+			"queue_maxlen": "default",
 		},
 	}
 
@@ -218,6 +228,10 @@ func (o *Options) loadFile(path string) error {
 		o.PolicyDir = f.PolicyDir
 		o.Sources["policy_dir"] = "file"
 	}
+	if f.QueueMaxlen != 0 {
+		o.QueueMaxlen = f.QueueMaxlen
+		o.Sources["queue_maxlen"] = "file"
+	}
 	o.Nat = f.Nat
 	return nil
 }
@@ -282,6 +296,15 @@ func (o *Options) loadEnv(env func(string) (string, bool)) error {
 		o.PolicyDir = v
 		o.Sources["policy_dir"] = "env"
 	}
+	if v, ok := get("QUEUE_MAXLEN"); ok {
+		n, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil || n < 1 || n > 65535 {
+			errs = append(errs, fmt.Errorf("%sQUEUE_MAXLEN: invalid queue length %q", EnvPrefix, v))
+		} else {
+			o.QueueMaxlen = n
+			o.Sources["queue_maxlen"] = "env"
+		}
+	}
 	return errors.Join(errs...)
 }
 
@@ -318,6 +341,10 @@ func (o *Options) loadOverrides(ov Overrides) {
 		o.PolicyDir = *ov.PolicyDir
 		o.Sources["policy_dir"] = "flag"
 	}
+	if ov.QueueMaxlen != nil {
+		o.QueueMaxlen = *ov.QueueMaxlen
+		o.Sources["queue_maxlen"] = "flag"
+	}
 }
 
 // Source reports which layer supplied a field's value.
@@ -332,7 +359,7 @@ func (o *Options) Source(field string) string {
 // for `goshisen config show`. The token is never rendered (not even its
 // source) to avoid leaking secret provenance in logs.
 func (o *Options) SourceSummary() string {
-	fields := []string{"interface", "policy_file", "log_level", "log_json", "api_host", "api_port", "metrics_port", "policy_dir"}
+	fields := []string{"interface", "policy_file", "log_level", "log_json", "api_host", "api_port", "metrics_port", "policy_dir", "queue_maxlen"}
 	parts := make([]string, 0, len(fields))
 	for _, f := range fields {
 		parts = append(parts, f+"="+o.Source(f))
@@ -366,6 +393,9 @@ func (o *Options) validate() error {
 	}
 	if o.PolicyDir == "" {
 		errs = append(errs, fmt.Errorf("policy_dir is empty (set it with %sPOLICY_DIR, or in the config file)", EnvPrefix))
+	}
+	if o.QueueMaxlen < 1 || o.QueueMaxlen > 65535 {
+		errs = append(errs, fmt.Errorf("queue_maxlen %d out of range 1..65535", o.QueueMaxlen))
 	}
 	if o.Nat.Enabled {
 		if o.Nat.Masquerade.Enabled {

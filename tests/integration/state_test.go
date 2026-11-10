@@ -9,6 +9,7 @@
 package integration
 
 import (
+	"bytes"
 	"fmt"
 	"net"
 	"os"
@@ -23,7 +24,10 @@ import (
 // startProbe but for the stateful echo modes.
 func startStateProbe(t *testing.T, ns string, args ...string) {
 	t.Helper()
-	full := append([]string{"netns", "exec", ns, probeBin}, args...)
+	// Callers pass the probe binary as args[0]; do NOT prepend it
+	// again (that would run `probe probe listen-echo …` and the probe
+	// would exit with "unknown op").
+	full := append([]string{"netns", "exec", ns}, args...)
 	cmd := exec.Command("ip", full...)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start state probe %v: %v", args, err)
@@ -32,8 +36,17 @@ func startStateProbe(t *testing.T, ns string, args ...string) {
 		_ = cmd.Process.Kill()
 		_, _ = cmd.Process.Wait()
 	})
-	// Wait for the listener to accept (echo server) or for inclination to
-	// be ready (server side of the handshake probe uses a plain listener).
+	// If this is a listener mode, wait until the port is actually bound
+	// (a fixed sleep is unreliable under slow emulation: the client can
+	// receive ECONNREFUSED if the listener is not yet up). args are
+	// [probeBin, mode, proto, port, ...].
+	if len(args) >= 4 && (args[1] == "listen" || args[1] == "listen-echo" || args[1] == "listen-echo-report") {
+		proto := args[2]
+		port := 0
+		fmt.Sscanf(args[3], "%d", &port)
+		waitForPort(t, ns, proto, port)
+		return
+	}
 	time.Sleep(600 * time.Millisecond)
 }
 
@@ -98,7 +111,8 @@ func startStateFirewall(t *testing.T, polPath string) {
 			_ = cmd.Process.Kill()
 		}
 	})
-	time.Sleep(800 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond) // allow exec
+	waitForDaemonReady(t, logFile.Name())
 }
 
 // reloadPolicy rewrites the policy file and signals the daemon (SIGHUP).
@@ -169,12 +183,36 @@ func TestStateUnsolicitedInbound(t *testing.T) {
 version: 1
 default_action: DROP
 rules:
+  - id: allow-new
+    action: ACCEPT
+    protocol: tcp
+    src: 10.99.0.0/24
+    dst: 10.99.1.0/24
+    dst_port: 9090
+    state: [NEW]
   - id: allow-estab
     action: ACCEPT
     protocol: tcp
     state: [ESTABLISHED, RELATED]
 `)
 	startStateFirewall(t, polPath)
+
+	// Positive control: client→server NEW is allowed; the engine and
+	// packet path must work so the deny below is meaningful.
+	if code, out := runStateProbe(t, "connect-echo", "tcp", "10.99.1.2", "9090"); code != 0 {
+		t.Fatalf("control: allowed inbound failed: %d %s", code, out)
+	}
+
+	// Reload to the no-NEW policy (only ESTABLISHED/RELATED).
+	reloadPolicy(t, polPath, `
+version: 1
+default_action: DROP
+rules:
+  - id: allow-estab
+    action: ACCEPT
+    protocol: tcp
+    state: [ESTABLISHED, RELATED]
+`)
 
 	// Server→client unsolicited connect: no NEW rule → default DROP.
 	code, out := runStateProbe(t, "connect", "tcp", "10.99.0.2", "1")
@@ -213,12 +251,19 @@ rules:
 `)
 	startStateFirewall(t, polPath)
 
-	// A packet that no rule matches (e.g. not allowed NEW) must drop;
-	// conntrack will classify the late/unanswered SYN as INVALID or NEW,
-	// either way it is not accepted.
-	code, out := runStateProbe(t, "connect-echo", "tcp", "10.99.1.2", "8081")
-	if code == 0 {
-		t.Fatalf("invalid/late connection succeeded: %s", out)
+	// Positive control: a valid NEW connection to the allowed port must
+	// succeed — proving the engine and packet path work, so the deny
+	// below is meaningful.
+	if code, out := runStateProbe(t, "connect-echo", "tcp", "10.99.1.2", "8081"); code != 0 {
+		t.Fatalf("control: allowed connection failed: %d %s", code, out)
+	}
+
+	// Deny: a connection to a port with no allow rule must drop. If the
+	// engine or conntrack handling were broken in a way that accepted
+	// everything (fail-open), this would succeed.
+	startStateProbe(t, "gsh_server", probeBin, "listen-echo", "tcp", "9091")
+	if code, out := runStateProbe(t, "connect-echo", "tcp", "10.99.1.2", "9091"); code == 0 {
+		t.Fatalf("unmatched connection succeeded (fail-open?): %s", out)
 	}
 }
 
@@ -341,8 +386,38 @@ rules:
 		t.Fatalf("initial establish failed: %d %s", code, out)
 	}
 
+	// Hold a live connection open across the reload: the hold probe
+	// dials, exchanges one byte, then stays connected for 4s doing
+	// periodic exchanges. The reload happens mid-hold; the final
+	// exchange must still flow (ESTABLISHED is allowed by policy 2).
+	hold := exec.Command("ip", "netns", "exec", "gsh_client", probeBin,
+		"hold", "tcp", "10.99.1.2", "8083", "4")
+	var holdOut bytes.Buffer
+	hold.Stdout = &holdOut
+	hold.Stderr = &holdOut
+	if err := hold.Start(); err != nil {
+		t.Fatalf("start hold: %v", err)
+	}
+	holdDone := make(chan error, 1)
+	go func() { holdDone <- hold.Wait() }()
+	t.Cleanup(func() {
+		// holdDone is one-shot; if the body consumed it, the process
+		// is done. Never block for a second send.
+		select {
+		case <-holdDone:
+			return
+		default:
+		}
+		_ = hold.Process.Kill()
+		select {
+		case <-holdDone:
+		case <-time.After(5 * time.Second):
+		}
+	})
+	time.Sleep(1500 * time.Millisecond) // handshake + first exchange done, holding
+
 	// Reload: NEW is now denied for this service; established replies on
-	// the existing connection must keep flowing.
+	// the held connection must keep flowing.
 	reloadPolicy(t, polPath, `
 version: 1
 default_action: DROP
@@ -353,9 +428,24 @@ rules:
     state: [ESTABLISHED]
 `)
 
+	// The held connection must survive the reload and complete its
+	// final exchange (exit 0, HELD).
+	select {
+	case err := <-holdDone:
+		if err != nil {
+			t.Fatalf("held connection died across reload: %v (output: %s)", err, holdOut.String())
+		}
+		if !strings.Contains(holdOut.String(), "HELD") {
+			t.Errorf("hold did not complete cleanly: %q", holdOut.String())
+		}
+	case <-time.After(8 * time.Second):
+		t.Fatal("held connection did not finish within 8s")
+	}
+
+	// A fresh connection must now be denied (NEW dropped by policy 2).
 	code, out = runStateProbe(t, "connect-echo", "tcp", "10.99.1.2", "8083")
-	if code != 0 {
-		t.Fatalf("established after reload failed: %d %s", code, out)
+	if code == 0 {
+		t.Fatalf("new connection succeeded after reload dropped NEW: %s", out)
 	}
 }
 

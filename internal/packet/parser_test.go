@@ -187,3 +187,21 @@ func FuzzParse(f *testing.F) {
 		_ = r
 	})
 }
+
+// FuzzParseAttrs fuzzes the netlink attribute parser. parseAttrs
+// previously panicked on truncated trailing attributes (slice bounds
+// out of range); this guards against any future panic.
+func FuzzParseAttrs(f *testing.F) {
+	f.Add([]byte{})
+	f.Add([]byte{0, 8, 0, 1, 1, 2, 3, 4})
+	f.Add([]byte{72, 0, 0, 0, 1, 2, 3, 4})
+	f.Add([]byte{0, 8, 0, 1, 1, 2, 3, 4, 72, 0, 0, 0})
+	f.Fuzz(func(t *testing.T, b []byte) {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("panic: %v (input %x)", r, b)
+			}
+		}()
+		parseAttrs(b, func(typ uint16, p []byte) bool { return true })
+	})
+}

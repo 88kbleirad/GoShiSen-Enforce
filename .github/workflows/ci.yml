@@ -3,6 +3,8 @@ name: CI
 on:
   push:
     branches: ["**"]
+    tags:
+      - "v*"
   pull_request:
 
 permissions:
@@ -16,7 +18,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.25"
           cache: true
       - name: Verify modules
         run: go mod verify
@@ -45,14 +47,48 @@ jobs:
           fi
 
   integration:
-    name: integration (real netns lab)
-    runs-on: ubuntu-latest
+    name: integration (real netns lab, privileged)
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.25"
           cache: true
-      - name: Run privileged integration tests
-        run: sudo -E env "PATH=$PATH" go test ./tests/integration/ -v -count=1
-        timeout-minutes: 10
+      - name: Install netfilter tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends nftables iproute2 procps kmod
+      - name: Kernel / capability preflight
+        run: |
+          set -e
+          uname -r
+          echo "== kernel config =="
+          grep -E "CONFIG_NETFILTER_NETLINK_QUEUE|CONFIG_NFT_QUEUE|CONFIG_NF_CONNTRACK|CONFIG_NFT_CT|CONFIG_NF_TABLES|CONFIG_NET_NS" /boot/config-$(uname -r) || true
+          echo "== load modules =="
+          sudo modprobe nfnetlink_queue
+          sudo modprobe nf_conntrack
+          sudo modprobe nf_conntrack_netlink
+          echo "== NFQUEUE queue-rule probe (netns) =="
+          NS=gsh_ci_probe_$$
+          sudo ip netns add $NS
+          trap 'sudo ip netns del $NS 2>/dev/null || true' EXIT
+          printf 'table ip gsh_ci {\n  chain c {\n    type filter hook forward priority 0; policy accept;\n    meta l4proto { tcp, udp } queue num 0\n  }\n}\n' | \
+            sudo ip netns exec $NS nft -f -
+          echo "queue rule installed OK"
+          echo "== conntrack count =="
+          sudo cat /proc/sys/net/netfilter/nf_conntrack_count
+          echo "NFQUEUE/conntrack preflight OK"
+      - name: Run privileged integration tests (must not skip)
+        run: |
+          # Stream output live so failures always carry diagnostics.
+          # Explicit -timeout so a hung test fails with a panic stack
+          # instead of the go command's default 10m timeout.
+          sudo -E env "PATH=$PATH" go test ./tests/integration/ -v -count=1 -timeout 25m 2>&1 | tee /tmp/integ.log
+          rc=${PIPESTATUS[0]}
+          if grep -q -- '--- SKIP' /tmp/integ.log; then
+            echo "ERROR: privileged integration tests skipped; release gate cannot pass"
+            exit 1
+          fi
+          exit $rc
+        timeout-minutes: 30

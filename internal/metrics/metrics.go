@@ -35,6 +35,8 @@ func New() *Registry {
 		"Packets decided, by state.", "state")
 	r.counters["goshisen_backend_errors_total"] = newCounter("goshisen_backend_errors_total",
 		"Backend errors (receive/send/parse/panic).", "kind")
+	r.counters["goshisen_queue_overflow_total"] = newCounter("goshisen_queue_overflow_total",
+		"Packets dropped by the kernel before reaching the daemon, by cause. fail-closed by design.", "cause")
 	r.gauges["goshisen_active_policy_version"] = newGauge("goshisen_active_policy_version",
 		"Active policy version (0 when none).")
 	r.histogram = newHistogram("goshisen_packet_verdict_latency_seconds",
@@ -96,11 +98,51 @@ func (r *Registry) ObserveVerdict(v VerdictLabels) {
 	r.counters["goshisen_packets_by_state_total"].values[skey]++
 }
 
+// BackendErrorKind is a bounded enum of backend error kinds. Using a
+// typed enum (not a free-form string) keeps metric label cardinality
+// bounded by construction.
+type BackendErrorKind string
+
+const (
+	// BackendErrReceive is a netlink receive error in the queue loop.
+	BackendErrReceive BackendErrorKind = "receive"
+	// BackendErrSend is a netlink send (verdict) error.
+	BackendErrSend BackendErrorKind = "send"
+	// BackendErrParse is a packet parse failure.
+	BackendErrParse BackendErrorKind = "parse"
+	// BackendErrPanic is a recovered engine panic.
+	BackendErrPanic BackendErrorKind = "panic"
+)
+
 // ObserveBackendError records a backend error by bounded kind.
-func (r *Registry) ObserveBackendError(kind string) {
+func (r *Registry) ObserveBackendError(kind BackendErrorKind) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.counters["goshisen_backend_errors_total"].values[kind]++
+	r.counters["goshisen_backend_errors_total"].values[string(kind)]++
+}
+
+// OverflowCause is a bounded enum of kernel queue-drop causes.
+type OverflowCause string
+
+const (
+	// OverflowKernelDrop is a packet dropped because the queue was full
+	// (queue_maxlen exhausted) — the kernel's fail-closed path.
+	OverflowKernelDrop OverflowCause = "kernel_drop"
+	// OverflowUserDrop is a packet dropped because netlink unicast to
+	// the daemon's socket failed (no listener / socket error). The
+	// kernel still drops the packet — never fail-open.
+	OverflowUserDrop OverflowCause = "user_drop"
+)
+
+// ObserveQueueOverflow records one or more packets dropped by the
+// kernel queue. The cause is a fixed enum; cardinality stays bounded.
+func (r *Registry) ObserveQueueOverflow(cause OverflowCause, n uint64) {
+	if n == 0 {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.counters["goshisen_queue_overflow_total"].values[string(cause)] += int64(n)
 }
 
 // SetActivePolicyVersion sets the active policy version gauge (0 = none).

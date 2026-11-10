@@ -39,8 +39,8 @@ func TestRegistryBounds(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		r.ObserveVerdict(VerdictLabels{Action: "drop", Protocol: "tcp", State: "invalid"})
 	}
-	r.ObserveBackendError("parse")
-	r.ObserveBackendError("parse")
+	r.ObserveBackendError(BackendErrParse)
+	r.ObserveBackendError(BackendErrParse)
 	r.ObserveLatency(10 * time.Microsecond)
 	r.ObserveLatency(2 * time.Millisecond)
 	r.SetActivePolicyVersion(7)
@@ -68,5 +68,29 @@ func TestRegistryNoSecretValues(t *testing.T) {
 	r.WritePrometheus(&buf)
 	if strings.Contains(buf.String(), "token") {
 		t.Errorf("token appeared in metrics:\n%s", buf.String())
+	}
+}
+
+func TestRegistryQueueOverflow(t *testing.T) {
+	r := New()
+	r.ObserveQueueOverflow(OverflowKernelDrop, 3)
+	r.ObserveQueueOverflow(OverflowUserDrop, 1)
+	r.ObserveQueueOverflow(OverflowKernelDrop, 2)
+
+	var buf bytes.Buffer
+	r.WritePrometheus(&buf)
+	out := buf.String()
+	if !strings.Contains(out, `goshisen_queue_overflow_total{cause="kernel_drop"} 5`) {
+		t.Errorf("kernel_drop counter wrong:\n%s", out)
+	}
+	if !strings.Contains(out, `goshisen_queue_overflow_total{cause="user_drop"} 1`) {
+		t.Errorf("user_drop counter wrong:\n%s", out)
+	}
+	// Zero increments must not create entries.
+	r.ObserveQueueOverflow(OverflowKernelDrop, 0)
+	var buf2 bytes.Buffer
+	r.WritePrometheus(&buf2)
+	if buf2.String() != out {
+		t.Errorf("zero increment changed output:\n%s", buf2.String())
 	}
 }

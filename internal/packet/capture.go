@@ -9,8 +9,10 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/mdlayher/netlink"
 	"golang.org/x/sys/unix"
@@ -28,15 +30,17 @@ const (
 
 	nfqaPacketHdr      = 1
 	nfqaVerdictHdr     = 2
-	nfqaPayload        = 3
-	nfqaCfgCmd         = 4
-	nfqaCfgParams      = 5
-	nfqaCfgQueueMaxlen = 6
+	nfqaPayload        = 10
+	nfqaCfgCmd         = 1
+	nfqaCfgParams      = 2
+	nfqaCfgQueueMaxlen = 3
 	nfqaCT             = 11
 	nfqaCTInfo         = 12
 
 	nfqnlCfgCmdBind   = 1
-	nfqnlCfgCmdPfBind = 2
+	nfqnlCfgCmdUnbind = 2
+	nfqnlCfgCmdPfBind = 3
+	// nfqnlCfgCmdPfUnbind = 4 (unused)
 
 	nfqnlCopyPacket = 2
 
@@ -47,16 +51,24 @@ const (
 	// nfqnl_attr_config flags.
 	nfqaCfgFConnntrack = 1 << 1
 
+	// nfqaCfgFFailOpen is NFQA_CFG_F_FAIL_OPEN: when set, the kernel
+	// ACCEPTs packets it cannot deliver to userspace (queue full or
+	// unicast failure). The daemon must NEVER set it — doing so would
+	// break fail-closed behavior. It is defined here only so tests can
+	// assert it stays clear.
+	nfqaCfgFFailOpen = 1 << 0
+
 	// nfnetlink_conntrack attributes (subset).
 	ctaProtoInfo         = 4
 	ctaProtoInfoTCP      = 2
 	ctaProtoInfoTCPState = 1
 
-	// ip_conntrack_info bits (nf_conntrack_common.h).
-	ipCTEstablished = 1
-	ipCTRelated     = 2
-	ipCTNew         = 3
-	ipCTIsReply     = 4
+	// ip_conntrack_info bits (nf_conntrack_common.h). The enum is
+	// 0-based: ESTABLISHED=0, RELATED=1, NEW=2, IS_REPLY=3.
+	ipCTEstablished = 0
+	ipCTRelated     = 1
+	ipCTNew         = 2
+	ipCTIsReply     = 3
 
 	nfAccept = 1
 	nfDrop   = 0
@@ -85,28 +97,39 @@ func (n nfgenmsg) marshal() []byte {
 }
 
 // attr is one netlink attribute (len + type + payload, 4-byte aligned).
+// The struct nlattr header (nla_len/nla_type) is read by the kernel in
+// native byte order on the raw wire bytes; only the payload fields use
+// explicit big-endian where the UAPI declares __be16/__be32.
 func attr(typ uint16, payload []byte) []byte {
 	l := 4 + len(payload)
 	pad := (4 - l%4) % 4
 	out := make([]byte, l+pad)
-	binary.BigEndian.PutUint16(out[0:], uint16(l+pad))
-	binary.BigEndian.PutUint16(out[2:], typ)
+	// Native endian (host order) for the attribute header.
+	binary.NativeEndian.PutUint16(out[0:], uint16(l+pad))
+	binary.NativeEndian.PutUint16(out[2:], typ)
 	copy(out[4:], payload)
 	return out
 }
 
-// parseAttrs walks an attribute stream.
+// parseAttrs walks an attribute stream. Attribute headers are in native
+// byte order (see attr); payload fields use the endianness declared by
+// their UAPI types.
 func parseAttrs(b []byte, fn func(typ uint16, payload []byte) bool) {
 	for len(b) >= 4 {
-		l := int(binary.BigEndian.Uint16(b[0:]))
+		l := int(binary.NativeEndian.Uint16(b[0:]))
 		if l < 4 || l > len(b) {
 			return
 		}
-		typ := binary.BigEndian.Uint16(b[2:])
+		typ := binary.NativeEndian.Uint16(b[2:])
 		if !fn(typ, b[4:l]) {
 			return
 		}
 		al := (l + 3) &^ 3
+		// A malformed/truncated trailing attribute may have an aligned
+		// length beyond the buffer; bail out instead of panicking.
+		if al > len(b) {
+			return
+		}
 		b = b[al:]
 	}
 }
@@ -192,42 +215,62 @@ func Open(opts Options) (*Backend, error) {
 
 // configure binds the queue, sets copy mode, and sets maxlen.
 func (b *Backend) configure() error {
-	gen := nfgenmsg{family: afInet, version: 0, resID: b.queue}
+	for _, m := range b.configMessages() {
+		if err := b.send(m); err != nil {
+			return fmt.Errorf("nfqueue config: %w", err)
+		}
+	}
+	return nil
+}
 
-	// Bind: NFQNL_CFG_CMD_BIND with pf=AF_INET (nftables queue binding
-	// is per-family; we bind IPv4).
-	cmd := attr(nfqaCfgCmd, []byte{nfqnlCfgCmdBind, 0, afInet, 0})
-	if err := b.send(configMsg(gen, cmd)); err != nil {
-		return fmt.Errorf("bind queue %d: %w", b.queue, err)
-	}
-	// PF_BIND is required before queues deliver (kernel requirement).
-	pfBind := attr(nfqaCfgCmd, []byte{nfqnlCfgCmdPfBind, 0, afInet, 0})
-	if err := b.send(configMsg(gen, pfBind)); err != nil {
-		return fmt.Errorf("pf bind queue %d: %w", b.queue, err)
-	}
-	// Copy mode: NFQNL_COPY_PACKET (copy whole packet).
+// configMessages builds the exact NFQUEUE configuration sequence the
+// kernel expects, in order:
+//
+//  1. BIND the queue (NFQNL_CFG_CMD_BIND).
+//  2. Set copy mode to NFQNL_COPY_PACKET (copy whole packets).
+//  3. Set the queue maximum length.
+//  4. Request conntrack attributes (NFQA_CFG_F_CONNTRACK).
+//
+// The obsolete PF_BIND/PF_UNBIND commands are deliberately NOT sent:
+// they are no-ops on modern kernels, and the old implementation sent a
+// byte that the kernel decodes as UNBIND (2) — destroying the queue
+// instance right after BIND. See Phase 8.4 report for the byte-level
+// evidence.
+func (b *Backend) configMessages() []netlink.Message {
+	gen := nfgenmsg{family: afInet, version: 0, resID: b.queue}
+	msgs := make([]netlink.Message, 0, 4)
+
+	// 1. BIND (command=1). pf is __be16 (AF_INET = 2).
+	msgs = append(msgs, configMsg(gen,
+		attr(nfqaCfgCmd, []byte{nfqnlCfgCmdBind, 0, 0, afInet})))
+
+	// 2. Copy mode: copy_range=0xffff, copy_mode=NFQNL_COPY_PACKET.
 	params := make([]byte, 8)
 	binary.BigEndian.PutUint32(params[0:], 0xffff)
 	params[4] = nfqnlCopyPacket
-	if err := b.send(configMsg(gen, attr(nfqaCfgParams, params))); err != nil {
-		return fmt.Errorf("set copy mode queue %d: %w", b.queue, err)
-	}
-	// Maxlen.
+	msgs = append(msgs, configMsg(gen, attr(nfqaCfgParams, params)))
+
+	// 3. Maxlen.
 	maxlen := make([]byte, 4)
 	binary.BigEndian.PutUint32(maxlen, uint32(b.maxlen))
-	if err := b.send(configMsg(gen, attr(nfqaCfgQueueMaxlen, maxlen))); err != nil {
-		return fmt.Errorf("set maxlen queue %d: %w", b.queue, err)
-	}
-	// Ask the kernel to attach conntrack attributes (NFQA_CT,
-	// NFQA_CT_INFO) to every queued packet.
-	flags := make([]byte, 4)
-	binary.BigEndian.PutUint32(flags, nfqaCfgFConnntrack)
-	mask := make([]byte, 4)
-	binary.BigEndian.PutUint32(mask, nfqaCfgFConnntrack)
-	if err := b.send(configMsg(gen, attr(nfqaCfgMask, mask), attr(nfqaCfgFlags, flags))); err != nil {
-		return fmt.Errorf("enable conntrack attributes queue %d: %w", b.queue, err)
-	}
-	return nil
+	msgs = append(msgs, configMsg(gen, attr(nfqaCfgQueueMaxlen, maxlen)))
+
+	// 4. Conntrack config flags (never FAIL_OPEN).
+	flags, mask := ctConfigFlags()
+	flagsAttr := make([]byte, 4)
+	binary.BigEndian.PutUint32(flagsAttr, flags)
+	maskAttr := make([]byte, 4)
+	binary.BigEndian.PutUint32(maskAttr, mask)
+	msgs = append(msgs, configMsg(gen, attr(nfqaCfgMask, maskAttr), attr(nfqaCfgFlags, flagsAttr)))
+
+	return msgs
+}
+
+// ctConfigFlags returns the config flags/mask the backend requests from
+// the kernel. It exists so the fail-closed invariant (never requesting
+// NFQA_CFG_F_FAIL_OPEN) is directly testable.
+func ctConfigFlags() (flags, mask uint32) {
+	return nfqaCfgFConnntrack, nfqaCfgFConnntrack
 }
 
 func configMsg(gen nfgenmsg, attrs ...[]byte) netlink.Message {
@@ -237,8 +280,11 @@ func configMsg(gen nfgenmsg, attrs ...[]byte) netlink.Message {
 	}
 	return netlink.Message{
 		Header: netlink.Header{
-			Type:  queueMsg(nfqnlMsgConfig),
-			Flags: netlink.Request,
+			Type: queueMsg(nfqnlMsgConfig),
+			// NLM_F_REQUEST | NLM_F_ACK: the kernel only sends a
+			// reply when ACK is requested (errors are always
+			// reported). b.send waits for that ACK.
+			Flags: netlink.Request | netlink.Acknowledge,
 		},
 		Data: data,
 	}
@@ -248,15 +294,19 @@ func (b *Backend) send(m netlink.Message) error {
 	if _, err := b.conn.Send(m); err != nil {
 		return err
 	}
-	// Wait for the ACK so configuration errors surface immediately.
+	// Wait for the kernel acknowledgment. A netlink ACK is an
+	// NLMSG_ERROR message (type Error) with error=0; an error response
+	// has error!=0 and is surfaced by conn.Receive as an error (see
+	// mdlayher checkMessage). So the first message we successfully
+	// receive after a request is the ACK.
 	for {
 		msgs, err := b.conn.Receive()
 		if err != nil {
 			return err
 		}
 		for _, m := range msgs {
-			if m.Header.Type == 0 {
-				return nil // ACK
+			if m.Header.Type == netlink.Error {
+				return nil
 			}
 		}
 	}
@@ -271,24 +321,25 @@ func (b *Backend) SetDecider(decide func(policy.Packet) policy.Verdict) {
 // receives exactly one verdict. On any anomaly (parse failure, engine
 // panic) the packet is DROPped — always fail closed.
 func (b *Backend) Run(ctx context.Context) error {
+	// Interrupt a blocked Receive on cancellation by setting a short
+	// read deadline each iteration; when the deadline fires we check
+	// ctx and either return or retry.
+	b.conn.SetDeadline(time.Time{}) // clear any lingering deadline
 	for {
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			return nil
-		default:
 		}
+		b.conn.SetDeadline(time.Now().Add(500 * time.Millisecond))
 		msgs, err := b.conn.Receive()
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
 			}
-			b.Stats.SendErrors.Add(1)
-			select {
-			case <-ctx.Done():
-				return nil
-			default:
-				continue
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				continue // deadline fired; check ctx again
 			}
+			b.Stats.SendErrors.Add(1)
+			continue
 		}
 		for i := range msgs {
 			m := msgs[i]
@@ -301,10 +352,12 @@ func (b *Backend) Run(ctx context.Context) error {
 }
 
 // handlePacket processes one queued packet. It never returns without
-// sending a verdict.
+// sending a verdict. Kernel NFQUEUE packet messages are framed as
+// nlmsghdr + nfgenmsg(4) + attributes; the nfgenmsg must be skipped
+// before attribute parsing.
 func (b *Backend) handlePacket(m netlink.Message) {
 	b.Stats.PacketsSeen.Add(1)
-	pktID, verdict := b.evaluate(m.Data)
+	pktID, verdict := b.evaluate(packetAttrs(m.Data))
 	if err := b.sendVerdict(pktID, verdict); err != nil {
 		b.Stats.SendErrors.Add(1)
 	}
@@ -316,12 +369,25 @@ func (b *Backend) handlePacket(m netlink.Message) {
 	}
 }
 
+// packetAttrs returns the attribute stream of an NFQUEUE message. The
+// kernel frames packet messages as nlmsghdr + nfgenmsg(4) + attributes
+// (mdlayher strips the nlmsghdr into Header, leaving nfgenmsg first in
+// Data), so the leading 4-byte nfgenmsg must be skipped before
+// attribute parsing.
+func packetAttrs(data []byte) []byte {
+	if len(data) >= 4 {
+		return data[4:]
+	}
+	return data
+}
+
 // evaluate parses the payload and decides. It recovers from any panic and
 // returns DROP so a verdict is always produced.
 func (b *Backend) evaluate(payload []byte) (uint32, int) {
 	var pktID uint32
 	var copyBuf []byte
 	var ctInfo byte
+	var ctPresent bool
 	var ctAttr []byte
 	parseAttrs(payload, func(typ uint16, p []byte) bool {
 		switch typ {
@@ -332,8 +398,12 @@ func (b *Backend) evaluate(payload []byte) (uint32, int) {
 		case nfqaPayload:
 			copyBuf = p
 		case nfqaCTInfo:
-			if len(p) >= 1 {
-				ctInfo = p[0]
+			// NFQA_CT_INFO is a __be32 (see ctnetlink_glue_build:
+			// nla_put_be32(..., htonl(ctinfo))). Reading only the first
+			// byte would always yield 0 for valid ctinfo values.
+			if len(p) >= 4 {
+				ctInfo = byte(binary.BigEndian.Uint32(p[0:4]))
+				ctPresent = true
 			}
 		case nfqaCT:
 			ctAttr = p
@@ -358,7 +428,7 @@ func (b *Backend) evaluate(payload []byte) (uint32, int) {
 		return pktID, nfDrop
 	}
 	p := res.Packet
-	applyCTInfo(&p, ctInfo, ctAttr)
+	applyCTInfo(&p, ctInfo, ctPresent, ctAttr)
 	v := b.decide(p)
 	switch v.Action {
 	case policy.ActionAccept:
@@ -372,20 +442,31 @@ func (b *Backend) evaluate(payload []byte) (uint32, int) {
 // packet's state/direction fields. When conntrack attrs are absent, the
 // packet is INVALID (untracked) unless it is a NEW original-direction
 // packet, which we leave stateless so stateless rules can still accept it.
-func applyCTInfo(p *policy.Packet, ctInfo byte, ctAttr []byte) {
-	if ctInfo == 0 {
+// applyCTInfo maps the kernel's conntrack attributes onto the engine
+// packet's state/direction fields.
+//
+// ctInfo is enum ip_conntrack_info (nf_conntrack_common.h): the values
+// are additive — 0..2 are original direction (ESTABLISHED, RELATED,
+// NEW) and IP_CT_IS_REPLY(3) is a threshold; reply packets have
+// ctInfo >= 3 with base = ctInfo - IP_CT_IS_REPLY. present reports
+// whether NFQA_CT_INFO was attached at all (a packet with no
+// conntrack entry has none, and is INVALID/untracked).
+func applyCTInfo(p *policy.Packet, ctInfo byte, present bool, ctAttr []byte) {
+	if !present {
 		p.State = policy.StateInvalid
 		p.TCPState = -1
 		return
 	}
 	info := int(ctInfo)
-	reply := info&ipCTIsReply != 0
+	reply := info >= ipCTIsReply
+	base := info
 	if reply {
+		base = info - ipCTIsReply
 		p.Direction = policy.DirReply
 	} else {
 		p.Direction = policy.DirOriginal
 	}
-	switch info &^ ipCTIsReply {
+	switch base {
 	case ipCTNew:
 		p.State = policy.StateNew
 	case ipCTEstablished:

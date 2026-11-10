@@ -9,7 +9,6 @@ package integration
 
 import (
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -50,6 +49,88 @@ func checkPrereqs(t *testing.T) string {
 	} else {
 		_ = exec.Command("ip", "netns", "del", probe).Run()
 	}
+	// Functional NFQUEUE + conntrack preflight in throwaway netns. If
+	// either probe fails, the environment cannot run the integration
+	// scenarios and skipping with this reason is correct; CI rejects
+	// skips.
+	if reason := checkNFQUEUERule(); reason != "" {
+		return reason
+	}
+	return checkConntrackNFQUEUE(t)
+}
+
+// checkNFQUEUERule verifies the kernel accepts an nftables queue rule
+// in a fresh namespace (NFQUEUE subsystem present). Without it, no
+// integration scenario can run.
+func checkNFQUEUERule() string {
+	ns := "gsh_nfq_preflight_" + fmt.Sprint(os.Getpid())
+	defer func() { _ = exec.Command("ip", "netns", "del", ns).Run() }()
+	if out, err := exec.Command("ip", "netns", "add", ns).CombinedOutput(); err != nil {
+		return fmt.Sprintf("cannot create NFQUEUE probe namespace: %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+	nftIn := `table ip gsh_nfq_preflight {
+    chain c {
+        type filter hook forward priority 0; policy accept;
+        meta l4proto { tcp, udp } queue num 0
+    }
+}`
+	cmd := exec.Command("ip", "netns", "exec", ns, "nft", "-f", "-")
+	cmd.Stdin = strings.NewReader(nftIn)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Sprintf("nftables queue rule failed (NFQUEUE unavailable): %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+	return ""
+}
+
+// checkConntrackNFQUEUE creates a minimal namespace and verifies a real
+// TCP flow is tracked by kernel conntrack (nf_conntrack_count > 0). The
+// suite depends on conntrack being active in fresh namespaces; if this
+// fails the stateful/NAT/overflow scenarios cannot run, and skipping
+// with this reason is correct.
+func checkConntrackNFQUEUE(t *testing.T) string {
+	ns := "gsh_ct_preflight_" + fmt.Sprint(os.Getpid())
+	defer func() { _ = exec.Command("ip", "netns", "del", ns).Run() }()
+
+	if out, err := exec.Command("ip", "netns", "add", ns).CombinedOutput(); err != nil {
+		return fmt.Sprintf("cannot create conntrack probe namespace: %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+	_ = exec.Command("ip", "netns", "exec", ns, "ip", "link", "set", "lo", "up").Run()
+	// Best-effort: ensure the conntrack modules are present.
+	_ = exec.Command("modprobe", "nf_conntrack").Run()
+	_ = exec.Command("modprobe", "nf_conntrack_netlink").Run()
+
+	// Register a conntrack-touching chain in the namespace.
+	nftIn := `table ip gsh_ct_preflight {
+    chain c {
+        type filter hook output priority 0; policy accept;
+        ct state { new, established, related, invalid, untracked } counter
+    }
+}`
+	cmd := exec.Command("ip", "netns", "exec", ns, "nft", "-f", "-")
+	cmd.Stdin = strings.NewReader(nftIn)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Sprintf("conntrack preflight nft failed: %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+
+	// Run a real loopback TCP flow inside the namespace using the probe.
+	buildProbe(t)
+	listener := exec.Command("ip", "netns", "exec", ns, probeBin, "listen-echo", "tcp", "9097")
+	if err := listener.Start(); err != nil {
+		return fmt.Sprintf("conntrack preflight listener failed: %v", err)
+	}
+	defer func() { _ = listener.Process.Kill(); _, _ = listener.Process.Wait() }()
+	time.Sleep(500 * time.Millisecond)
+	_ = exec.Command("ip", "netns", "exec", ns, probeBin, "connect-echo", "tcp", "127.0.0.1", "9097").Run()
+	time.Sleep(200 * time.Millisecond)
+
+	out, err := exec.Command("ip", "netns", "exec", ns, "cat",
+		"/proc/sys/net/netfilter/nf_conntrack_count").CombinedOutput()
+	if err != nil {
+		return fmt.Sprintf("cannot read nf_conntrack_count: %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+	if strings.TrimSpace(string(out)) == "0" {
+		return "conntrack does not track traffic in fresh namespaces (nf_conntrack_count stayed 0); stateful/NAT/overflow scenarios cannot run here"
+	}
 	return ""
 }
 
@@ -59,11 +140,14 @@ func buildProbe(t *testing.T) {
 		return
 	}
 	root := repoRoot(t)
+	// The probe binary is a package-level artifact shared by every test.
+	// It must NOT be cleaned up when the first test finishes (a
+	// t.Cleanup registered here would delete it before later tests use
+	// it). It lives in a per-run temp dir for the process lifetime.
 	tmp, err := os.MkdirTemp("", "gsh-probe-")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(tmp) })
 	probeBin = filepath.Join(tmp, "probe")
 	cmd := exec.Command("go", "build", "-o", probeBin, "./tests/integration/probe")
 	cmd.Dir = root
@@ -112,30 +196,52 @@ func startProbe(t *testing.T, ns, proto string, port int) {
 
 func waitForPort(t *testing.T, ns, proto string, port int) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	// The listener runs inside the namespace; the host has no route to
+	// 10.99.1.2, so readiness must be checked from inside the ns. Read
+	// the ns's socket table (no side effects, unlike a connect probe
+	// which would consume the single-accept listener).
+	//
+	// Go's net.Listen("tcp", "0.0.0.0:port") creates a dual-stack
+	// socket that appears in /proc/net/tcp6 (as an IPv6-mapped address),
+	// NOT /proc/net/tcp. Scan both files.
+	procFiles := []string{"/proc/net/tcp", "/proc/net/tcp6"}
+	if proto == "udp" {
+		procFiles = []string{"/proc/net/udp", "/proc/net/udp6"}
+	}
+	needle := fmt.Sprintf(":%04X", port) // local_address port, upper-case hex
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		addr := net.JoinHostPort("10.99.1.2", fmt.Sprint(port))
-		if proto == "tcp" {
-			conn, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
-			if err == nil {
-				conn.Close()
-				return
+		for _, procFile := range procFiles {
+			out, err := runNs(t, ns, "cat", procFile)
+			if err != nil {
+				continue
 			}
-		} else {
-			conn, err := net.DialTimeout("udp", addr, 200*time.Millisecond)
-			if err == nil {
-				conn.Close()
+			for _, line := range strings.Split(out, "\n") {
+				f := strings.Fields(line)
+				if len(f) < 4 || !strings.Contains(f[1], needle) {
+					continue
+				}
+				// TCP: only a LISTEN socket (state 0A) counts.
+				if proto == "tcp" && f[3] != "0A" {
+					continue
+				}
 				return
 			}
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 	}
 	t.Fatalf("probe listener %s:%d in ns %s did not come up", proto, port, ns)
 }
 
-// startFirewall starts the daemon in the router namespace with the given
-// policy file content, waits for it to bind, and registers cleanup.
-func startFirewall(t *testing.T, policyYAML string) {
+// firewallProc tracks a started daemon: its process and log file.
+type firewallProc struct {
+	cmd     *exec.Cmd
+	logPath string
+}
+
+// startFirewallFull is startFirewall but returns the daemon process and
+// log path so tests can inspect logs and signal the process.
+func startFirewallFull(t *testing.T, policyYAML string, extraArgs ...string) *firewallProc {
 	t.Helper()
 	root := repoRoot(t)
 	polPath := filepath.Join(t.TempDir(), "policy.yaml")
@@ -151,10 +257,12 @@ func startFirewall(t *testing.T, policyYAML string) {
 		}
 	}
 
-	cmd := exec.Command("ip", "netns", "exec", "gsh_fw", bin,
+	args := []string{"netns", "exec", "gsh_fw", bin,
 		"--interface", "gsh-fw1",
 		"--policy-file", polPath,
-		"--log-level", "debug")
+		"--log-level", "debug"}
+	args = append(args, extraArgs...)
+	cmd := exec.Command("ip", args...)
 	cmd.Dir = root
 	logFile, err := os.Create(filepath.Join(t.TempDir(), "daemon.log"))
 	if err != nil {
@@ -165,17 +273,51 @@ func startFirewall(t *testing.T, policyYAML string) {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start daemon: %v", err)
 	}
+	fp := &firewallProc{cmd: cmd, logPath: logFile.Name()}
 	t.Cleanup(func() {
-		_ = cmd.Process.Signal(os.Interrupt)
+		_ = fp.cmd.Process.Signal(os.Interrupt)
 		done := make(chan struct{})
-		go func() { _, _ = cmd.Process.Wait(); close(done) }()
+		go func() { _, _ = fp.cmd.Process.Wait(); close(done) }()
 		select {
 		case <-done:
 		case <-time.After(5 * time.Second):
-			_ = cmd.Process.Kill()
+			_ = fp.cmd.Process.Kill()
 		}
 	})
-	time.Sleep(800 * time.Millisecond) // allow hook install + queue bind
+	time.Sleep(200 * time.Millisecond) // allow exec + startup log line
+	return fp
+}
+
+// startFirewall starts the daemon in the router namespace with the given
+// policy file content, waits for it to bind, and registers cleanup.
+func startFirewall(t *testing.T, policyYAML string) {
+	t.Helper()
+	fp := startFirewallFull(t, policyYAML)
+	waitForDaemonReady(t, fp.logPath)
+}
+
+// waitForDaemonReady polls the daemon log until the NFQUEUE is bound
+// (the enforcement path is up). This replaces fixed sleeps, which are
+// unreliable under slow emulation (TCG) or loaded hosts.
+func waitForDaemonReady(t *testing.T, logPath string) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		data, err := os.ReadFile(logPath)
+		if err == nil && strings.Contains(string(data), "NFQUEUE bound") {
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	t.Fatalf("daemon did not become ready (no NFQUEUE bound in log):\n%s", mustReadLog(logPath))
+}
+
+func mustReadLog(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Sprintf("<read %s: %v>", path, err)
+	}
+	return string(data)
 }
 
 // probe runs one client-side probe and returns (exitcode, output).
@@ -211,6 +353,10 @@ rules:
     src: 10.99.0.0/24
     dst: 10.99.1.0/24
     dst_port: 8080
+  - id: allow-estab
+    action: ACCEPT
+    protocol: tcp
+    state: [ESTABLISHED, RELATED]
 `)
 	code, out := probe(t, "tcp", "10.99.1.2", 8080)
 	if code != 0 {
@@ -235,6 +381,10 @@ rules:
     protocol: udp
     dst: 10.99.1.2
     dst_port: 5353
+  - id: allow-estab
+    action: ACCEPT
+    protocol: udp
+    state: [ESTABLISHED, RELATED]
 `)
 	code, out := probe(t, "udp", "10.99.1.2", 5353)
 	if code != 0 {
@@ -260,10 +410,21 @@ rules:
     src: 10.99.0.0/24
     dst: 10.99.1.0/24
     dst_port: 8080
+  - id: allow-estab
+    action: ACCEPT
+    protocol: tcp
+    state: [ESTABLISHED, RELATED]
 `)
+	// Positive control: the paired allowed flow must succeed, proving
+	// the daemon and probe path work; otherwise the deny assertion
+	// below would be meaningless.
+	code, _ := probe(t, "tcp", "10.99.1.2", 8080)
+	if code != 0 {
+		t.Fatal("control: allowed TCP probe failed; daemon/probe broken")
+	}
 	// Different port: no rule matches → default DROP.
 	startProbe(t, "gsh_server", "tcp", 9090)
-	code, _ := probe(t, "tcp", "10.99.1.2", 9090)
+	code, _ = probe(t, "tcp", "10.99.1.2", 9090)
 	if code == 0 {
 		t.Fatal("denied TCP probe unexpectedly succeeded")
 	}
@@ -278,13 +439,36 @@ func TestLabDefaultDrop(t *testing.T) {
 	runLab(t, true)
 	defer runLab(t, false)
 	startProbe(t, "gsh_server", "tcp", 8080)
-	// No rules at all → default DROP.
+
+	// Positive control first: with an allow policy the same flow must
+	// succeed, proving the daemon/probe path works; then default DROP
+	// is meaningful.
+	startFirewall(t, `
+version: 1
+rules:
+  - id: allow-http
+    action: ACCEPT
+    protocol: tcp
+    src: 10.99.0.0/24
+    dst: 10.99.1.0/24
+    dst_port: 8080
+  - id: allow-estab
+    action: ACCEPT
+    protocol: tcp
+    state: [ESTABLISHED, RELATED]
+`)
+	if code, _ := probe(t, "tcp", "10.99.1.2", 8080); code != 0 {
+		t.Fatal("control: allowed TCP probe failed; daemon/probe broken")
+	}
+	// Stop the daemon (hook remains) and restart it with an empty
+	// ruleset → default DROP.
+	runNs(t, "gsh_fw", "pkill", "-INT", "goshisen")
+	time.Sleep(500 * time.Millisecond)
 	startFirewall(t, `
 version: 1
 rules: []
 `)
-	code, _ := probe(t, "tcp", "10.99.1.2", 8080)
-	if code == 0 {
+	if code, _ := probe(t, "tcp", "10.99.1.2", 8080); code == 0 {
 		t.Fatal("default DROP probe unexpectedly succeeded")
 	}
 }
@@ -304,6 +488,31 @@ func TestLabQueueNoListener(t *testing.T) {
 	code, _ := probe(t, "tcp", "10.99.1.2", 8080)
 	if code == 0 {
 		t.Fatal("traffic passed with no NFQUEUE listener")
+	}
+
+	// Positive control: start the daemon, which binds the same queue 0
+	// that the lab's gsh_lab hook queues to (the daemon's own table is
+	// an additional queue rule on the same queue). With an explicit
+	// allow policy, the same client→server path must now succeed —
+	// proving the earlier block was the missing listener (kernel
+	// fail-closed drop), not a broken route/path.
+	startFirewall(t, `
+version: 1
+rules:
+  - id: allow-http
+    action: ACCEPT
+    protocol: tcp
+    src: 10.99.0.0/24
+    dst: 10.99.1.0/24
+    dst_port: 8080
+  - id: allow-estab
+    action: ACCEPT
+    protocol: tcp
+    state: [ESTABLISHED, RELATED]
+`)
+	code, _ = probe(t, "tcp", "10.99.1.2", 8080)
+	if code != 0 {
+		t.Fatal("control: allowed TCP probe failed after daemon start; path broken")
 	}
 }
 
@@ -325,6 +534,10 @@ rules:
     src: 10.99.0.0/24
     dst: 10.99.1.0/24
     dst_port: 8080
+  - id: allow-estab
+    action: ACCEPT
+    protocol: tcp
+    state: [ESTABLISHED, RELATED]
 `)
 	code, out := probe(t, "tcp", "10.99.1.2", 8080)
 	if code != 0 {

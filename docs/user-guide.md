@@ -1,6 +1,6 @@
 # GoShiSen-Enforce — User Guide
 
-Status: **Phase 1 (foundation).** This guide describes what exists today: the CLI, configuration, and daemon lifecycle. Firewall functionality is not yet implemented; nothing in this guide modifies your firewall or routing.
+Status: **Phase 7 (hardening/release).** This guide describes the daemon as built: CLI, configuration, lifecycle, policy engine, stateful filtering, REST API, metrics, NAT, and queue-overflow monitoring.
 
 ## Building
 
@@ -25,6 +25,7 @@ goshisen [flags] [command]
 | `--policy-file <path>` | path to the YAML policy file (overrides file/env) |
 | `--log-level <lvl>` | `debug` \| `info` \| `warn` \| `error` |
 | `--log-json` | emit structured JSON logs |
+| `--queue-maxlen <n>` | kernel NFQUEUE queue length in packets (default 1024; range 1–65535) |
 
 Commands:
 
@@ -33,7 +34,7 @@ Commands:
 | `config show` | prints the resolved configuration, with the precedence source (`default`/`file`/`env`/`flag`) of each value |
 | `config check` | validates configuration and host read-only: policy file readable, interface present and up. Makes no system changes; exit code 0 on success |
 | `policy validate --policy-file <path>` | compiles the policy file, rejects invalid rules, prints a summary of the compiled rules. Makes no system changes |
-| `policy simulate --policy-file <path> --src <ip> --dst <ip> [--protocol tcp\|udp\|any] [--source-port <n>] [--dest-port <n>]` | evaluates a synthetic packet against the policy and prints the verdict and matching rule ID (or `(default)`). Makes no system changes |
+| `policy simulate --policy-file <path> --src <ip> --dst <ip> [--protocol tcp\|udp\|any] [--state new\|established\|related\|invalid] [--source-port <n>] [--dest-port <n>]` | evaluates a synthetic packet against the policy and prints the verdict and matching rule ID (or `(default)`). Stateful rules require `--state`; otherwise the packet is stateless and stateful rules do not match. Makes no system changes |
 | `hook status` | reports whether the application-owned nftables table (`ip goshisen`) is installed. Read-only; makes no changes |
 | `hook cleanup` | deletes only the application-owned nftables table (`ip goshisen`). Requires root (CAP_NET_ADMIN); never touches any other nftables state |
 | *(none)* | run the daemon |
@@ -49,6 +50,7 @@ interface: eth0          # empty/omitted = auto (first up, non-loopback)
 policy_file: policies/default/deny-all.yaml   # required
 log_level: info          # debug | info | warn | error
 log_json: false          # true = JSON logs, false = text
+queue_maxlen: 1024       # kernel NFQUEUE queue length (1..65535)
 ```
 
 Unknown keys are rejected at load time. `~` in `policy_file` is expanded to the user's home directory.
@@ -63,6 +65,7 @@ All use the `GOSHISEN_` prefix; they override file values but not flags.
 | `GOSHISEN_POLICY_FILE` | `--policy-file` |
 | `GOSHISEN_LOG_LEVEL` | `--log-level` |
 | `GOSHISEN_LOG_JSON` | `--log-json` |
+| `GOSHISEN_QUEUE_MAXLEN` | `--queue-maxlen` |
 
 Boolean values accept `true/false`, `1/0`, `yes/no`, `on/off`. An invalid env value is a startup error.
 
@@ -88,6 +91,9 @@ sudo scripts/lab.sh down
 - Startup order: resolve config → compile policy (invalid policy aborts before any change) → install the nftables hook (router namespace only) → bind NFQUEUE → enforce.
 - Every queued packet receives a verdict. Parse failures, engine errors, and panics fail closed (DROP).
 - `SIGINT`/`SIGTERM` stop the queue and exit gracefully (exit code 0). The hook stays in place — with no listener, the kernel drops (fail-closed) until the daemon returns.
+- **Crash behavior:** if the daemon dies abruptly (`SIGKILL`), the hook remains in the kernel and the queue has no listener, so traffic is dropped (fail-closed). Restarting the daemon reinstalls the hook and re-binds the queue; policy is restored from the durable store / policy file.
+- **Supervisor:** two options are provided. `deployments/systemd/goshisen.service` runs the daemon in the lab router namespace under systemd with `Restart=always` (auto-recovery on crash). `scripts/supervisor.sh` is a dependency-free restart loop for the lab: `sudo scripts/lab.sh up && sudo scripts/supervisor.sh`. Keep `--stop-timeout`/`TimeoutStopSec` at ≥ the graceful drain window (the daemon drains the queue on TERM).
+- **Readiness:** `GET /readyz` returns 200 only when the enforcement path is fully up (nftables hook installed *and* NFQUEUE bound); it returns 503 during startup, on hook/queue failure, and from the moment shutdown begins.
 - **The host firewall is never touched.** The hook touches only `table ip goshisen` in the current namespace; teardown deletes the namespaces and everything inside them.
 
 Integration tests exercise the same path with real traffic; they require root:
@@ -148,17 +154,17 @@ The daemon exposes a management API (default `127.0.0.1:8080`). See `api/openapi
 - **Durability:** policies are stored as immutable versioned files with an atomically-updated active pointer; restart recovery reloads the active version. `policy_dir` configures the store.
 - **Audit:** every admin action is logged (action, outcome, version); tokens are never logged.
 
-Example:
+Example (the sample config ships no token; set one via env for the example):
 
 ```bash
-TOKEN=$(grep api_token configs/goshisen.yaml | awk '{print $2}' | tr -d '"')
+export GOSHISEN_API_TOKEN="set-a-real-token"
 # Validate first:
-curl -s -X POST -H "Authorization: Bearer $TOKEN" \
+curl -s -X POST -H "Authorization: Bearer $GOSHISEN_API_TOKEN" \
   -H 'Content-Type: application/json' \
   -d "{\"policy\": \"$(cat policies/examples/allow-lab.yaml | tr '\n' ' ')\"}" \
   http://127.0.0.1:8080/v1/policy/validate
 # Apply (version 1):
-curl -s -X POST -H "Authorization: Bearer $TOKEN" \
+curl -s -X POST -H "Authorization: Bearer $GOSHISEN_API_TOKEN" \
   -H 'Content-Type: application/json' \
   -d "{\"policy\": \"$(cat policies/examples/allow-lab.yaml | tr '\n' ' ')\", \"base_version\": \"\"}" \
   http://127.0.0.1:8080/v1/policy
@@ -167,6 +173,17 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" \
 ## Metrics
 
 Prometheus text metrics at `GET /metrics` (API) and on `metrics_port` (default 9090): packet verdicts by action/protocol/state, backend errors, verdict-latency histogram, active policy version. Labels are bounded enums — no IPs, ports, or flow IDs.
+
+## Queue overflow monitoring
+
+When the kernel's NFQUEUE queue fills up (or the daemon's netlink socket cannot drain it), the kernel drops the excess packets — **it never accepts them**: the daemon never sets the kernel's fail-open flag. Dropped packets therefore never bypass the firewall.
+
+The daemon polls `/proc/net/netfilter/nfnetlink_queue` (the queue lives in the daemon's network namespace) once per second and:
+
+- records `goshisen_queue_overflow_total{cause="kernel_drop"}` (queue-full drops) and `{cause="user_drop"}` (netlink unicast failures);
+- logs a `WARN` line with the drop counters (rate-limited to one per 10 s).
+
+Queue statistics are only available when the kernel exposes the proc file; otherwise monitoring is disabled quietly. `queue_maxlen` configures the queue depth (smaller spills sooner — useful for validation/testing).
 
 ## Policy files
 
@@ -198,15 +215,15 @@ goshisen -c configs/goshisen.yaml config show
 # Validate a policy and see the compiled rules:
 goshisen policy validate --policy-file policies/examples/allow-lab.yaml
 
-# Simulate a TCP packet to port 80:
+# Simulate a TCP packet to port 80 (NEW, so the allow-http rule matches):
 goshisen policy simulate --policy-file policies/examples/allow-lab.yaml \
-  --protocol tcp --src 10.0.0.5 --dst 10.0.0.2 --dest-port 80
+  --protocol tcp --state new --src 10.0.0.5 --dst 10.0.0.2 --dest-port 80
 #   verdict: ACCEPT
 #   matched rule: allow-http
 
 # Simulate a packet no rule matches (default action):
 goshisen policy simulate --policy-file policies/examples/allow-lab.yaml \
-  --protocol udp --src 10.0.0.5 --dst 10.0.0.2 --dest-port 9999
+  --protocol udp --state new --src 10.0.0.5 --dst 10.0.0.2 --dest-port 9999
 #   verdict: DROP
 #   matched rule: (default)
 ```

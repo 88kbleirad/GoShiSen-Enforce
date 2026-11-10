@@ -60,6 +60,30 @@ func TestParseFlagsAfterCommandIgnored(t *testing.T) {
 	}
 }
 
+func TestParseHookSubcommand(t *testing.T) {
+	// Regression: `hook cleanup` must parse its subcommand; otherwise the
+	// daemon silently runs `hook status` instead of deleting the table.
+	for _, sub := range []string{"status", "cleanup"} {
+		o, err := Parse([]string{"hook", sub}, &bytes.Buffer{})
+		if err != nil {
+			t.Fatalf("Parse hook %s: %v", sub, err)
+		}
+		if o.Command != "hook" || o.Subcommand != sub {
+			t.Errorf("hook %s parsed as Command=%q Subcommand=%q", sub, o.Command, o.Subcommand)
+		}
+	}
+}
+
+func TestParseQueueMaxlenFlag(t *testing.T) {
+	o, err := Parse([]string{"--queue-maxlen", "8"}, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if o.Overrides.QueueMaxlen == nil || *o.Overrides.QueueMaxlen != 8 {
+		t.Errorf("Overrides.QueueMaxlen = %v, want 8", o.Overrides.QueueMaxlen)
+	}
+}
+
 func TestParseUnknownFlagErrors(t *testing.T) {
 	var buf bytes.Buffer
 	if _, err := Parse([]string{"--nope"}, &buf); err == nil {
