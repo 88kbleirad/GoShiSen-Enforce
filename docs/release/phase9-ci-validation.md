@@ -1,9 +1,10 @@
 # Phase 9.2 — CI Validation Evidence (GitHub Hosted)
 
 Branch: `phase7-baseline`
-HEAD: `e50602e2f66db3f90d46ce07b5936cbb1d67798a` (pushed, verified remote)
+HEAD: `f1f09c1a5db024d33ea5d4c2730363bd900c7170` (tag-trigger CI commit; verified remote)
+Prior verified HEAD: `e50602e2f66db3f90d46ce07b5936cbb1d67798a` (21/21 integration PASS)
 Draft PR: [#1](https://github.com/88kbleirad/GoShiSen-Enforce/pull/1) — `test: harden fail-closed integration coverage for v0.1.0`
-CI workflow run: `42817150116` (PR on `e50602e`), plus push run `42817140460`
+CI workflow runs: `42817678370` (PR @ `5bd1c57`) / `42817666527` (push @ `5bd1c57`); tag-trigger runs `42819392387` / `42819383699` @ `f1f09c1`
 Date: 2026-11-10.
 
 ## Host regression (Go 1.25.0, local)
