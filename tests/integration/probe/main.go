@@ -237,8 +237,9 @@ func httpGet(host string, port int, path string) {
 		die("http get %s: %v", url, err)
 	}
 	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, resp.Body)
+	body, _ := io.ReadAll(resp.Body)
 	fmt.Printf("HTTP %d\n", resp.StatusCode)
+	fmt.Print(string(body))
 }
 
 func main() {

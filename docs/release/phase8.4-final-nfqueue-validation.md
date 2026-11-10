@@ -19,10 +19,22 @@ Date: 2026-11-10. Branch: `phase7-baseline`.
 
 ## B. Final implementation change
 
-- Constants: `nfqnlCfgCmdUnbind=2` added; `nfqnlCfgCmdPfBind` corrected 2→3.
-- sendconfigure()` now builds exactly the 4-message sequence via `configMessages()`: BIND → PARAMS → MAXLEN → MASK+FLAGS. No PF_BIND/PF_UNBIND/UNBIND is sent (PF_* are obsolete no-ops; the old byte was UNBIND).
-- Added `TestConfigSequenceGolden` (hard-coded UAPI bytes), `TestConfigCommandValuesUAPI` (1/2/3 pins), `TestConfigSequenceNoUnbind` (rejects UNBIND/PF_BIND in the sequence).
-- Removed temporary `debugWire` instrumentation and the diagnostic probe.
+Two independent defects were found and fixed by privileged execution:
+
+1. **Config command byte** (bind phase): `nfqnlCfgCmdPfBind` was 2 (= UAPI UNBIND) instead of 3 (= PF_BIND); the init sequence sent UNBIND and destroyed the queue. Fixed: corrected constants (`nfqnlCfgCmdUnbind=2`, `nfqnlCfgCmdPfBind=3`), `configure()` now uses `configMessages()` and sends only BIND → PARAMS → MAXLEN → MASK+FLAGS.
+2. **Receive-path framing** (packet phase): the kernel frames NFQUEUE packet messages as `nlmsghdr + nfgenmsg(4) + attrs`, but `handlePacket` passed `m.Data` (nfgenmsg + attrs) to `evaluate`, which parsed attributes from offset 0 — reading the nfgenmsg as garbage attribute headers, so `NFQA_PACKET_HDR`/`NFQA_PAYLOAD` were never found and **every packet was dropped**. Fixed: new `packetAttrs()` helper strips the 4-byte nfgenmsg before attribute parsing.
+
+Earlier fixes in this thread (same root causes class): native-endian `struct nlattr` header encoding, `NLM_F_ACK` request flag, UAPI attribute type numbers, `__be16` pf encoding.
+
+### Regression tests added
+
+- `internal/packet/netlink_test.go`: message type/nfgenmsg/attr golden bytes (native endian), config BIND/PARAMS/verdict goldens, nested conntrack attrs, UAPI constant pins, config-sequence golden (4 messages, hard-coded bytes, no UNBIND/PF_BIND, no FAIL_OPEN).
+- `internal/packet/capture_test.go`: `TestHandlePacketKernelFraming` (real kernel framing through `packetAttrs`+`evaluate`).
+- `internal/packet/qstats_test.go`, `internal/metrics`, `internal/config`, `internal/app`, `internal/cli`: Phase 7 additions (unchanged).
+
+### Debugging code removed
+
+Temporary `debugWire` instrumentation and the `tests/bindprobe` diagnostic program were deleted; production logging is back to default (no wire dumps).
 
 ## C. Host validation (Go 1.25.0)
 

@@ -39,6 +39,14 @@ func Build(rs Ruleset) string {
 	fmt.Fprintf(&b, "table ip %s {\n", Table)
 	fmt.Fprintf(&b, "    chain forward {\n")
 	fmt.Fprintf(&b, "        type filter hook forward priority filter; policy drop;\n")
+	// The conntrack expression activates the nf_conntrack hooks for this
+	// table so forwarded packets get tracked; NFQUEUE only attaches
+	// NFQA_CT/NFQA_CT_INFO for tracked packets (nf_ct_get returns NULL
+	// otherwise), and the engine's state matcher treats untracked
+	// packets as INVALID. This rule matches every packet (untracked
+	// packets have state `untracked`) and has no verdict, so it only
+	// forces tracking and does not change which packets are queued.
+	fmt.Fprintf(&b, "        ct state { new, established, related, invalid, untracked } counter\n")
 	fmt.Fprintf(&b, "        meta l4proto { tcp, udp } counter queue num %d\n", rs.Filter.QueueNum)
 	fmt.Fprintf(&b, "    }\n")
 

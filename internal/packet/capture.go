@@ -9,8 +9,10 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/mdlayher/netlink"
 	"golang.org/x/sys/unix"
@@ -313,24 +315,25 @@ func (b *Backend) SetDecider(decide func(policy.Packet) policy.Verdict) {
 // receives exactly one verdict. On any anomaly (parse failure, engine
 // panic) the packet is DROPped — always fail closed.
 func (b *Backend) Run(ctx context.Context) error {
+	// Interrupt a blocked Receive on cancellation by setting a short
+	// read deadline each iteration; when the deadline fires we check
+	// ctx and either return or retry.
+	b.conn.SetDeadline(time.Time{}) // clear any lingering deadline
 	for {
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			return nil
-		default:
 		}
+		b.conn.SetDeadline(time.Now().Add(500 * time.Millisecond))
 		msgs, err := b.conn.Receive()
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
 			}
-			b.Stats.SendErrors.Add(1)
-			select {
-			case <-ctx.Done():
-				return nil
-			default:
-				continue
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				continue // deadline fired; check ctx again
 			}
+			b.Stats.SendErrors.Add(1)
+			continue
 		}
 		for i := range msgs {
 			m := msgs[i]
