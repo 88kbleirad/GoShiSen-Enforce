@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/mdlayher/netlink"
+
+	"github.com/88kbleirad/GoShiSen-Enforce/internal/policy"
 )
 
 // These tests pin the exact wire encoding of our NFQUEUE netlink
@@ -352,6 +354,75 @@ func TestConfigSequenceNoUnbind(t *testing.T) {
 				}
 			}
 			off += 4
+		}
+	}
+}
+
+// TestCTInfoUAPIGolden pins the NFQA_CT_INFO wire format and the
+// ip_conntrack_info enum against hard-coded values from the Linux UAPI
+// headers (include/uapi/linux/netfilter/nf_conntrack_common.h and
+// nfnetlink_queue.h), NOT from the implementation's constants.
+//
+//	enum ip_conntrack_info {
+//	  IP_CT_ESTABLISHED,            // 0
+//	  IP_CT_RELATED,                // 1
+//	  IP_CT_NEW,                    // 2
+//	  IP_CT_IS_REPLY,               // 3
+//	  IP_CT_ESTABLISHED_REPLY = 3,  // 0+3
+//	  IP_CT_RELATED_REPLY      = 4, // 1+3
+//	  IP_CT_NEW_REPLY          = 5, // 2+3
+//	};
+func TestCTInfoUAPIGolden(t *testing.T) {
+	const (
+		uapiEstablished    = 0
+		uapiRelated        = 1
+		uapiNew            = 2
+		uapiIsReply        = 3
+		uapiEstablishedRpl = 3
+		uapiRelatedRpl     = 4
+		uapiNewRpl         = 5
+	)
+	// The implementation's constants must equal the UAPI values.
+	if ipCTEstablished != uapiEstablished || ipCTRelated != uapiRelated ||
+		ipCTNew != uapiNew || ipCTIsReply != uapiIsReply {
+		t.Errorf("ip_conntrack_info constants do not match UAPI: est=%d rel=%d new=%d reply=%d (want %d/%d/%d/%d)",
+			ipCTEstablished, ipCTRelated, ipCTNew, ipCTIsReply,
+			uapiEstablished, uapiRelated, uapiNew, uapiIsReply)
+	}
+	// NFQA_CT_INFO wire format: 4-byte big-endian value. A 1-byte read
+	// yields 0 for every valid ctinfo. Encode each UAPI value as the
+	// kernel does (nla_put_be32(..., htonl(ctinfo))) and verify the
+	// backend decodes the matching state/direction.
+	cases := []struct {
+		ctinfo    uint32
+		wantState policy.State
+		wantDir   policy.Direction
+	}{
+		{uapiEstablished, policy.StateEstablished, policy.DirOriginal},
+		{uapiRelated, policy.StateRelated, policy.DirOriginal},
+		{uapiNew, policy.StateNew, policy.DirOriginal},
+		{uapiEstablishedRpl, policy.StateEstablished, policy.DirReply},
+		{uapiRelatedRpl, policy.StateRelated, policy.DirReply},
+		{uapiNewRpl, policy.StateNew, policy.DirReply},
+	}
+	tcpOK := buildIPv4(0, 6, "10.0.0.1", "10.0.0.2", 0, 0, 5, tcp4(12345, 80, 0x02))
+	for _, tc := range cases {
+		wire := make([]byte, 4)
+		binary.BigEndian.PutUint32(wire, tc.ctinfo)
+		b := &Backend{}
+		var got policy.Packet
+		b.decide = func(p policy.Packet) policy.Verdict {
+			got = p
+			return policy.Verdict{Action: policy.ActionAccept}
+		}
+		hdr := attr(nfqaPacketHdr, []byte{0, 0, 0, 1})
+		payload := append(append(hdr, attr(nfqaPayload, tcpOK)...), attr(nfqaCTInfo, wire)...)
+		if _, v := b.evaluate(payload); v != nfAccept {
+			t.Fatalf("ctinfo=%d: verdict != accept", tc.ctinfo)
+		}
+		if got.State != tc.wantState || got.Direction != tc.wantDir {
+			t.Errorf("ctinfo=%d: got state=%v dir=%v, want state=%v dir=%v",
+				tc.ctinfo, got.State, got.Direction, tc.wantState, tc.wantDir)
 		}
 	}
 }
