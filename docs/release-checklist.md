@@ -48,6 +48,7 @@ Run in order. Every item must pass before tagging.
 - [ ] Tag format: `v0.1.0` (semver). `make build VERSION=v0.1.0` stamps the version. CI workflow now triggers on `v*` tags (added in `f1f09c1`).
 - [ ] `git tag v0.1.0 && git push origin v0.1.0` (after privileged suite passes).
 - [ ] CI on the tag runs green (build + integration jobs, zero mandatory skips).
+- [ ] Version stamp: `make build VERSION=v0.1.0` then `bin/goshisen --version` must print `goshisen v0.1.0` (not `dev`). Guarded in CI (`Verify version stamp` step; `internal/cli.Version` must be a `var`, not a `const` — ldflags `-X` cannot set constants).
 - [ ] Publish the container image (optional) from the tagged checkout with `--cap-drop=ALL --cap-add=NET_ADMIN --cap-add=NET_RAW` per the Dockerfile guidance.
 
 ## 6. Release notes (draft)
