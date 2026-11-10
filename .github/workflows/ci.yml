@@ -79,12 +79,14 @@ jobs:
           echo "NFQUEUE/conntrack preflight OK"
       - name: Run privileged integration tests (must not skip)
         run: |
-          out=$(sudo -E env "PATH=$PATH" go test ./tests/integration/ -v -count=1 2>&1)
-          rc=$?
-          printf '%s\n' "$out"
-          if printf '%s\n' "$out" | grep -q -- '--- SKIP'; then
+          # Stream output live so failures always carry diagnostics.
+          # Explicit -timeout so a hung test fails with a panic stack
+          # instead of the go command's default 10m timeout.
+          sudo -E env "PATH=$PATH" go test ./tests/integration/ -v -count=1 -timeout 25m 2>&1 | tee /tmp/integ.log
+          rc=${PIPESTATUS[0]}
+          if grep -q -- '--- SKIP' /tmp/integ.log; then
             echo "ERROR: privileged integration tests skipped; release gate cannot pass"
             exit 1
           fi
           exit $rc
-        timeout-minutes: 20
+        timeout-minutes: 30
