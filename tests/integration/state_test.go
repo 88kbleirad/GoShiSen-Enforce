@@ -9,6 +9,7 @@
 package integration
 
 import (
+	"bytes"
 	"fmt"
 	"net"
 	"os"
@@ -385,8 +386,38 @@ rules:
 		t.Fatalf("initial establish failed: %d %s", code, out)
 	}
 
+	// Hold a live connection open across the reload: the hold probe
+	// dials, exchanges one byte, then stays connected for 4s doing
+	// periodic exchanges. The reload happens mid-hold; the final
+	// exchange must still flow (ESTABLISHED is allowed by policy 2).
+	hold := exec.Command("ip", "netns", "exec", "gsh_client", probeBin,
+		"hold", "tcp", "10.99.1.2", "8083", "4")
+	var holdOut bytes.Buffer
+	hold.Stdout = &holdOut
+	hold.Stderr = &holdOut
+	if err := hold.Start(); err != nil {
+		t.Fatalf("start hold: %v", err)
+	}
+	holdDone := make(chan error, 1)
+	go func() { holdDone <- hold.Wait() }()
+	t.Cleanup(func() {
+		// holdDone is one-shot; if the body consumed it, the process
+		// is done. Never block for a second send.
+		select {
+		case <-holdDone:
+			return
+		default:
+		}
+		_ = hold.Process.Kill()
+		select {
+		case <-holdDone:
+		case <-time.After(5 * time.Second):
+		}
+	})
+	time.Sleep(1500 * time.Millisecond) // handshake + first exchange done, holding
+
 	// Reload: NEW is now denied for this service; established replies on
-	// the existing connection must keep flowing.
+	// the held connection must keep flowing.
 	reloadPolicy(t, polPath, `
 version: 1
 default_action: DROP
@@ -397,9 +428,24 @@ rules:
     state: [ESTABLISHED]
 `)
 
+	// The held connection must survive the reload and complete its
+	// final exchange (exit 0, HELD).
+	select {
+	case err := <-holdDone:
+		if err != nil {
+			t.Fatalf("held connection died across reload: %v (output: %s)", err, holdOut.String())
+		}
+		if !strings.Contains(holdOut.String(), "HELD") {
+			t.Errorf("hold did not complete cleanly: %q", holdOut.String())
+		}
+	case <-time.After(8 * time.Second):
+		t.Fatal("held connection did not finish within 8s")
+	}
+
+	// A fresh connection must now be denied (NEW dropped by policy 2).
 	code, out = runStateProbe(t, "connect-echo", "tcp", "10.99.1.2", "8083")
-	if code != 0 {
-		t.Fatalf("established after reload failed: %d %s", code, out)
+	if code == 0 {
+		t.Fatalf("new connection succeeded after reload dropped NEW: %s", out)
 	}
 }
 
