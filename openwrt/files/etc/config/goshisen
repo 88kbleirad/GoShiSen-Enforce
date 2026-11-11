@@ -19,7 +19,9 @@ config goshisen 'main'
 	option log_level 'info'
 	# Network interface the daemon reports as its attached interface
 	# (used for host validation only; the hook is on the forward path).
-	option interface 'lan'
+	# This must be a kernel netdev name (e.g. br-lan), not a firewall
+	# zone name.
+	option interface 'br-lan'
 	# Policy file (YAML; see docs/user-guide.md for the schema).
 	option policy_file '/etc/goshisen/policy.yaml'
 	# Optional management API port (0 disables the API; localhost only).

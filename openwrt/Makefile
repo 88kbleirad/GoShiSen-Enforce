@@ -16,7 +16,7 @@ PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/88kbleirad/GoShiSen-Enforce.git
-PKG_SOURCE_VERSION:=1fa98bf6b4860dbf3c117e3cd3f93f0b351a2711
+PKG_SOURCE_VERSION:=0db23ece5e0fd2f79a4f2303d5c440c6b4eb9345
 PKG_SOURCE_SUBDIR:=$(PKG_NAME)-$(PKG_VERSION)
 
 # Go builds are handled outside OpenWrt's gcc toolchain.
