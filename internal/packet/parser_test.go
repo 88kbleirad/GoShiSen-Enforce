@@ -102,7 +102,7 @@ func TestParseRejects(t *testing.T) {
 	}{
 		"empty":             {nil, "empty"},
 		"too short":         {make([]byte, 10), "not IPv4 or IPv6"},
-		"not ipv4/6":       {append([]byte{0x70}, make([]byte, 30)...), "not IPv4 or IPv6"},
+		"not ipv4/6":        {append([]byte{0x70}, make([]byte, 30)...), "not IPv4 or IPv6"},
 		"ihl zero":          {append([]byte{0x40}, make([]byte, 30)...), "IHL"},
 		"ihl less than 5":   {append([]byte{0x41}, make([]byte, 30)...), "IHL"},
 		"ip header short":   {buildIPv4(40, 6, "10.0.0.1", "10.0.0.2", 0, 0, 7, tcp)[:20], "shorter"},

@@ -39,10 +39,10 @@ const (
 	// offset 6; hop limit at 7; addresses at 8 and 24.
 	ipv6Version    = 0
 	ipv6PayloadLen = 4
-	ipv6NextHdr   = 6
-	ipv6SrcAddr   = 8
-	ipv6DstAddr   = 24
-	ipv6HdrLen    = 40
+	ipv6NextHdr    = 6
+	ipv6SrcAddr    = 8
+	ipv6DstAddr    = 24
+	ipv6HdrLen     = 40
 
 	// IPv6 extension headers (next header values).
 	ipv6ExtHopByHop = 0
