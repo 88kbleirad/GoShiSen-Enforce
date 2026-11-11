@@ -6,14 +6,15 @@ import (
 	"strings"
 )
 
-// Prefix is an IPv4 network matcher.
+// Prefix is an IPv4 or IPv6 network matcher.
 type Prefix struct {
 	addr netip.Addr
 	bits int
 }
 
-// ParsePrefix parses an IPv4 CIDR ("a.b.c.d/n") or "any". A bare address
-// is treated as a host (/32). Malformed CIDRs are errors.
+// ParsePrefix parses a CIDR ("a.b.c.d/n", "a:b:c:d::/n") or "any". A
+// bare address is treated as a host (/32 or /128). Malformed CIDRs are
+// errors.
 func ParsePrefix(s string) (Prefix, error) {
 	s = trimLower(s)
 	switch s {
@@ -25,29 +26,29 @@ func ParsePrefix(s string) (Prefix, error) {
 		if err != nil {
 			return Prefix{}, fmt.Errorf("malformed CIDR %q (expected a.b.c.d/n or any)", s)
 		}
-		if !addr.Is4() {
-			return Prefix{}, fmt.Errorf("CIDR %q is not IPv4", s)
+		if addr.Is4() {
+			return Prefix{addr: addr, bits: 32}, nil
 		}
-		return Prefix{addr: addr, bits: 32}, nil
+		return Prefix{addr: addr, bits: 128}, nil
 	}
 	addr, err := netip.ParsePrefix(s)
 	if err != nil {
 		return Prefix{}, fmt.Errorf("malformed CIDR %q (expected a.b.c.d/n or any)", s)
 	}
-	if !addr.Addr().Is4() {
-		return Prefix{}, fmt.Errorf("CIDR %q is not IPv4", s)
-	}
 	return Prefix{addr: addr.Addr(), bits: addr.Bits()}, nil
 }
 
-// AnyPrefix matches every IPv4 address.
+// AnyPrefix matches every IPv4 and IPv6 address.
 func AnyPrefix() Prefix {
 	return Prefix{addr: netip.AddrFrom4([4]byte{}), bits: 0}
 }
 
 // Contains reports whether ip falls inside the prefix.
 func (p Prefix) Contains(ip netip.Addr) bool {
-	if !ip.Is4() {
+	if p.bits == 0 {
+		return true // any: matches every address of either family
+	}
+	if ip.Is4() != p.addr.Is4() {
 		return false
 	}
 	pref := netip.PrefixFrom(p.addr, p.bits).Masked()

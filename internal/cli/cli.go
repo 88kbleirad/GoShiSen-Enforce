@@ -35,9 +35,9 @@ COMMANDS:
                 verdict and matching rule ID. Makes no system changes.
                 Requires --src/--dst; options --protocol (tcp|udp|any),
                 --source-port, --dest-port
-  hook status   Print whether the app-owned nftables table (ip goshisen)
+  hook status   Print whether the app-owned nftables table (inet goshisen)
                 is installed. Read-only, no changes
-  hook cleanup  Delete the app-owned nftables table (ip goshisen) only.
+  hook cleanup  Delete the app-owned nftables table (inet goshisen) only.
                 Never touches any other nftables state. Requires root
                 (CAP_NET_ADMIN)
 

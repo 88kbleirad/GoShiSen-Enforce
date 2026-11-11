@@ -78,7 +78,7 @@ client() {
 snapshot() {
     local tag=$1
     # Write phase: capture all counters to files in one console call.
-    vm "nft list chain ip goshisen forward | grep 'queue to' > /tmp/e2e_hook.txt; \
+    vm "nft list chain inet goshisen forward | grep 'queue to' > /tmp/e2e_hook.txt; \
         cat /proc/net/netfilter/nfnetlink_queue > /tmp/e2e_qs.txt; \
         wget -q -O- http://127.0.0.1:9090/metrics > /tmp/e2e_met.txt; \
         echo WROTE" >/dev/null

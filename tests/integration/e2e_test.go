@@ -553,7 +553,7 @@ rules:
 }
 
 // TestHookCleanupScope proves `goshisen hook cleanup` deletes only the
-// application-owned table (`ip goshisen`) and leaves unrelated nftables
+// application-owned table (`inet goshisen`) and leaves unrelated nftables
 // state untouched. A foreign table is created before cleanup and must
 // survive it.
 func TestHookCleanupScope(t *testing.T) {
@@ -599,7 +599,7 @@ table ip gsh_foreign {
 	}
 
 	// App table must be gone.
-	if out, err := runNs(t, "gsh_fw", "nft", "list", "table", "ip", "goshisen"); err == nil {
+	if out, err := runNs(t, "gsh_fw", "nft", "list", "table", "inet", "goshisen"); err == nil {
 		t.Fatalf("app table still present after cleanup:\n%s", out)
 	}
 	// Foreign table must remain.

@@ -54,7 +54,7 @@ type Ruleset struct {
 // none of it.
 func Build(rs Ruleset) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "table ip %s {\n", Table)
+	fmt.Fprintf(&b, "table inet %s {\n", Table)
 	switch rs.Scope {
 	case ScopeOpenWrt:
 		// OpenWrt: hook the forward path AFTER firewall4 (priority 1).
@@ -71,7 +71,13 @@ func Build(rs Ruleset) string {
 		// rule"), leaving the table without a queue rule (hook status
 		// then reports "table goshisen exists but queue rule not
 		// found"). Debian 12+/OpenWrt 25.12 ship nft 1.1.x.
-		fmt.Fprintf(&b, "        meta l4proto { tcp, udp } counter queue to %d\n", rs.Filter.QueueNum)
+		fmt.Fprintf(&b, "        meta nfproto ipv4 meta l4proto { tcp, udp } counter queue to %d\n", rs.Filter.QueueNum)
+		// IPv6 is queued to QueueNum+1 so the daemon can bind a
+		// dedicated AF_INET6 queue instance (nfnetlink_queue rejects a
+		// second bind of the same queue number from one process). Both
+		// rules are in the inet table; IPv4 flows go to QueueNum, IPv6
+		// flows to QueueNum+1.
+		fmt.Fprintf(&b, "        meta nfproto ipv6 meta l4proto { tcp, udp } counter queue to %d\n", rs.Filter.QueueNum+1)
 		fmt.Fprintf(&b, "    }\n")
 	default:
 		fmt.Fprintf(&b, "    chain forward {\n")
@@ -90,7 +96,8 @@ func Build(rs Ruleset) string {
 		// rule"), leaving the table without a queue rule (hook status
 		// then reports "table goshisen exists but queue rule not
 		// found"). Debian 12+/OpenWrt 25.12 ship nft 1.1.x.
-		fmt.Fprintf(&b, "        meta l4proto { tcp, udp } counter queue to %d\n", rs.Filter.QueueNum)
+		fmt.Fprintf(&b, "        meta nfproto ipv4 meta l4proto { tcp, udp } counter queue to %d\n", rs.Filter.QueueNum)
+		fmt.Fprintf(&b, "        meta nfproto ipv6 meta l4proto { tcp, udp } counter queue to %d\n", rs.Filter.QueueNum+1)
 		fmt.Fprintf(&b, "    }\n")
 	}
 
@@ -119,14 +126,14 @@ func Build(rs Ruleset) string {
 // re-create the table (idempotent; absent is normal) and define the
 // whole ruleset. If any line fails, the kernel applies none of it —
 // the previous ruleset (or its absence) is preserved untouched. Only
-// the table `ip goshisen` is ever touched.
+// the table `inet goshisen` is ever touched.
 func Install(rs Ruleset) error {
 	if _, err := exec.LookPath("nft"); err != nil {
 		return fmt.Errorf("hook: nft binary not found in PATH: %w", err)
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "add table ip %s\n", Table)
-	fmt.Fprintf(&b, "delete table ip %s\n", Table)
+	fmt.Fprintf(&b, "add table inet %s\n", Table)
+	fmt.Fprintf(&b, "delete table inet %s\n", Table)
 	b.WriteString(Build(rs))
 	cmd := exec.Command("nft", "-f", "/dev/stdin")
 	cmd.Stdin = strings.NewReader(b.String())
@@ -140,7 +147,7 @@ func Install(rs Ruleset) error {
 // Verify checks that the table and queue rule are present, returning an
 // error otherwise. Read-only.
 func Verify() error {
-	out, err := exec.Command("nft", "list", "table", "ip", Table).CombinedOutput()
+	out, err := exec.Command("nft", "list", "table", "inet", Table).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("hook: nft list failed: %w: %s", err, strings.TrimSpace(string(out)))
 	}
@@ -157,7 +164,7 @@ func Cleanup() error {
 	if _, err := exec.LookPath("nft"); err != nil {
 		return fmt.Errorf("hook: nft binary not found in PATH: %w", err)
 	}
-	_ = exec.Command("nft", "delete", "table", "ip", Table).Run()
+	_ = exec.Command("nft", "delete", "table", "inet", Table).Run()
 	return nil
 }
 
