@@ -36,6 +36,16 @@ jobs:
         run: go test -race ./...
       - name: Build
         run: go build ./...
+      - name: Verify the release binary is statically linked
+        run: |
+          # The release/default build must be static (OpenWrt musl, release
+          # archives); fail if it became dynamically linked.
+          make build
+          make verify-static
+          file bin/goshisen
+          if ldd bin/goshisen 2>&1 | grep -qv 'not a dynamic executable'; then
+            echo "ERROR: bin/goshisen is dynamically linked"; exit 1
+          fi
       - name: Smoke test the CLI
         run: |
           go build -o /tmp/goshisen ./cmd/goshisen
