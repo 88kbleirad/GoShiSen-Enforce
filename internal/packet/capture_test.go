@@ -286,3 +286,29 @@ func TestParseAttrsTruncatedNoPanic(t *testing.T) {
 		t.Errorf("parsed %d attrs, want 1 (trailing truncated attr skipped)", count)
 	}
 }
+
+// TestBackendErrorObserver pins that parse failures invoke the optional
+// error observer, so the daemon can expose them as metrics.
+func TestBackendErrorObserver(t *testing.T) {
+	garbage := []byte{0x45, 0x00}
+	synth := func(payload []byte) []byte {
+		hdr := make([]byte, 8)
+		binary.BigEndian.PutUint32(hdr[0:], 7)
+		data := append(attr(nfqaPacketHdr, hdr), attr(nfqaPayload, payload)...)
+		return data
+	}
+	b := &Backend{}
+	var kinds []string
+	b.SetErrorObserver(func(kind string) { kinds = append(kinds, kind) })
+	b.decide = func(policy.Packet) policy.Verdict { return policy.Verdict{Action: policy.ActionAccept} }
+	_, v := b.evaluate(synth(garbage))
+	if v != nfDrop {
+		t.Fatalf("verdict = %d, want drop", v)
+	}
+	if len(kinds) != 1 || kinds[0] != "parse" {
+		t.Fatalf("observer kinds = %v, want [parse]", kinds)
+	}
+	if b.Stats.ParseErrors.Load() != 1 {
+		t.Fatalf("ParseErrors = %d, want 1", b.Stats.ParseErrors.Load())
+	}
+}

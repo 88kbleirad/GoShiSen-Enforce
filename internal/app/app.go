@@ -309,6 +309,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 	})
 	go d.watchFlowOffload(qCtx)
 
+	// Surface backend errors (parse/panic/send) as metrics.
+	if be2, ok := be.(*packet.Backend); ok {
+		be2.SetErrorObserver(func(kind string) { d.metrics.ObserveBackendError(metrics.BackendErrorKind(kind)) })
+	}
+
 	be.SetDecider(func(p policy.Packet) policy.Verdict {
 		start := time.Now()
 		v := d.king.Process(p)

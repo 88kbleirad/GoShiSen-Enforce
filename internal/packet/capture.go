@@ -159,6 +159,18 @@ type Counters struct {
 	Panics       uint64
 }
 
+func (b *Backend) noteError(kind string) {
+	if b.observeErr != nil {
+		b.observeErr(kind)
+	}
+}
+
+// SetErrorObserver installs a callback invoked for backend errors
+// (parse, panic, send) so the daemon can expose them as metrics.
+func (b *Backend) SetErrorObserver(observe func(kind string)) {
+	b.observeErr = observe
+}
+
 // Counters returns a snapshot of the backend counters.
 func (b *Backend) Counters() Counters {
 	return Counters{
@@ -182,6 +194,11 @@ type Backend struct {
 	maxlen int
 
 	decide func(policy.Packet) policy.Verdict
+
+	// observeErr, when set, is called for backend errors (parse,
+	// panic, send) with a stable kind string so the daemon can expose
+	// them as metrics.
+	observeErr func(kind string)
 
 	Stats Stats
 
@@ -391,6 +408,7 @@ func (b *Backend) runSocket(ctx context.Context, c *netlink.Conn, family uint8) 
 				continue // deadline fired; check ctx again
 			}
 			b.Stats.SendErrors.Add(1)
+			b.noteError("send")
 			continue
 		}
 		for i := range msgs {
@@ -464,6 +482,7 @@ func (b *Backend) evaluate(payload []byte) (uint32, int) {
 	})
 	if copyBuf == nil {
 		b.Stats.ParseErrors.Add(1)
+		b.noteError("parse")
 		return pktID, nfDrop
 	}
 	if b.decide == nil {
@@ -472,11 +491,13 @@ func (b *Backend) evaluate(payload []byte) (uint32, int) {
 	defer func() {
 		if r := recover(); r != nil {
 			b.Stats.Panics.Add(1)
+			b.noteError("panic")
 		}
 	}()
 	res := Parse(copyBuf)
 	if !res.OK {
 		b.Stats.ParseErrors.Add(1)
+		b.noteError("parse")
 		return pktID, nfDrop
 	}
 	p := res.Packet
