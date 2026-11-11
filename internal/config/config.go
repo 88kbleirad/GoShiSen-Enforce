@@ -20,6 +20,13 @@ import (
 // EnvPrefix prefixes every environment variable this package reads.
 const EnvPrefix = "GOSHISEN_"
 
+// Hook scope values (mirrored from internal/hook; kept here to avoid an
+// import cycle since hook imports config).
+const (
+	HookScopeForwardAll = "forward-all"
+	HookScopeOpenWrt    = "openwrt"
+)
+
 // Defaults for configurable values.
 const (
 	DefaultLogLevel = "info"
@@ -70,6 +77,15 @@ type File struct {
 	// smaller queue spills earlier and is useful for overflow
 	// observability and testing. Default 1024.
 	QueueMaxlen int `yaml:"queue_maxlen"`
+
+	// QueueNum is the NFQUEUE queue number to bind. Default 0.
+	QueueNum int `yaml:"queue_num"`
+
+	// HookScope selects the nftables hook placement. Empty (default) is
+	// "forward-all" (queue all forwarded tcp/udp). The value
+	// "openwrt" places the hook after firewall4's forward chain
+	// (priority 1, policy accept) and creates no NAT chains.
+	HookScope string `yaml:"hook_scope"`
 
 	// Nat configures kernel-side NAT (nftables dstnat/srcnat chains).
 	Nat NatConfig `yaml:"nat"`
@@ -156,6 +172,8 @@ func Load(configFile string, env func(string) (string, bool), ov Overrides) (*Op
 			"metrics_port": "default",
 			"policy_dir":   "default",
 			"queue_maxlen": "default",
+			"queue_num":    "default",
+			"hook_scope":   "default",
 		},
 	}
 
@@ -232,6 +250,14 @@ func (o *Options) loadFile(path string) error {
 		o.QueueMaxlen = f.QueueMaxlen
 		o.Sources["queue_maxlen"] = "file"
 	}
+	if f.HookScope != "" {
+		o.HookScope = f.HookScope
+		o.Sources["hook_scope"] = "file"
+	}
+	if f.QueueNum != 0 {
+		o.QueueNum = f.QueueNum
+		o.Sources["queue_num"] = "file"
+	}
 	o.Nat = f.Nat
 	return nil
 }
@@ -305,6 +331,19 @@ func (o *Options) loadEnv(env func(string) (string, bool)) error {
 			o.Sources["queue_maxlen"] = "env"
 		}
 	}
+	if v, ok := get("HOOK_SCOPE"); ok {
+		o.HookScope = v
+		o.Sources["hook_scope"] = "env"
+	}
+	if v, ok := get("QUEUE_NUM"); ok {
+		n, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil || n < 0 || n > 65535 {
+			errs = append(errs, fmt.Errorf("%sQUEUE_NUM: invalid queue number %q", EnvPrefix, v))
+		} else {
+			o.QueueNum = n
+			o.Sources["queue_num"] = "env"
+		}
+	}
 	return errors.Join(errs...)
 }
 
@@ -359,7 +398,7 @@ func (o *Options) Source(field string) string {
 // for `goshisen config show`. The token is never rendered (not even its
 // source) to avoid leaking secret provenance in logs.
 func (o *Options) SourceSummary() string {
-	fields := []string{"interface", "policy_file", "log_level", "log_json", "api_host", "api_port", "metrics_port", "policy_dir", "queue_maxlen"}
+	fields := []string{"interface", "policy_file", "log_level", "log_json", "api_host", "api_port", "metrics_port", "policy_dir", "queue_maxlen", "queue_num", "hook_scope"}
 	parts := make([]string, 0, len(fields))
 	for _, f := range fields {
 		parts = append(parts, f+"="+o.Source(f))
@@ -396,6 +435,16 @@ func (o *Options) validate() error {
 	}
 	if o.QueueMaxlen < 1 || o.QueueMaxlen > 65535 {
 		errs = append(errs, fmt.Errorf("queue_maxlen %d out of range 1..65535", o.QueueMaxlen))
+	}
+	if o.QueueNum < 0 || o.QueueNum > 65535 {
+		errs = append(errs, fmt.Errorf("queue_num %d out of range 0..65535", o.QueueNum))
+	}
+	if o.HookScope != "" && o.HookScope != HookScopeForwardAll && o.HookScope != HookScopeOpenWrt {
+		errs = append(errs, fmt.Errorf("hook_scope %q must be %q or %q",
+			o.HookScope, HookScopeForwardAll, HookScopeOpenWrt))
+	}
+	if o.HookScope == HookScopeOpenWrt && o.Nat.Enabled {
+		errs = append(errs, errors.New("nat is not supported with hook_scope openwrt (firewall4 owns NAT)"))
 	}
 	if o.Nat.Enabled {
 		if o.Nat.Masquerade.Enabled {

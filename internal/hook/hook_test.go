@@ -54,6 +54,31 @@ func TestBuildFilterOnly(t *testing.T) {
 	}
 }
 
+func TestBuildOpenWrtScope(t *testing.T) {
+	rs := Ruleset{Filter: FilterConfig{QueueNum: 100}, Scope: ScopeOpenWrt}
+	out := Build(rs)
+
+	for _, want := range []string{
+		"table ip goshisen {",
+		// After firewall4's filter priority 0, policy accept.
+		"type filter hook forward priority 1; policy accept;",
+		"meta l4proto { tcp, udp } counter queue num 100",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+	// The openwrt scope must never contain NAT chains (firewall4 owns NAT).
+	if strings.Contains(out, "dstnat") || strings.Contains(out, "srcnat") {
+		t.Errorf("NAT chains present in openwrt scope:\n%s", out)
+	}
+	// And must not ship a policy drop (fw4's own forward chain drops).
+	if strings.Contains(out, "policy drop;") {
+		t.Errorf("openwrt scope must not set policy drop:\n%s", out)
+	}
+	nftSyntaxCheck(t, out)
+}
+
 func TestBuildNAT(t *testing.T) {
 	rs := Ruleset{
 		Filter: FilterConfig{QueueNum: 0},

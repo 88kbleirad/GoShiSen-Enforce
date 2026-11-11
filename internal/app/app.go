@@ -237,21 +237,28 @@ func (d *Daemon) Run(ctx context.Context) error {
 		go d.serveMetrics(apiCtx, d.opts.MetricsPort)
 	}
 
+	scope := hook.ScopeForwardAll
+	switch d.opts.HookScope {
+	case config.HookScopeOpenWrt:
+		scope = hook.ScopeOpenWrt
+	}
+	queueNum := d.opts.QueueNum
 	rs := hook.Ruleset{
-		Filter: hook.FilterConfig{QueueNum: 0},
+		Filter: hook.FilterConfig{QueueNum: queueNum},
 		Nat:    d.opts.Nat,
+		Scope:  scope,
 	}
 	if err := d.installHook(rs); err != nil {
 		return err
 	}
-	d.log.Info("nftables hook installed", "table", hook.Table, "nat_enabled", d.opts.Nat.Enabled)
+	d.log.Info("nftables hook installed", "table", hook.Table, "nat_enabled", d.opts.Nat.Enabled, "scope", scope)
 
-	be, err := d.openQueue(packet.Options{Queue: 0, Maxlen: d.opts.QueueMaxlen})
+	be, err := d.openQueue(packet.Options{Queue: queueNum, Maxlen: d.opts.QueueMaxlen})
 	if err != nil {
 		return fmt.Errorf("nfqueue: %w", err)
 	}
 	defer be.Close()
-	d.log.Info("NFQUEUE bound", "queue", 0, "maxlen", d.opts.QueueMaxlen)
+	d.log.Info("NFQUEUE bound", "queue", queueNum, "maxlen", d.opts.QueueMaxlen)
 
 	// The enforcement path is now fully up: hook installed and queue
 	// bound. Only now does readiness become true.
@@ -260,7 +267,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	qCtx, qCancel := context.WithCancel(ctx)
 	defer qCancel()
 	go d.watchQueueOverflow(qCtx, func() (packet.QueueStats, error) {
-		return packet.ReadQueueStats(queueStatsPath, 0)
+		return packet.ReadQueueStats(queueStatsPath, queueNum)
 	})
 
 	be.SetDecider(func(p policy.Packet) policy.Verdict {

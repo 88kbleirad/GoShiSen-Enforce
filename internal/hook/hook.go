@@ -25,10 +25,28 @@ type FilterConfig struct {
 	QueueNum int
 }
 
+// Scope selects the nftables hook placement.
+type Scope string
+
+const (
+	// ScopeForwardAll queues all tcp/udp forwarded traffic (the default
+	// lab/generic-Linux behavior).
+	ScopeForwardAll Scope = "forward-all"
+	// ScopeOpenWrt queues only traffic that firewall4 has already
+	// accepted on the forward path, at priority 1 (after firewall4's
+	// filter priority 0). The policy remains accept so packets that
+	// are not queued (e.g. non-TCP/UDP, or traffic fw4 did not
+	// forward) are not affected. This scope never creates NAT chains —
+	// firewall4 owns NAT.
+	ScopeOpenWrt Scope = "openwrt"
+)
+
 // Ruleset describes the full application ruleset.
 type Ruleset struct {
 	Filter FilterConfig
 	Nat    config.NatConfig
+	// Scope selects hook placement. Empty means ScopeForwardAll.
+	Scope Scope
 }
 
 // Build renders the complete nftables program for the ruleset. The
@@ -37,18 +55,34 @@ type Ruleset struct {
 func Build(rs Ruleset) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "table ip %s {\n", Table)
-	fmt.Fprintf(&b, "    chain forward {\n")
-	fmt.Fprintf(&b, "        type filter hook forward priority filter; policy drop;\n")
-	// The conntrack expression activates the nf_conntrack hooks for this
-	// table so forwarded packets get tracked; NFQUEUE only attaches
-	// NFQA_CT/NFQA_CT_INFO for tracked packets (nf_ct_get returns NULL
-	// otherwise), and the engine's state matcher treats untracked
-	// packets as INVALID. This rule matches every packet (untracked
-	// packets have state `untracked`) and has no verdict, so it only
-	// forces tracking and does not change which packets are queued.
-	fmt.Fprintf(&b, "        ct state { new, established, related, invalid, untracked } counter\n")
-	fmt.Fprintf(&b, "        meta l4proto { tcp, udp } counter queue num %d\n", rs.Filter.QueueNum)
-	fmt.Fprintf(&b, "    }\n")
+	switch rs.Scope {
+	case ScopeOpenWrt:
+		// OpenWrt: hook the forward path AFTER firewall4 (priority 1).
+		// fw4's forward chain is at priority 0 with policy drop, so
+		// only traffic fw4 accepted reaches us. Policy accept: packets
+		// we don't queue (non-TCP/UDP, or non-forwarded) are never
+		// affected. We never create NAT chains here — firewall4 owns
+		// NAT.
+		fmt.Fprintf(&b, "    chain forward {\n")
+		fmt.Fprintf(&b, "        type filter hook forward priority 1; policy accept;\n")
+		fmt.Fprintf(&b, "        ct state { new, established, related, invalid, untracked } counter\n")
+		fmt.Fprintf(&b, "        meta l4proto { tcp, udp } counter queue num %d\n", rs.Filter.QueueNum)
+		fmt.Fprintf(&b, "    }\n")
+	default:
+		fmt.Fprintf(&b, "    chain forward {\n")
+		fmt.Fprintf(&b, "        type filter hook forward priority filter; policy drop;\n")
+		// The conntrack expression activates the nf_conntrack hooks for
+		// this table so forwarded packets get tracked; NFQUEUE only
+		// attaches NFQA_CT/NFQA_CT_INFO for tracked packets
+		// (nf_ct_get returns NULL otherwise), and the engine's state
+		// matcher treats untracked packets as INVALID. This rule
+		// matches every packet (untracked packets have state
+		// `untracked`) and has no verdict, so it only forces tracking
+		// and does not change which packets are queued.
+		fmt.Fprintf(&b, "        ct state { new, established, related, invalid, untracked } counter\n")
+		fmt.Fprintf(&b, "        meta l4proto { tcp, udp } counter queue num %d\n", rs.Filter.QueueNum)
+		fmt.Fprintf(&b, "    }\n")
+	}
 
 	if rs.Nat.Enabled {
 		fmt.Fprintf(&b, "    chain dstnat {\n")
@@ -100,7 +134,8 @@ func Verify() error {
 	if err != nil {
 		return fmt.Errorf("hook: nft list failed: %w: %s", err, strings.TrimSpace(string(out)))
 	}
-	if !strings.Contains(string(out), "queue num") {
+	// nft >= 1.1 prints "queue to N"; older prints "queue num N".
+	if !strings.Contains(string(out), "queue num") && !strings.Contains(string(out), "queue to") {
 		return fmt.Errorf("hook: table %s exists but queue rule not found", Table)
 	}
 	return nil

@@ -251,6 +251,73 @@ func TestValidateQueueMaxlen(t *testing.T) {
 	}
 }
 
+func TestLoadQueueNumAndHookScope(t *testing.T) {
+	p := writeTemp(t, "goshisen.yaml", `
+interface: eth0
+policy_file: /etc/goshisen/policy.yaml
+queue_num: 100
+hook_scope: openwrt
+`)
+	o, err := Load(p, envStub(nil), Overrides{})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if o.QueueNum != 100 {
+		t.Errorf("QueueNum = %d, want 100", o.QueueNum)
+	}
+	if o.HookScope != HookScopeOpenWrt {
+		t.Errorf("HookScope = %q, want openwrt", o.HookScope)
+	}
+	if o.Source("queue_num") != "file" || o.Source("hook_scope") != "file" {
+		t.Errorf("sources not set: queue_num=%q hook_scope=%q",
+			o.Source("queue_num"), o.Source("hook_scope"))
+	}
+}
+
+func TestLoadHookScopeEnv(t *testing.T) {
+	o, err := Load("", envStub(map[string]string{
+		"GOSHISEN_POLICY_FILE": "policies/examples/allow-lab.yaml",
+		"GOSHISEN_QUEUE_NUM":   "7",
+		"GOSHISEN_HOOK_SCOPE":  "openwrt",
+	}), Overrides{})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if o.QueueNum != 7 || o.HookScope != HookScopeOpenWrt {
+		t.Errorf("env not applied: queue_num=%d hook_scope=%q", o.QueueNum, o.HookScope)
+	}
+}
+
+func TestValidateHookScope(t *testing.T) {
+	p := writeTemp(t, "goshisen.yaml", `
+policy_file: /etc/goshisen/policy.yaml
+hook_scope: bogus
+`)
+	if _, err := Load(p, envStub(nil), Overrides{}); err == nil {
+		t.Fatal("Load accepted invalid hook_scope")
+	}
+	// openwrt + nat must be rejected (firewall4 owns NAT).
+	p2 := writeTemp(t, "goshisen.yaml", `
+policy_file: /etc/goshisen/policy.yaml
+hook_scope: openwrt
+nat:
+  enabled: true
+`)
+	if _, err := Load(p2, envStub(nil), Overrides{}); err == nil {
+		t.Fatal("Load accepted openwrt scope with NAT enabled")
+	}
+}
+
+func TestValidateQueueNum(t *testing.T) {
+	p := writeTemp(t, "goshisen.yaml", `
+policy_file: /etc/goshisen/policy.yaml
+queue_num: 70000
+`)
+	if _, err := Load(p, envStub(nil), Overrides{}); err == nil {
+		t.Fatal("Load accepted queue_num out of range")
+	}
+}
+
 func TestLoadNAT(t *testing.T) {
 	p := writeTemp(t, "goshisen.yaml", `
 policy_file: /etc/goshisen/policy.yaml
