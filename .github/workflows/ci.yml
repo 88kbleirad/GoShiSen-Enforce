@@ -100,6 +100,65 @@ jobs:
             dist/checksums.txt
             dist/sbom.spdx.json
 
+  openwrt-integration:
+    name: openwrt e2e (QEMU lab, privileged)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.0.0
+        with:
+          go-version: "1.25"
+          cache: true
+      - name: Install lab tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            iproute2 nftables procps kmod curl wget python3 qemu-system-x86 \
+            iptables e2fsprogs
+      - name: Build static daemon for the image
+        run: |
+          CGO_ENABLED=0 go build \
+            -ldflags "-s -w \
+              -X github.com/88kbleirad/GoShiSen-Enforce/internal/cli.Version=0.2.0-openwrt \
+              -X github.com/88kbleirad/GoShiSen-Enforce/internal/app.Version=0.2.0-openwrt" \
+            -o /tmp/goshisen-static ./cmd/goshisen
+          file /tmp/goshisen-static | grep -q statically || { echo "not static"; exit 1; }
+      - name: Provision the OpenWrt image (pinned release, verified checksum)
+        run: |
+          sudo -E scripts/openwrt-image-prep.sh \
+            --download \
+            --daemon /tmp/goshisen-static \
+            --output /tmp/owrt.img
+      - name: Boot the OpenWrt lab (VM + client namespace)
+        run: |
+          sudo -E scripts/openwrt-lab.sh up
+          # Wait for the console to come up (boot under TCG is slow).
+          for i in $(seq 1 60); do
+            if (echo > /dev/tcp/127.0.0.1/5555) 2>/dev/null; then
+              echo "console up after ${i}s"; break
+            fi
+            sleep 2
+          done
+      - name: Run the OpenWrt e2e (must not skip)
+        run: |
+          # The Go wrapper drives scripts/openwrt-e2e.sh; the script
+          # performs the DROP/ACCEPT controls and the counter-identity
+          # assertions. It must not skip in CI.
+          set -o pipefail
+          sudo -E env "PATH=$PATH" go test ./tests/openwrt_integration/ \
+            -v -count=1 -timeout 25m 2>&1 | tee /tmp/owrt-e2e.log
+          rc=$?
+          if grep -q -- '--- SKIP' /tmp/owrt-e2e.log; then
+            echo "ERROR: openwrt e2e skipped; release gate cannot pass"
+            exit 1
+          fi
+          exit $rc
+        timeout-minutes: 30
+      - name: Tear down the lab
+        if: always()
+        run: |
+          sudo -E scripts/openwrt-lab.sh down || true
+
   integration:
     name: integration (real netns lab, privileged)
     runs-on: ubuntu-24.04
