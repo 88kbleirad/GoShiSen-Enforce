@@ -153,20 +153,20 @@ QEMU TCG boot, daemon autostarted, queue 100 bound:
 
 ## G. GitHub CI
 
-Final PR head: `309d153` (branch `phase10-openwrt`, PR #3).
+Final PR head: `1391058` (branch `phase10-openwrt`, PR #3).
 
 - Original failing run: `42954931262` (head `d012a34`) — image 404.
-- Fixed-head runs — **all required jobs PASS on both**:
+- Final-head runs — **all required jobs PASS on both**:
   | Run | build/vet/test | package | privileged integration | openwrt e2e |
   |---|---|---|---|---|
-  | push `42969795988` | PASS | PASS | PASS | PASS (3m56s) |
-  | PR `42969803260` | PASS | PASS | PASS | PASS (3m34s) |
+  | push `42970880798` | PASS | PASS | PASS | PASS (3m34s) |
+  | PR `42970885974` | PASS | PASS | PASS | PASS (3m27s) |
 - OpenWrt job log (PR run) confirms the real controls after the boot
-  wait: `daemon NFQUEUE bound after 18s` →
-  `DROP control PASS (curl exit=28, drop verdicts +7, hook +7, queue
-  drops +0)` → `ACCEPT control PASS (curl exit=0, HTTP 200, marker
-  body, accept verdicts +13 [new +1, established +12], hook +13)` →
-  `--- PASS: TestOpenWrtE2E (134.36s)`, zero skips.
+  wait: `daemon NFQUEUE bound after 15s` → `DROP control PASS (curl
+  exit=28, drop verdicts +7, hook +7, queue drops +0)` → `ACCEPT
+  control PASS (curl exit=0, HTTP 200, marker body, accept verdicts
+  +13 [new +1, established +12], hook +13)` → `--- PASS:
+  TestOpenWrtE2E (134.03s)`, zero skips.
 - Earlier intermediate run `42968273819` failed the openwrt job with
   `ENV: daemon not ready` (exit 3): the boot step only waited on the
   console TCP port, not the daemon. Fixed by waiting for the
@@ -186,7 +186,7 @@ Final PR head: `309d153` (branch `phase10-openwrt`, PR #3).
 
 ## I. Remaining blockers
 
-None. All four CI jobs pass on the final head `309d153` (push and PR
+None. All four CI jobs pass on the final head `1391058` (push and PR
 runs), zero mandatory skips; local regression and the full OpenWrt E2E
 pass with the real DROP/ACCEPT controls.
 
