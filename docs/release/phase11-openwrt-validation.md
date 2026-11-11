@@ -32,9 +32,9 @@ evidence only; never inferred results.
 | Task 5 interactions | PASS | firewall restart/reload, network restart, br-lan flap, conntrack -F: tables intact, queues bound, v4 200 |
 | Task 5 apk install/upgrade/remove | PASS | r1 install, r1→r2 upgrade (no fail-open), remove runs `hook cleanup` (table gone; fw4 only) |
 | Task 6 static release build | PASS | `make build` static; `make verify-static`; CI check added |
-| Task 6 SDK git-pin build | in progress | clean SDK build from PKG_SOURCE_VERSION + mirror hash |
-| Task 6 reproducibility | pending | two clean builds compared |
-| Task 7 CI | in progress | runs listed below |
+| Task 6 SDK git-pin build | PASS | clean SDK build from PKG_SOURCE_VERSION + PKG_MIRROR_HASH (no file:// override) |
+| Task 6 reproducibility | PASS | two clean SDK builds → byte-identical apk (`b4925a60…`) |
+| Task 7 CI | PASS | push `43065507036` and PR `43065518847`: all 4 jobs success (build/vet/test, openwrt e2e, package, integration), 0 skips |
 | Task 8 docs | PASS | docs/openwrt.md, SECURITY.md threat model, checklist gates |
 | Task 9 version | in progress | version determination + release notes |
 
