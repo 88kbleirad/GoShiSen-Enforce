@@ -69,7 +69,16 @@ define Package/goshisen/postinst
 endef
 
 define Package/goshisen/prerm
-	[ -z "$${IPKG_INSTROOT}" ] && /etc/init.d/goshisen stop || true
+	# On uninstall the app-owned nftables table must be removed: the
+	# daemon's queue rule would otherwise stay installed with no
+	# consumer and keep blocking forwarded traffic (the kernel drops
+	# packets queued to a queue without a listener).
+	if [ -z "$${IPKG_INSTROOT}" ]; then
+		if [ -x /usr/sbin/goshisen ]; then
+			/usr/sbin/goshisen hook cleanup || true
+		fi
+		/etc/init.d/goshisen stop || true
+	fi
 endef
 
 $(eval $(call BuildPackage,goshisen))
