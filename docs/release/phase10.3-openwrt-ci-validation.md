@@ -91,6 +91,19 @@ Commits (on `phase10-openwrt`):
 
 - `3fd9f17` fix(lab): correct OpenWrt image URL and scope loop-device cleanup
 - `ae173a5` test: cover OpenWrt image provisioning failures
+- `603822a` fix(lab): read e2e snapshots via targeted greps
+
+### E2E snapshot-read hardening
+
+The first post-fix local E2E run exposed a second issue: the ACCEPT
+control intermittently failed with "no daemon ACCEPT verdicts recorded"
+even though the daemon metrics showed accepts. Root cause: the e2e read
+the full metrics blob (>1.5 KiB) over the serial console; under QEMU
+TCG the read truncates, so the ACCEPT snapshot appeared stale/empty.
+Fixed by emitting only the small tagged counter lines
+(`goshisen_packets_total` / `_by_state` / `backend_errors`) which fit
+the console. Confirmed by a full passing DROP+ACCEPT run on a fresh
+boot of the provisioned image.
 
 ## D. Local regression (all PASS)
 
@@ -141,10 +154,18 @@ QEMU TCG boot, daemon autostarted, queue 100 bound:
 ## G. GitHub CI
 
 - Local head committed/pushed to `phase10-openwrt` after fixes (new head
-  `ae173a5`).
-- CI run(s) for the fixed head in progress (see `gh pr checks 3`).
-- Required jobs: build/vet/test, package, privileged netns integration,
-  openwrt e2e. Skips rejected in both privileged jobs.
+  `603822a`).
+- Original failing run: `42954931262` (head `d012a34`) — image 404.
+- CI runs for fixed head — **all required jobs PASS on both**:
+  | Run | build/vet/test | package | privileged integration | openwrt e2e |
+  |---|---|---|---|---|
+  | push `42960015562` | PASS | PASS | PASS | PASS (3m18s) |
+  | PR `42960021862` | PASS | PASS | PASS | PASS (3m16s) |
+- The openwrt job log shows the actual controls: `DROP control PASS
+  (curl exit=28, drop verdicts +7, hook +7, queue drops +0)` then
+  `ACCEPT control PASS (curl exit=0, HTTP 200, marker body, accept
+  verdicts +14, hook +14)`; `--- PASS: TestOpenWrtE2E (157.96s)`,
+  zero skips.
 
 ## H. Security review
 
@@ -160,9 +181,10 @@ QEMU TCG boot, daemon autostarted, queue 100 bound:
 
 ## I. Remaining blockers
 
-None known locally. Awaiting green GitHub Actions on the fixed head.
+None. All four CI jobs pass on the fixed head (push and PR runs),
+zero mandatory skips; local regression and the full OpenWrt E2E pass.
 
 ## J. Verdict
 
-**READY_TO_MERGE** once the fixed head's CI is green (pending GitHub
-Actions). Merge itself requires authorization (not performed here).
+**READY_TO_MERGE** — all phase 10.3 gates green. Merge itself requires
+explicit authorization (not performed here).

@@ -84,10 +84,11 @@ is untouched. Regression tests: `TestCTFlagsTolerable`,
 - `ubuntu-24.04`, checkout + setup-go + tooling (`qemu-system-x86`, `e2fsprogs`, etc.).
 - Build static daemon → `openwrt-image-prep.sh --download` (verified checksum) → `openwrt-lab.sh up` → go-test wrapper (timeout 25m) → teardown (always).
 - Skips rejected (same gate policy as the netns integration job).
+- Initial CI run hit an image-download 404 (fixed in phase 10.3, `docs/release/phase10.3-openwrt-ci-validation.md`); all four jobs now pass on the fixed head.
 
 ## Notes / known limitations
 
 - Serial console is the only VM channel (dropbear lacks host keys in the official image); the e2e only depends on `python3`/`curl`/`ip` on the host.
 - The test asserts verdict-count **deltas** (baseline after policy reload), so pre-existing traffic does not break identity checks.
 - `api_port: 0` / `metrics_port: 0` do not disable listeners (file loader skips zeros); defaults 8080/9090 remain. Not an enforcement defect; documented.
-- PR/submission: branch `phase10-openwrt` (HEAD `1fa98bf` + this work), needs authorization to open/push; nothing merged or published here.
+- PR/submission: branch `phase10-openwrt`, PR #3 open (see `docs/release/phase10.3-openwrt-ci-validation.md`); nothing merged or published here.
