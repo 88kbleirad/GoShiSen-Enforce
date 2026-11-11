@@ -74,6 +74,24 @@ func TestOpenWrtInitScriptSendsSignal(t *testing.T) {
 	}
 }
 
+// TestOpenWrtInitScriptDefaultsDisabled pins that the packaged service
+// refuses to start when UCI goshisen.main.enabled is not 1. The
+// package installs disabled; an accidentally running daemon would
+// enforce the default deny-all policy and cut off the router's
+// forwarding without explicit user intent.
+func TestOpenWrtInitScriptDefaultsDisabled(t *testing.T) {
+	initd := readPackagedFile(t, filepath.Join("etc", "init.d", "goshisen"))
+	if !strings.Contains(initd, "service_enabled") {
+		t.Fatal("init script must gate start on service_enabled")
+	}
+	if !strings.Contains(initd, "[ \"$enabled\" = 1 ]") {
+		t.Fatal("service_enabled must require enabled=1")
+	}
+	if !strings.Contains(initd, "service is disabled (goshisen.main.enabled=0)") {
+		t.Fatal("disabled start must log and refuse")
+	}
+}
+
 // TestOpenWrtUCIDefaultInterfaceIsNetdev pins that the packaged UCI
 // default interface is a kernel device name (br-lan), not the fw4 zone
 // name (lan): the daemon's host validation rejects zone names.

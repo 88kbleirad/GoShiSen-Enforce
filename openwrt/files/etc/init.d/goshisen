@@ -18,15 +18,21 @@ UCI_CONFIG_DIR=""
 CONFIG_PATH=/var/run/goshisen/config.yaml
 POLICY_PATH=""
 
-validate_uci() {
-	local enabled queue_num scope log_level iface policy api metrics qlen
+# service_enabled returns 0 when UCI says the service is enabled
+# (goshisen.main.enabled=1). start/reload must refuse otherwise: the
+# packaged default is disabled.
+service_enabled() {
+	local enabled
 
-	# UCI config is not auto-loaded by rc.common; load it explicitly so
-	# config_get below reads the goshisen section.
+	# UCI config is not auto-loaded by rc.common; load it explicitly.
 	config_load goshisen
 
 	config_get enabled main enabled
-	[ "$enabled" = 1 ] || return 0
+	[ "$enabled" = 1 ]
+}
+
+validate_uci() {
+	local queue_num scope log_level iface policy api metrics qlen
 
 	config_get queue_num main queue_num
 	[ -n "$queue_num" ] || {
@@ -89,6 +95,10 @@ render_config() {
 }
 
 start_service() {
+	service_enabled || {
+		echo "goshisen: service is disabled (goshisen.main.enabled=0)" >&2
+		return 1
+	}
 	validate_uci || return 1
 	render_config
 
@@ -105,6 +115,7 @@ stop_service() {
 	# procd sends SIGTERM and waits; nothing else to do. The kernel
 	# keeps the hook in place (fail-closed) until the daemon is
 	# restarted or `goshisen hook cleanup` is run explicitly.
+	service_enabled || return 0
 	return 0
 }
 
@@ -117,6 +128,10 @@ reload_service() {
 	# enforcement is never dropped — a failed reload keeps the
 	# previous policy. Full UCI config changes (queue_num, scope, ...)
 	# require a restart.
+	service_enabled || {
+		echo "goshisen: service is disabled (goshisen.main.enabled=0)" >&2
+		return 1
+	}
 	validate_uci || return 1
 	# The service is registered with procd under the init script's
 	# basename (goshisen), not the binary path.
