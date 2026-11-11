@@ -77,13 +77,19 @@ client() {
 # ---------------------------------------------------------------------------
 snapshot() {
     local tag=$1
+    # Write phase: capture all counters to files in one console call.
     vm "nft list chain ip goshisen forward | grep 'queue to' > /tmp/e2e_hook.txt; \
         cat /proc/net/netfilter/nfnetlink_queue > /tmp/e2e_qs.txt; \
         wget -q -O- http://127.0.0.1:9090/metrics > /tmp/e2e_met.txt; \
-        cat /tmp/e2e_hook.txt /tmp/e2e_qs.txt > /tmp/e2e_snap.txt; \
-        wc -c < /tmp/e2e_snap.txt" >/dev/null
+        echo WROTE" >/dev/null
+    # Read phase: emit only the small, tagged counter lines. The full
+    # metrics blob (>1.5 KiB) truncates on the serial console under
+    # TCG, so we never cat it wholesale.
     {
-        vm "echo @@SNAP; cat /tmp/e2e_snap.txt; echo @@MET; awk '/^goshisen/ && !/latency/' /tmp/e2e_met.txt"
+        vm "echo @@SNAP; grep -a 'queue to' /tmp/e2e_hook.txt; cat /tmp/e2e_qs.txt; \
+            echo @@MET; grep -aE '^goshisen_packets_total' /tmp/e2e_met.txt; \
+            grep -aE '^goshisen_packets_by_state' /tmp/e2e_met.txt; \
+            grep -aE '^goshisen_backend_errors' /tmp/e2e_met.txt"
     } > "$WORK/$tag.raw"
     [ -s "$WORK/$tag.raw" ] || fail "snapshot $tag produced no output"
 }
