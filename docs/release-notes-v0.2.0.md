@@ -45,3 +45,22 @@ enforcement model.
   build+verify PASS; privileged integration 21/21 PASS, zero skips.
 - Local: `go mod verify`, `gofmt`, `go vet`, `go test -race ./...`,
   packaging regression test (`tests/package`) PASS.
+
+## OpenWrt integration (added in phase 10/11)
+
+- **OpenWrt package** (`openwrt/`, SDK-built `.apk`): procd init
+  script (disabled by default; `config_load`, `procd_send_signal`
+  reload, enabled-gate), UCI config, fail-closed default policy.
+- **IPv6 enforcement**: the hook is now an `inet` table that queues
+  IPv4 (queue 100) and IPv6 (queue 101) forwarded TCP/UDP separately;
+  the parser and policy prefixes support IPv6. IPv6 no longer bypasses
+  the daemon (previously a fail-open gap). Stateful IPv6 ACCEPT is
+  limited on kernels without IPv6 conntrack-attribute delivery
+  (packets are then INVALID → DROP; stateless IPv6 rules work).
+- **Flow-offload detection**: the daemon detects nftables flowtables /
+  `flow add @ft` and warns loudly (WARN + `goshisen_flow_offload_active`
+  gauge, re-checked every 10 s). It never modifies the firewall.
+- **Malformed-packet observability**: parse/panic/send backend errors
+  are exported as `goshisen_backend_errors_total{kind=...}`.
+- **Static release builds**: `make build` produces a statically linked,
+  trimmed, reproducible binary; CI asserts it.
