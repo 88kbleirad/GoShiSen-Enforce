@@ -2,9 +2,11 @@ package packet
 
 import (
 	"encoding/binary"
+	"fmt"
 	"testing"
 
 	"github.com/mdlayher/netlink"
+	"golang.org/x/sys/unix"
 
 	"github.com/88kbleirad/GoShiSen-Enforce/internal/policy"
 )
@@ -239,7 +241,7 @@ func isLittleEndian() bool {
 // TestConfigSequenceGolden validates the exact outgoing configuration
 // sequence against hard-coded Linux UAPI values (not derived from the
 // implementation constants, so a duplicated wrong constant cannot make
-// the test pass).
+// TestConfigSequenceGolden pins the four-message configuration sequence.
 func TestConfigSequenceGolden(t *testing.T) {
 	if !isLittleEndian() {
 		t.Skip("test assumes little-endian host")
@@ -424,5 +426,46 @@ func TestCTInfoUAPIGolden(t *testing.T) {
 			t.Errorf("ctinfo=%d: got state=%v dir=%v, want state=%v dir=%v",
 				tc.ctinfo, got.State, got.Direction, tc.wantState, tc.wantDir)
 		}
+	}
+}
+
+// TestCTFlagsTolerable pins the fallback contract: only EOPNOTSUPP
+// (kernel built without the conntrack delivery glue) is tolerated when
+// configuring NFQA_CFG_F_CONNTRACK; every other error is fatal.
+func TestCTFlagsTolerable(t *testing.T) {
+	if !ctFlagsTolerable(unix.EOPNOTSUPP) {
+		t.Error("EOPNOTSUPP must be tolerated")
+	}
+	for _, err := range []error{
+		unix.EPERM,
+		unix.EINVAL,
+		unix.ENOBUFS,
+		fmt.Errorf("netlink receive: %w", unix.EIO),
+	} {
+		if ctFlagsTolerable(err) {
+			t.Errorf("%v must not be tolerated", err)
+		}
+	}
+	if ctFlagsTolerable(nil) {
+		t.Error("nil error must not be tolerated")
+	}
+}
+
+// TestConfigSequenceEndsWithCTGFlags guards the configure() split: the
+// conntrack-flags message must be the last config message, because
+// configure() treats precisely that message as optional.
+func TestConfigSequenceEndsWithCTGFlags(t *testing.T) {
+	b := &Backend{queue: 0, maxlen: 1024}
+	msgs := b.configMessages()
+	if len(msgs) != 4 {
+		t.Fatalf("configMessages() = %d messages, want 4", len(msgs))
+	}
+	last := msgs[3].Data[4:]
+	// Two attrs: mask (type 4) then flags (type 5).
+	if last[2] != 4 {
+		t.Errorf("last message first attr type = %d, want NFQA_CFG_MASK(4)", last[2])
+	}
+	if last[8+2] != 5 {
+		t.Errorf("last message second attr type = %d, want NFQA_CFG_FLAGS(5)", last[8+2])
 	}
 }

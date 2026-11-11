@@ -8,6 +8,7 @@ package packet
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -213,12 +214,33 @@ func Open(opts Options) (*Backend, error) {
 	return b, nil
 }
 
-// configure binds the queue, sets copy mode, and sets maxlen.
+// ctFlagsTolerable reports whether a failure to configure conntrack
+// attribute delivery should be tolerated. Kernels that build
+// nfnetlink_queue without the conntrack glue reject
+// NFQA_CFG_F_CONNTRACK with EOPNOTSUPP; the queue remains fully
+// functional and packets arrive without NFQA_CT, which the engine
+// classifies INVALID → fail-closed DROP. Any other error is fatal.
+func ctFlagsTolerable(err error) bool {
+	return errors.Is(err, unix.EOPNOTSUPP)
+}
+
+// configure binds the queue, sets copy mode, and sets maxlen. The
+// conntrack-flags message is optional: see ctFlagsTolerable.
 func (b *Backend) configure() error {
-	for _, m := range b.configMessages() {
+	msgs := b.configMessages()
+	// Split off the final conntrack-flags message.
+	ctFlags := msgs[len(msgs)-1]
+	msgs = msgs[:len(msgs)-1]
+	for _, m := range msgs {
 		if err := b.send(m); err != nil {
 			return fmt.Errorf("nfqueue config: %w", err)
 		}
+	}
+	if err := b.send(ctFlags); err != nil {
+		if ctFlagsTolerable(err) {
+			return nil
+		}
+		return fmt.Errorf("nfqueue config: %w", err)
 	}
 	return nil
 }
