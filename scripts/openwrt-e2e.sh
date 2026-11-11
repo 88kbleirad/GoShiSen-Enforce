@@ -284,11 +284,12 @@ client true 2>/dev/null || denv "cannot execute in namespace $NS (root or passwo
 
 # The daemon must be running with the queue bound before snapshots mean
 # anything. A cold TCG boot autostarts the daemon via rc.local; under
-# QEMU TCG this can take 90-150s, so wait up to 180s for the NFQUEUE
-# bind log line (the CI boot step also waits on the console, not on the
-# daemon).
+# QEMU TCG this can take 90-200s (first boot even longer), so wait up
+# to 300s for the NFQUEUE bind log line. The CI boot step also waits on
+# the console and the daemon; this window makes the e2e self-sufficient
+# on slow hosts.
 daemon_ready=0
-deadline=$((SECONDS + 180))
+deadline=$((SECONDS + 300))
 while [ $SECONDS -lt $deadline ]; do
     if vm "echo READY_COUNT=\$(grep -c 'NFQUEUE bound' /tmp/goshisen2.log 2>/dev/null || echo 0)" \
         | grep -a -E '^READY_COUNT=' | tail -n1 | grep -qE '^READY_COUNT=[1-9]'; then
