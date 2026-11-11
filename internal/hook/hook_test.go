@@ -42,7 +42,7 @@ func TestBuildFilterOnly(t *testing.T) {
 	for _, want := range []string{
 		"table ip goshisen {",
 		"type filter hook forward priority filter; policy drop;",
-		"meta l4proto { tcp, udp } counter queue num 0",
+		"meta l4proto { tcp, udp } counter queue to 0",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)
@@ -62,7 +62,7 @@ func TestBuildOpenWrtScope(t *testing.T) {
 		"table ip goshisen {",
 		// After firewall4's filter priority 0, policy accept.
 		"type filter hook forward priority 1; policy accept;",
-		"meta l4proto { tcp, udp } counter queue num 100",
+		"meta l4proto { tcp, udp } counter queue to 100",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)

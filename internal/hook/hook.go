@@ -66,7 +66,12 @@ func Build(rs Ruleset) string {
 		fmt.Fprintf(&b, "    chain forward {\n")
 		fmt.Fprintf(&b, "        type filter hook forward priority 1; policy accept;\n")
 		fmt.Fprintf(&b, "        ct state { new, established, related, invalid, untracked } counter\n")
-		fmt.Fprintf(&b, "        meta l4proto { tcp, udp } counter queue num %d\n", rs.Filter.QueueNum)
+		// `queue to N` is the nft >= 1.1 syntax; the legacy `queue num
+		// N` fails to install the rule on nft 1.1+ ("Could not process
+		// rule"), leaving the table without a queue rule (hook status
+		// then reports "table goshisen exists but queue rule not
+		// found"). Debian 12+/OpenWrt 25.12 ship nft 1.1.x.
+		fmt.Fprintf(&b, "        meta l4proto { tcp, udp } counter queue to %d\n", rs.Filter.QueueNum)
 		fmt.Fprintf(&b, "    }\n")
 	default:
 		fmt.Fprintf(&b, "    chain forward {\n")
@@ -80,7 +85,12 @@ func Build(rs Ruleset) string {
 		// `untracked`) and has no verdict, so it only forces tracking
 		// and does not change which packets are queued.
 		fmt.Fprintf(&b, "        ct state { new, established, related, invalid, untracked } counter\n")
-		fmt.Fprintf(&b, "        meta l4proto { tcp, udp } counter queue num %d\n", rs.Filter.QueueNum)
+		// `queue to N` is the nft >= 1.1 syntax; the legacy `queue num
+		// N` fails to install the rule on nft 1.1+ ("Could not process
+		// rule"), leaving the table without a queue rule (hook status
+		// then reports "table goshisen exists but queue rule not
+		// found"). Debian 12+/OpenWrt 25.12 ship nft 1.1.x.
+		fmt.Fprintf(&b, "        meta l4proto { tcp, udp } counter queue to %d\n", rs.Filter.QueueNum)
 		fmt.Fprintf(&b, "    }\n")
 	}
 

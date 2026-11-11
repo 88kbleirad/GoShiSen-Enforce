@@ -71,7 +71,7 @@ func checkNFQUEUERule() string {
 	nftIn := `table ip gsh_nfq_preflight {
     chain c {
         type filter hook forward priority 0; policy accept;
-        meta l4proto { tcp, udp } queue num 0
+        meta l4proto { tcp, udp } queue to 0
     }
 }`
 	cmd := exec.Command("ip", "netns", "exec", ns, "nft", "-f", "-")
