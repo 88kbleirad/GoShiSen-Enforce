@@ -118,6 +118,12 @@ absent (zero parse/send errors).
 - **10.5 procd service**: packaged init script fixed (see below),
   validated end-to-end under procd (enable via UCI, start, reload via
   SIGHUP, stop; daemon state and enforcement confirmed in each state).
+  Note: under procd the daemon stdout/stderr go to syslog, not
+  `/tmp/goshisen2.log`; `scripts/openwrt-e2e.sh` reads the file log, so
+  the canonical e2e gate runs with the rc.local autostart mode (the
+  lab baseline), while the procd lifecycle itself is validated
+  separately. The shipped package is `disabled` by default and procd
+  only runs it when UCI `goshisen.main.enabled=1`.
 - **10.6 UCI**: `/etc/config/goshisen` validated; default interface
   corrected to a kernel netdev (`br-lan`).
 - **10.7 package build**: built with the official OpenWrt SDK
