@@ -283,16 +283,19 @@ timeout 5 bash -c "echo > /dev/tcp/127.0.0.1/$CONSOLE_PORT" 2>/dev/null \
 client true 2>/dev/null || denv "cannot execute in namespace $NS (root or passwordless sudo required)"
 
 # The daemon must be running with the queue bound before snapshots mean
-# anything. Wait up to 30s for the NFQUEUE bind log line.
+# anything. A cold TCG boot autostarts the daemon via rc.local; under
+# QEMU TCG this can take 90-150s, so wait up to 180s for the NFQUEUE
+# bind log line (the CI boot step also waits on the console, not on the
+# daemon).
 daemon_ready=0
-deadline=$((SECONDS + 30))
+deadline=$((SECONDS + 180))
 while [ $SECONDS -lt $deadline ]; do
-    if vm "echo READY_COUNT=\$(grep -c 'NFQUEUE bound' /tmp/goshisen2.log)" \
+    if vm "echo READY_COUNT=\$(grep -c 'NFQUEUE bound' /tmp/goshisen2.log 2>/dev/null || echo 0)" \
         | grep -a -E '^READY_COUNT=' | tail -n1 | grep -qE '^READY_COUNT=[1-9]'; then
         daemon_ready=1
         break
     fi
-    sleep 2
+    sleep 3
 done
 [ "$daemon_ready" -eq 1 ] || denv "daemon not ready (no NFQUEUE bound in /tmp/goshisen2.log)"
 
