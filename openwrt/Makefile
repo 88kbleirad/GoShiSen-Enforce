@@ -16,7 +16,10 @@ PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/88kbleirad/GoShiSen-Enforce.git
-PKG_SOURCE_VERSION:=4091ac1
+PKG_SOURCE_VERSION:=b53ce5813eb8e5951cea97c8830da2df0e1dff43
+# sha256 of the GitHub-generated tarball of the pinned commit; lets the
+# SDK verify the download (mirror hash) when cloning.
+PKG_MIRROR_HASH:=f1b10790f225e371041501ca275b0ef2358b228e14fa270f309934c767830f0c
 PKG_SOURCE_SUBDIR:=$(PKG_NAME)-$(PKG_VERSION)
 
 # Go builds are handled outside OpenWrt's gcc toolchain.
