@@ -153,19 +153,24 @@ QEMU TCG boot, daemon autostarted, queue 100 bound:
 
 ## G. GitHub CI
 
-- Local head committed/pushed to `phase10-openwrt` after fixes (new head
-  `603822a`).
+Final PR head: `309d153` (branch `phase10-openwrt`, PR #3).
+
 - Original failing run: `42954931262` (head `d012a34`) — image 404.
-- CI runs for fixed head — **all required jobs PASS on both**:
+- Fixed-head runs — **all required jobs PASS on both**:
   | Run | build/vet/test | package | privileged integration | openwrt e2e |
   |---|---|---|---|---|
-  | push `42960015562` | PASS | PASS | PASS | PASS (3m18s) |
-  | PR `42960021862` | PASS | PASS | PASS | PASS (3m16s) |
-- The openwrt job log shows the actual controls: `DROP control PASS
-  (curl exit=28, drop verdicts +7, hook +7, queue drops +0)` then
-  `ACCEPT control PASS (curl exit=0, HTTP 200, marker body, accept
-  verdicts +14, hook +14)`; `--- PASS: TestOpenWrtE2E (157.96s)`,
-  zero skips.
+  | push `42969795988` | PASS | PASS | PASS | PASS (3m56s) |
+  | PR `42969803260` | PASS | PASS | PASS | PASS (3m34s) |
+- OpenWrt job log (PR run) confirms the real controls after the boot
+  wait: `daemon NFQUEUE bound after 18s` →
+  `DROP control PASS (curl exit=28, drop verdicts +7, hook +7, queue
+  drops +0)` → `ACCEPT control PASS (curl exit=0, HTTP 200, marker
+  body, accept verdicts +13 [new +1, established +12], hook +13)` →
+  `--- PASS: TestOpenWrtE2E (134.36s)`, zero skips.
+- Earlier intermediate run `42968273819` failed the openwrt job with
+  `ENV: daemon not ready` (exit 3): the boot step only waited on the
+  console TCP port, not the daemon. Fixed by waiting for the
+  `NFQUEUE bound` log line before the e2e (commit `309d153`).
 
 ## H. Security review
 
@@ -181,8 +186,9 @@ QEMU TCG boot, daemon autostarted, queue 100 bound:
 
 ## I. Remaining blockers
 
-None. All four CI jobs pass on the fixed head (push and PR runs),
-zero mandatory skips; local regression and the full OpenWrt E2E pass.
+None. All four CI jobs pass on the final head `309d153` (push and PR
+runs), zero mandatory skips; local regression and the full OpenWrt E2E
+pass with the real DROP/ACCEPT controls.
 
 ## J. Verdict
 

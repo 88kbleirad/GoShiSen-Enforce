@@ -84,7 +84,7 @@ is untouched. Regression tests: `TestCTFlagsTolerable`,
 - `ubuntu-24.04`, checkout + setup-go + tooling (`qemu-system-x86`, `e2fsprogs`, etc.).
 - Build static daemon → `openwrt-image-prep.sh --download` (verified checksum) → `openwrt-lab.sh up` → go-test wrapper (timeout 25m) → teardown (always).
 - Skips rejected (same gate policy as the netns integration job).
-- Initial CI run hit an image-download 404 (fixed in phase 10.3, `docs/release/phase10.3-openwrt-ci-validation.md`); all four jobs now pass on the fixed head.
+- Initial CI run hit an image-download 404 (fixed in phase 10.3, `docs/release/phase10.3-openwrt-ci-validation.md`); all four jobs pass on the fixed PR #3 head (`309d153`).
 
 ## Notes / known limitations
 
