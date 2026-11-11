@@ -120,9 +120,17 @@ absent (zero parse/send errors).
   SIGHUP, stop; daemon state and enforcement confirmed in each state).
 - **10.6 UCI**: `/etc/config/goshisen` validated; default interface
   corrected to a kernel netdev (`br-lan`).
-- **10.7 package build**: SDK build in progress at write time; pin
-  updated to the queue-syntax fix; `golang/host` + `nftables` deps
-  resolved via feeds.
+- **10.7 package build**: built with the official OpenWrt SDK
+  (25.12.6, gcc-14.3.0, x86-64): `package/feeds/goshisen/compile`
+  produces `goshisen-0.2.0-r1.apk` (3.26 MB). The Makefile pin was
+  updated to the current head (the earlier pin predated the nft
+  queue-syntax fix, and the pushed repo does not yet contain the new
+  commits, so the SDK build used a verified local git-archive with
+  `PKG_HASH`). Dependencies `golang/host` and `nftables` resolved via
+  the standard feeds. `.apk` payload verified by extraction: fixed
+  init script (config_load, procd_send_signal, service_enabled gate),
+  UCI default `br-lan`, packaged fail-closed policy, static daemon
+  binary.
 - **10.8 security regression**: covered by the unit tests above plus
   the privileged suite (environment-gated here).
 - **10.9 integration tests**: OpenWrt e2e (Go wrapper) PASS in this
