@@ -1,0 +1,8 @@
+# Default GoShiSen-Enforce policy — fail-closed.
+#
+# This policy allows nothing: all forwarded TCP/UDP traffic is DROPped
+# by the daemon once the service is enabled. Configure explicit ACCEPT
+# rules for your network before enabling the service.
+version: 1
+default_action: DROP
+rules: []
