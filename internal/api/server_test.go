@@ -87,7 +87,16 @@ func (f *fixture) serve() {
 	ctx, cancel := context.WithCancel(context.Background())
 	go f.srv.Serve(ctx)
 	f.t.Cleanup(cancel)
-	time.Sleep(100 * time.Millisecond)
+	// Addr() reports the configured address until Serve has bound the
+	// listener (net.Listen). Wait for the real bound port instead of a
+	// fixed sleep; a fixed sleep races slow machines and race builds.
+	deadline := time.Now().Add(5 * time.Second)
+	for strings.HasSuffix(f.srv.Addr(), ":0") {
+		if time.Now().After(deadline) {
+			f.t.Fatal("api server did not bind within 5s")
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
 }
 
 func (f *fixture) addr() string {
