@@ -2,7 +2,22 @@
 
 **A Linux lab firewall: Go policy engine over NFQUEUE, kernel conntrack, nftables hooks.**
 
-> **Status: released v0.1.0; packaging hardening in progress.** The daemon (policy engine, NFQUEUE enforcement, stateful filtering, management API/metrics, NAT, overflow monitoring, crash/restart hardening) is released as v0.1.0 with the privileged integration suite at 21/21 PASS and zero mandatory skips on GitHub-hosted runners. This phase adds reproducible Linux release binaries (amd64 + arm64), checksums, SBOM, packaging automation, and installation/upgrade documentation. See `docs/installation.md`.
+> **Status: released v0.1.0; v0.2.0 drafted (OpenWrt package, IPv6 enforcement, flow-offload awareness).** The daemon (policy engine, NFQUEUE enforcement, stateful filtering, management API/metrics, NAT, overflow monitoring, crash/restart hardening) is released as v0.1.0 with the privileged integration suite at 21/21 PASS and zero mandatory skips on GitHub-hosted runners. v0.2.0 adds reproducible Linux release binaries (amd64 + arm64), checksums, SBOM, packaging automation, and installation/upgrade documentation. See `docs/installation.md`.
+
+## OpenWrt
+
+The OpenWrt package (`openwrt/`, SDK-built `.apk`) adds GoShiSen-Enforce
+as a fail-closed enforcement layer after firewall4 on the forward path.
+Validated on OpenWrt 25.12.6 x86/64 (kernel 6.12.112); the service is
+disabled by default.
+
+- `docs/openwrt.md` — install, UCI options, procd usage, boot behavior,
+  recovery, upgrade/removal.
+- `docs/release/v0.2.0-notes.md` — verified behavior and known
+  limitations (boot-time window, stateful IPv6, flow offloading,
+  architecture coverage, stop semantics).
+- `docs/release/phase11-openwrt-validation.md` — full evidence matrix,
+  CI run IDs, reproducibility and package results.
 
 ## What works today
 
