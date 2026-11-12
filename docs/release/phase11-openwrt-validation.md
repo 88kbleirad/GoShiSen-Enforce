@@ -36,6 +36,69 @@ evidence only; never inferred results.
 | Task 6 reproducibility | PASS | two clean SDK builds → byte-identical apk (`b4925a60…`) |
 | Task 7 CI | PASS | push `43065507036` and PR `43065518847`: all 4 jobs success (build/vet/test, openwrt e2e, package, integration), 0 skips |
 | Task 8 docs | PASS | docs/openwrt.md, SECURITY.md threat model, checklist gates |
-| Task 9 version | in progress | version determination + release notes |
+| Task 9 version | PASS | v0.2.0 proposed; release notes draft; eligible commit fa9b58e; teardown pending |
 
-## C–F. (to be completed at end of phase with final run IDs and verdicts)
+## C. Defects found and fixed
+
+| Defect | Root cause | Fix | Regression test |
+| --- | --- | --- | --- |
+| IPv6 full bypass | hook table family `ip` | `inet` table + v6 parser + policy v6 prefixes + dual queues (100/101) | parser/policy/hook unit tests; VM v6 allow/deny/kill |
+| Same-queue dual bind EPERM | nfnetlink_queue rejects second bind, queue number | v6 queue = queue_num+1 | config-sequence tests |
+| fw4 `flow add @ft` not detected | detection only looked for `flow offload` | detect `flow add @` + flowtable objects | fake-nft tests |
+| `backend_errors_total` never incremented | metric registered but never wired | `SetErrorObserver` wired in app | `TestBackendErrorObserver` |
+| apk remove orphans hook | prerm only stopped service | prerm runs `hook cleanup` | apk remove re-test on VM |
+| e2e hook-delta read v6 line | two queue rules; grep took last | snapshot targets `nfproto ipv4` rule | CI e2e green |
+| procd reload used `procd_kill` | deleted the instance | `procd_send_signal` | VM reload tests |
+
+## D. Package and reproducibility
+
+- Static release build: `make build` → `bin/goshisen` static, `make verify-static` passes, CI checks `file`+`ldd`.
+- SDK build from git pin: `PKG_SOURCE_VERSION` (pushed) + `PKG_MIRROR_HASH` (SDK `.tar.zst` sha256) — clean build succeeds without local overrides.
+- Reproducibility: two clean SDK builds → byte-identical apk `b4925a60…` (binary inside: `a00e4a52…`).
+- apk payload: `/usr/sbin/goshisen` (static), `/etc/init.d/goshisen` (procd, `service_enabled` gate), `/etc/config/goshisen` (netdev `interface`), `/etc/goshisen/policy.yaml` (fail-closed), `prerm` runs `hook cleanup`.
+
+## E. CI status (per job, run 43066814143, head fa9b58e)
+
+| Job | Conclusion |
+| --- | --- |
+| build, vet, test | success |
+| openwrt e2e (QEMU lab, privileged) | success |
+| package + verify release archives | success |
+| integration (real netns lab, privileged) | success |
+
+Zero mandatory skips (both privileged jobs fail on `--- SKIP`). PR run 43066824685 (same head) success. Earlier infra flake 43041340437 (apt DNS timeout) not code-related; rerun path green.
+
+## F. Remaining risks and blockers
+
+Product limitations (documented, not failures):
+- Flow offloading is detected and warned, not disabled (by design).
+- Stateful IPv6 depends on kernel CT-attribute delivery; otherwise INVALID→DROP (fail-closed); stateless v6 works.
+- Only x86_64 verified; other OpenWrt arches untested.
+- Boot window before daemon start is governed solely by fw4 (no policy until hook install).
+- TCG VM timing/performance figures are indicative only (no numbers published).
+
+Environment limits: privileged host suite cannot run on this workstation (host lacks nf_tables/nft); CI covers it (green).
+
+Unverified/blocked: none for the mandatory gates.
+
+## G. Release verdict
+
+READY — all mandatory gates have evidence and CI is green at the pushed head with zero skips.
+
+## H. Proposed version and next commands
+
+Proposed version: **v0.2.0** (v0.1.0 already tagged; current daemon/package report 0.2.0; notes draft at `docs/release-notes-v0.2.0.md`).
+
+Eligible commit for tagging: `fa9b58e1c043c016f888073511cff7bdee5bd106` (HEAD of `phase10-openwrt`, CI-green).
+
+Merge/tag commands (await explicit authorization):
+```sh
+# 1. merge the draft PR (#3: phase10-openwrt → main) after CI refresh
+gh pr merge 3 --merge
+# 2. verify main CI on the merged head (zero skips)
+# 3. tag
+git tag v0.2.0 fa9b58e    # or the post-merge main SHA
+git push origin v0.2.0
+# 4. release workflow drafts the GitHub release; publish manually
+```
+Nothing merged, tagged, or published yet (authorization required).
