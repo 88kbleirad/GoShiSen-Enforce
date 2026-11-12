@@ -117,14 +117,42 @@ func TestOpenWrtBootGuardPackaged(t *testing.T) {
 	if !strings.Contains(guard, "START=12") {
 		t.Fatal("guard init must run before firewall4 (START=12 < 19)")
 	}
-	if !strings.Contains(guard, "policy drop;") {
-		t.Fatal("guard chain must have policy drop")
-	}
-	if strings.Contains(guard, "accept") || strings.Contains(guard, "bypass") {
-		t.Fatal("guard ruleset must not contain accept or bypass")
-	}
 	if !strings.Contains(guard, "service_enabled") {
 		t.Fatal("guard must be gated on the service being enabled")
+	}
+	if !strings.Contains(guard, "table inet goshisen") {
+		t.Fatal("guard must install an inet (dual-stack) table, not family ip/ip6")
+	}
+
+	// The only chain the guard creates is the forward chain with a
+	// default-drop policy; input/output chains must not be created so
+	// router-local traffic is untouched.
+	if !strings.Contains(guard, `add chain inet goshisen forward { type filter hook forward priority filter; policy drop; }`) {
+		t.Fatalf("guard must create exactly the forward drop chain, got:\n%s", guard)
+	}
+	for _, banned := range []string{"chain input", "chain output", "type filter hook input", "type filter hook output"} {
+		if strings.Contains(guard, banned) {
+			t.Fatalf("guard must not create %s chain", banned)
+		}
+	}
+
+	// Fail-closed invariant: no accept and no bypass anywhere in the
+	// nft statements (comments may mention them; filter those out).
+	nftOnly := ""
+	for _, line := range strings.Split(guard, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "#") || trimmed == "" {
+			continue
+		}
+		nftOnly += trimmed + "\n"
+	}
+	for _, banned := range []string{" accept", "bypass", "policy accept"} {
+		if strings.Contains(nftOnly, banned) {
+			t.Fatalf("guard nft statements must not contain %q:\n%s", banned, nftOnly)
+		}
+	}
+	if !strings.Contains(nftOnly, "policy drop;") {
+		t.Fatal("guard chain must have policy drop")
 	}
 
 	main := readPackagedFile(t, filepath.Join("etc", "init.d", "goshisen"))
