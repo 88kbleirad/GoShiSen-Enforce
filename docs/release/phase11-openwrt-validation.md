@@ -36,7 +36,8 @@ evidence only; never inferred results.
 | Task 6 reproducibility | PASS | two clean SDK builds → byte-identical apk (`b4925a60…`) |
 | Task 7 CI | PASS | push `43065507036` and PR `43065518847`: all 4 jobs success (build/vet/test, openwrt e2e, package, integration), 0 skips |
 | Task 8 docs | PASS | docs/openwrt.md, SECURITY.md threat model, checklist gates |
-| Task 9 version | PASS | v0.2.0 proposed; release notes draft; eligible commit fa9b58e; teardown pending |
+| Task 9 version | PASS | v0.2.0 proposed; release notes draft; teardown done |
+| Final local e2e (VM, r2 package, dual-queue) | PASS | DROP curl 28 (+7 drop), ACCEPT 200 (+13 accept: new +1/est +12); identity v4 hook 20 == verdicts 13+7; queue100 id_seq 20; backend_errors absent |
 
 ## C. Defects found and fixed
 
@@ -89,7 +90,7 @@ READY — all mandatory gates have evidence and CI is green at the pushed head w
 
 Proposed version: **v0.2.0** (v0.1.0 already tagged; current daemon/package report 0.2.0; notes draft at `docs/release-notes-v0.2.0.md`).
 
-Eligible commit for tagging: `fa9b58e1c043c016f888073511cff7bdee5bd106` (HEAD of `phase10-openwrt`, CI-green).
+Eligible commit for tagging: `fa9b58e1c043c016f888073511cff7bdee5bd106` (the CI-green head, run 43066814143). The branch head is `6ffd4f1` (docs-only follow-ups: evidence verbosity); tag `fa9b58e` (or the post-merge main SHA) after merge.
 
 Merge/tag commands (await explicit authorization):
 ```sh
