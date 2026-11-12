@@ -60,27 +60,39 @@ define Package/goshisen/install
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/goshisen $(1)/usr/sbin/goshisen
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN) ./files/etc/init.d/goshisen $(1)/etc/init.d/goshisen
+	$(INSTALL_BIN) ./files/etc/init.d/goshisen-boot $(1)/etc/init.d/goshisen-boot
 	$(INSTALL_DIR) $(1)/etc/config
 	$(INSTALL_DATA) ./files/etc/config/goshisen $(1)/etc/config/goshisen
 	$(INSTALL_DIR) $(1)/etc/goshisen
 	$(INSTALL_DATA) ./files/etc/goshisen/policy.yaml $(1)/etc/goshisen/policy.yaml
 endef
 
-# Do not auto-enable at boot during installation.
+# The daemon service stays disabled at install. The pre-firewall boot
+# guard is linked (so it runs early) but is a no-op unless the service
+# is enabled (UCI goshisen.main.enabled=1), so a disabled install never
+# blocks forwarding.
 define Package/goshisen/postinst
-	[ -z "$${IPKG_INSTROOT}" ] && /etc/init.d/goshisen enabled || true
+	if [ -z "$${IPKG_INSTROOT}" ]; then
+		/etc/init.d/goshisen enabled || true
+		[ -x /etc/init.d/goshisen-boot ] && /etc/init.d/goshisen-boot enable || true
+	fi
 endef
 
 define Package/goshisen/prerm
-	# On uninstall the app-owned nftables table must be removed: the
-	# daemon's queue rule would otherwise stay installed with no
-	# consumer and keep blocking forwarded traffic (the kernel drops
-	# packets queued to a queue without a listener).
+	# On uninstall the app-owned nftables table must be removed and the
+	# services disabled: the daemon's queue rule (or the boot guard's
+	# default-drop chain) would otherwise stay installed and keep
+	# blocking forwarded traffic.
 	if [ -z "$${IPKG_INSTROOT}" ]; then
 		if [ -x /usr/sbin/goshisen ]; then
 			/usr/sbin/goshisen hook cleanup || true
 		fi
 		/etc/init.d/goshisen stop || true
+		/etc/init.d/goshisen disable || true
+		if [ -x /etc/init.d/goshisen-boot ]; then
+			/etc/init.d/goshisen-boot stop || true
+			/etc/init.d/goshisen-boot disable || true
+		fi
 	fi
 endef
 

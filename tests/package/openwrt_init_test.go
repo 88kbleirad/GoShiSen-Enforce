@@ -104,3 +104,60 @@ func TestOpenWrtUCIDefaultInterfaceIsNetdev(t *testing.T) {
 		t.Fatal("UCI default interface must not be the firewall zone name 'lan'")
 	}
 }
+
+// TestOpenWrtBootGuardPackaged pins the pre-firewall fail-closed boot
+// guard: a separate early init script (goshisen-boot, START=12 before
+// firewall4 S19) that, only when the main service is enabled, installs
+// the app-owned table with a default-drop forward chain for BOTH IPv4
+// and IPv6, with no accept/bypass anywhere. The main daemon init keeps
+// START=90 (after network), because moving it earlier would make the
+// daemon exit when br-lan does not exist yet.
+func TestOpenWrtBootGuardPackaged(t *testing.T) {
+	guard := readPackagedFile(t, filepath.Join("etc", "init.d", "goshisen-boot"))
+	if !strings.Contains(guard, "START=12") {
+		t.Fatal("guard init must run before firewall4 (START=12 < 19)")
+	}
+	if !strings.Contains(guard, "policy drop;") {
+		t.Fatal("guard chain must have policy drop")
+	}
+	if strings.Contains(guard, "accept") || strings.Contains(guard, "bypass") {
+		t.Fatal("guard ruleset must not contain accept or bypass")
+	}
+	if !strings.Contains(guard, "service_enabled") {
+		t.Fatal("guard must be gated on the service being enabled")
+	}
+
+	main := readPackagedFile(t, filepath.Join("etc", "init.d", "goshisen"))
+	if !strings.Contains(main, "START=90") {
+		t.Fatal("main daemon init must keep START=90 (after network/firewall)")
+	}
+}
+
+// TestOpenWrtBootGuardFileMode pins that the guard init script ships
+// executable (0755) so its rc.d link can run at boot.
+func TestOpenWrtBootGuardFileMode(t *testing.T) {
+	st, err := os.Stat(filepath.Join(openwrtFilesDir(t), "etc", "init.d", "goshisen-boot"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Mode().Perm()&0o111 == 0 {
+		t.Fatalf("goshisen-boot mode = %v, want executable", st.Mode())
+	}
+}
+
+// TestOpenWrtPostinstLinksBootGuard pins that installing the package
+// links the pre-firewall guard (so it runs early) but never enables the
+// daemon service; a disabled install must not block forwarding.
+func TestOpenWrtPostinstLinksBootGuard(t *testing.T) {
+	mk, err := os.ReadFile(filepath.Join(repoRoot(t), "openwrt", "Makefile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(mk)
+	if !strings.Contains(text, "goshisen-boot enable") {
+		t.Fatal("postinst must enable/link goshisen-boot")
+	}
+	if !strings.Contains(text, "goshisen enabled") {
+		t.Fatal("postinst must keep the daemon service disabled by default")
+	}
+}
