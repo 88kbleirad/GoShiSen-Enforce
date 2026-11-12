@@ -386,3 +386,133 @@ func TestWatchQueueOverflowUnavailable(t *testing.T) {
 		t.Fatal("watcher did not exit when stats unavailable")
 	}
 }
+
+// TestRunOffloadPolicyRefuse verifies that with offload_policy=refuse
+// and flow offloading detected, Run fails BEFORE installing the hook
+// (fail-closed by absence) and never binds the queue.
+func TestRunOffloadPolicyRefuse(t *testing.T) {
+	opts := testOptions(t)
+	opts.APIPort = 0
+	opts.OffloadPolicy = config.OffloadPolicyRefuse
+	d, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hookCalled := false
+	queueCalled := false
+	d.detectFlowOffload = func() hook.FlowOffloadReport {
+		return hook.FlowOffloadReport{Active: true, Detail: "flow add @ft"}
+	}
+	d.installHook = func(rs hook.Ruleset) error { hookCalled = true; return nil }
+	d.openQueue = func(packet.Options) (Queue, error) { queueCalled = true; return newFakeQueue(), nil }
+	err = d.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "refuse") {
+		t.Fatalf("Run = %v, want refuse error", err)
+	}
+	if hookCalled || queueCalled {
+		t.Fatal("hook/queue touched despite offload_policy=refuse")
+	}
+	// The API must stay not-ready (Run returned before ever setting it).
+	if d.Ready() {
+		t.Fatal("ready = true despite refuse")
+	}
+}
+
+// TestRunOffloadPolicyReadiness verifies that with offload_policy=readiness
+// and flow offloading detected, the daemon runs and enforces but never
+// becomes ready.
+func TestRunOffloadPolicyReadiness(t *testing.T) {
+	opts := testOptions(t)
+	opts.APIPort = 0
+	opts.OffloadPolicy = config.OffloadPolicyReadiness
+	d, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.detectFlowOffload = func() hook.FlowOffloadReport {
+		return hook.FlowOffloadReport{Active: true, Detail: "flowtable f"}
+	}
+	hookCalled := false
+	d.installHook = func(rs hook.Ruleset) error { hookCalled = true; return nil }
+	fq := newFakeQueue()
+	d.openQueue = func(packet.Options) (Queue, error) { return fq, nil }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- d.Run(ctx) }()
+	select {
+	case <-fq.ran:
+	case <-time.After(3 * time.Second):
+		t.Fatal("queue never started")
+	}
+	if !hookCalled {
+		t.Fatal("hook not installed under readiness policy")
+	}
+	// Give Run a moment to (not) set ready.
+	deadline := time.Now().Add(2 * time.Second)
+	for !d.Ready() && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if d.Ready() {
+		t.Fatal("ready = true under offload_policy=readiness with offload active")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("Run = %v, want nil", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run did not exit")
+	}
+}
+
+// TestRunOffloadPolicyWarnDefault verifies the default policy keeps the
+// existing behavior: warn + metric, but readiness becomes true (no
+// gating).
+func TestRunOffloadPolicyWarnDefault(t *testing.T) {
+	opts := testOptions(t)
+	opts.APIPort = 0
+	if opts.OffloadPolicy != "" && opts.OffloadPolicy != config.OffloadPolicyWarn {
+		t.Fatalf("default offload_policy = %q, want %q or empty", opts.OffloadPolicy, config.OffloadPolicyWarn)
+	}
+	if opts.OffloadPolicy == "" {
+		opts.OffloadPolicy = config.OffloadPolicyWarn
+	}
+	d, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.detectFlowOffload = func() hook.FlowOffloadReport {
+		return hook.FlowOffloadReport{Active: true, Detail: "flow add @ft"}
+	}
+	d.installHook = func(rs hook.Ruleset) error { return nil }
+	fq := newFakeQueue()
+	d.openQueue = func(packet.Options) (Queue, error) { return fq, nil }
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- d.Run(ctx) }()
+	select {
+	case <-fq.ran:
+	case <-time.After(3 * time.Second):
+		t.Fatal("queue never started")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for !d.Ready() && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !d.Ready() {
+		t.Fatal("ready = false under warn policy")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("Run = %v, want nil", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run did not exit")
+	}
+}

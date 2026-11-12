@@ -109,12 +109,16 @@ func (d *Daemon) watchFlowOffload(ctx context.Context) {
 			return
 		case <-ticker.C:
 		}
-		if rep := d.detectFlowOffload(); rep.Active {
-			d.metrics.SetFlowOffloadActive(true)
+		rep := d.detectFlowOffload()
+		d.metrics.SetFlowOffloadActive(rep.Active)
+		if rep.Active {
 			d.log.Warn("flow offloading detected: established flows bypass goshisen queue (enforcement gap)",
 				"detail", rep.Detail)
-		} else {
-			d.metrics.SetFlowOffloadActive(false)
+			if d.opts.OffloadPolicy == config.OffloadPolicyReadiness {
+				d.ready.Store(false)
+			}
+		} else if d.opts.OffloadPolicy != config.OffloadPolicyReadiness {
+			d.ready.Store(true)
 		}
 	}
 }
@@ -270,6 +274,18 @@ func (d *Daemon) Run(ctx context.Context) error {
 		scope = hook.ScopeOpenWrt
 	}
 	queueNum := d.opts.QueueNum
+
+	// Flow-offload pre-check: offload_policy=refuse means the daemon
+	// must not start enforcing when established flows would bypass the
+	// queue. Fail-closed by absence: return before installing the hook
+	// so the system is left exactly as it was.
+	offload := d.detectFlowOffload()
+	if offload.Active && d.opts.OffloadPolicy == config.OffloadPolicyRefuse {
+		return fmt.Errorf("flow offloading is active but offload_policy=refuse: "+
+			"established flows bypass the queue (enforcement gap); "+
+			"disable flow offloading or set offload_policy=warn/readiness (%s)", offload.Detail)
+	}
+
 	rs := hook.Ruleset{
 		Filter: hook.FilterConfig{QueueNum: queueNum},
 		Nat:    d.opts.Nat,
@@ -283,9 +299,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// Flow-offload detection: if offloading is configured, established
 	// flows bypass NFQUEUE entirely. We never silently modify the
 	// user's firewall; we flag it loudly and expose a health metric.
-	if rep := d.detectFlowOffload(); rep.Active {
+	if offload.Active {
 		d.log.Warn("flow offloading detected: established flows bypass goshisen queue (enforcement gap)",
-			"detail", rep.Detail)
+			"detail", offload.Detail)
 		d.metrics.SetFlowOffloadActive(true)
 	} else {
 		d.metrics.SetFlowOffloadActive(false)
@@ -299,8 +315,16 @@ func (d *Daemon) Run(ctx context.Context) error {
 	d.log.Info("NFQUEUE bound", "queue", queueNum, "maxlen", d.opts.QueueMaxlen)
 
 	// The enforcement path is now fully up: hook installed and queue
-	// bound. Only now does readiness become true.
-	d.ready.Store(true)
+	// bound. Only now does readiness become true. With
+	// offload_policy=readiness, readiness stays false while flow
+	// offloading is active (enforcement gap present); the API keeps
+	// reporting 503 and the metric carries the gauge.
+	if offload.Active && d.opts.OffloadPolicy == config.OffloadPolicyReadiness {
+		d.log.Error("offload_policy=readiness: flow offloading active, staying not-ready",
+			"detail", offload.Detail)
+	} else {
+		d.ready.Store(true)
+	}
 
 	qCtx, qCancel := context.WithCancel(ctx)
 	defer qCancel()
