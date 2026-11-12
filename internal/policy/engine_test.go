@@ -157,12 +157,6 @@ rules:
     action: ACCEPT
     dst: not-an-ip
 `,
-		"ipv6 cidr": `version: 1
-rules:
-  - id: r1
-    action: ACCEPT
-    src: ::1/128
-`,
 		"wildcard octets": `version: 1
 rules:
   - id: r1
@@ -416,7 +410,7 @@ func TestParsePrefixValues(t *testing.T) {
 }
 
 func TestParsePrefixRejects(t *testing.T) {
-	for _, in := range []string{"10.0.0.0/33", "10.0.0.0/-1", "not-an-ip", "10.0.*.*", "::1/128", "10.0.0.0/24/24"} {
+	for _, in := range []string{"10.0.0.0/33", "10.0.0.0/-1", "not-an-ip", "10.0.*.*", "10.0.0.0/24/24"} {
 		if _, err := ParsePrefix(in); err == nil {
 			t.Errorf("ParsePrefix(%q) succeeded, want error", in)
 		}
@@ -738,4 +732,38 @@ rules:
 		k.Replace(s)
 	}
 	<-done
+}
+
+// TestPrefixIPv6 verifies IPv6 CIDR parsing and matching, and that the
+// "any" prefix matches both families (needed so stateful ACCEPT rules
+// without src/dst still authorize IPv6 replies).
+func TestPrefixIPv6(t *testing.T) {
+	p, err := ParsePrefix("fd70:1::/64")
+	if err != nil {
+		t.Fatalf("ParsePrefix(v6): %v", err)
+	}
+	if !p.Contains(netip.MustParseAddr("fd70:1::100")) {
+		t.Error("fd70:1::/64 must contain fd70:1::100")
+	}
+	if p.Contains(netip.MustParseAddr("fd70:2::1")) {
+		t.Error("fd70:1::/64 must not contain fd70:2::1")
+	}
+	// Family isolation: an IPv4 address must never match a v6 prefix.
+	if p.Contains(netip.MustParseAddr("10.0.0.1")) {
+		t.Error("v6 prefix must not match a v4 address")
+	}
+	any := AnyPrefix()
+	if !any.Contains(netip.MustParseAddr("10.0.0.1")) {
+		t.Error("any must match v4")
+	}
+	if !any.Contains(netip.MustParseAddr("fd70:1::100")) {
+		t.Error("any must match v6 (stateful ACCEPT rules rely on it)")
+	}
+	host, err := ParsePrefix("fd70:1::100")
+	if err != nil {
+		t.Fatalf("ParsePrefix(v6 host): %v", err)
+	}
+	if !host.Contains(netip.MustParseAddr("fd70:1::100")) {
+		t.Error("bare v6 address must match itself")
+	}
 }

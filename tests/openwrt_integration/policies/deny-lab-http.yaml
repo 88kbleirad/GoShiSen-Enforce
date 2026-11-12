@@ -1,0 +1,13 @@
+# Explicit DROP for the lab HTTP path (LAN client -> WAN marker server).
+# Used by the OpenWrt e2e test as the negative control.
+version: 1
+default_action: DROP
+rules:
+  - id: deny-lab-http
+    action: DROP
+    protocol: tcp
+    src: 10.0.3.0/24
+    dst: 10.0.2.2
+    dst_port: 8088
+    state: [NEW]
+    description: "explicit DROP for lab HTTP"

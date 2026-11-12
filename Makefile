@@ -18,7 +18,8 @@ LDFLAGS := -s -w \
 	-X $(PKG)/internal/cli.Version=$(VERSION) \
 	-X $(PKG)/internal/app.Version=$(VERSION)
 
-.PHONY: all build test vet fmt fmt-fix check clean run tidy help test-integration fuzz
+.PHONY: all build build-static verify-static test vet fmt fmt-fix check clean run tidy help test-integration fuzz \
+	package package-dist verify-package sbom
 
 .PHONY: integration
 integration: build ## Run the real netns integration suite (requires root)
@@ -30,10 +31,23 @@ fuzz: ## Fuzz the packet parser (30s)
 
 all: check
 
-build: ## Build the daemon into ./bin/goshisen
+# The default release build is a statically linked, reproducible binary
+# (CGO off, trimmed paths, no VCS stamp): this is what ships in release
+# archives and on OpenWrt (musl). See scripts/package.sh.
+build: ## Build the daemon into ./bin/goshisen (static)
 	@mkdir -p $(BIN_DIR)
-	$(GO) build $(GOFLAGS) -ldflags '$(LDFLAGS)' -o $(BIN) ./cmd/goshisen
+	CGO_ENABLED=0 $(GO) build -trimpath -buildvcs=false $(GOFLAGS) \
+		-ldflags '-buildid= $(LDFLAGS)' -o $(BIN) ./cmd/goshisen
 	@echo "built $(BIN) ($(VERSION))"
+
+build-static: build ## Alias: the default build is already static
+
+verify-static: ## Fail if $(BIN) is not a statically linked executable
+	@[ -f "$(BIN)" ] || { echo "missing $(BIN) (run: make build)"; exit 1; }
+	@file "$(BIN)" | grep -q "statically linked" || { \
+		echo "ERROR: $(BIN) is not statically linked"; \
+		file "$(BIN)"; exit 1; }
+	@echo "static: ok"
 
 test: ## Run tests
 	$(GO) test $(GOFLAGS) ./...
@@ -53,7 +67,7 @@ fmt: ## Verify formatting; fails on unformatted files
 fmt-fix: ## Rewrite files with gofmt
 	gofmt -w .
 
-check: fmt vet test build ## Full local verification
+check: fmt vet test build verify-static ## Full local verification
 
 clean: ## Remove build artifacts
 	rm -rf $(BIN_DIR)
@@ -63,6 +77,19 @@ run: build ## Build and run the daemon with the sample config
 
 tidy: ## Tidy go.mod / go.sum
 	$(GO) mod tidy
+
+package: ## Build reproducible release archives (amd64 + arm64)
+	VERSION=$(VERSION) ARCH=all bash scripts/package.sh
+
+package-dist: ## Build only the current GOARCH archive
+	VERSION=$(VERSION) bash scripts/package.sh
+
+verify-package: package-dist ## Build and validate the archive (arch, version, checksums, SBOM)
+	@bash scripts/verify-package.sh
+
+sbom: ## Generate an SPDX SBOM over the source tree
+	@syft scan -o spdx-json=sbom.spdx.json . 2>/dev/null || \
+		echo "ERROR: syft not installed (see scripts/package.sh)" >&2
 
 help: ## List targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \

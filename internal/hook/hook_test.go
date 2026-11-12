@@ -40,9 +40,10 @@ func TestBuildFilterOnly(t *testing.T) {
 	out := Build(rs)
 
 	for _, want := range []string{
-		"table ip goshisen {",
+		"table inet goshisen {",
 		"type filter hook forward priority filter; policy drop;",
-		"meta l4proto { tcp, udp } counter queue num 0",
+		"meta nfproto ipv4 meta l4proto { tcp, udp } counter queue to 0",
+		"meta nfproto ipv6 meta l4proto { tcp, udp } counter queue to 1",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)
@@ -52,6 +53,32 @@ func TestBuildFilterOnly(t *testing.T) {
 	if strings.Contains(out, "dstnat") || strings.Contains(out, "srcnat") {
 		t.Errorf("NAT chains present despite disabled:\n%s", out)
 	}
+}
+
+func TestBuildOpenWrtScope(t *testing.T) {
+	rs := Ruleset{Filter: FilterConfig{QueueNum: 100}, Scope: ScopeOpenWrt}
+	out := Build(rs)
+
+	for _, want := range []string{
+		"table inet goshisen {",
+		// After firewall4's filter priority 0, policy accept.
+		"type filter hook forward priority 1; policy accept;",
+		"meta nfproto ipv4 meta l4proto { tcp, udp } counter queue to 100",
+		"meta nfproto ipv6 meta l4proto { tcp, udp } counter queue to 101",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+	// The openwrt scope must never contain NAT chains (firewall4 owns NAT).
+	if strings.Contains(out, "dstnat") || strings.Contains(out, "srcnat") {
+		t.Errorf("NAT chains present in openwrt scope:\n%s", out)
+	}
+	// And must not ship a policy drop (fw4's own forward chain drops).
+	if strings.Contains(out, "policy drop;") {
+		t.Errorf("openwrt scope must not set policy drop:\n%s", out)
+	}
+	nftSyntaxCheck(t, out)
 }
 
 func TestBuildNAT(t *testing.T) {

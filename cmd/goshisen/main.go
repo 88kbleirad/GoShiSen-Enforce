@@ -75,13 +75,13 @@ func runHook(opts *cli.Options) error {
 		if err := hook.Verify(); err != nil {
 			return err
 		}
-		fmt.Printf("hook: table ip %s installed with queue rule\n", hook.Table)
+		fmt.Printf("hook: table inet %s installed with queue rule\n", hook.Table)
 		return nil
 	case "cleanup":
 		if err := hook.Cleanup(); err != nil {
 			return err
 		}
-		fmt.Printf("hook: table ip %s removed\n", hook.Table)
+		fmt.Printf("hook: table inet %s removed\n", hook.Table)
 		return nil
 	}
 	return fmt.Errorf("internal: unhandled hook subcommand %q", opts.Subcommand)

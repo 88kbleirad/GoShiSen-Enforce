@@ -49,9 +49,43 @@ Run in order. Every item must pass before tagging.
 - [ ] `git tag v0.1.0 && git push origin v0.1.0` (after privileged suite passes).
 - [ ] CI on the tag runs green (build + integration jobs, zero mandatory skips).
 - [ ] Version stamp: `make build VERSION=v0.1.0` then `bin/goshisen --version` must print `goshisen v0.1.0` (not `dev`). Guarded in CI (`Verify version stamp` step; `internal/cli.Version` must be a `var`, not a `const` — ldflags `-X` cannot set constants).
+- [ ] Packaging: `make package VERSION=$TAG` builds `goshisen-linux-amd64.tar.gz` + `goshisen-linux-arm64.tar.gz` + `checksums.txt` + `sbom.spdx.json`; `make verify-package VERSION=$TAG` validates arch, static linkage, version stamp, checksums, SBOM; archives byte-reproducible. Guarded by the CI `package` job and `tests/package`.
+- [ ] Release workflow (`.github/workflows/release.yml`) runs on `v*` tags, builds + verifies, and attaches artifacts to the tag's release as a **draft** (never auto-publishes).
 - [ ] Publish the container image (optional) from the tagged checkout with `--cap-drop=ALL --cap-add=NET_ADMIN --cap-add=NET_RAW` per the Dockerfile guidance.
 
 ## 6. Release notes (draft)
 
 - Phase 1–6 foundation summary; Phase 7: queue-overflow monitoring, crash/restart hardening + readiness, supervisor examples, toolchain alignment, security hardening (typed metric enums, sample-config sanitization).
 - Explicit note: privileged suite must pass before claiming production readiness; this checklist's §2 is the gate.
+
+---
+
+## Phase 11 additions (OpenWrt release gates)
+
+- [ ] OpenWrt package pin: `PKG_SOURCE_VERSION` points to a **pushed**
+  commit and `PKG_MIRROR_HASH` is set (verify with `curl -fsSL
+  https://codeload.github.com/.../tar.gz/<sha>` + `sha256sum`).
+- [ ] `make build` produces a **statically linked** `bin/goshisen`
+  (`make verify-static` passes); CI build job asserts it via `file` and
+  `ldd`.
+- [ ] OpenWrt SDK build of `package/feeds/goshisen` succeeds from the
+  git pin alone (no file:// override), and the `.apk` payload contains:
+  init script (with `service_enabled` gate), UCI (netdev `interface`),
+  fail-closed policy, static binary, `prerm` that runs `hook cleanup`.
+- [ ] OpenWrt VM procd lifecycle: start/stop/restart/reload (SIGHUP
+  atomic; invalid policy keeps previous + logs), disabled-by-default,
+  boot persistence (daemon auto-starts, queues 100/101 bound), respawn
+  after SIGKILL with traffic blocked during the gap and no duplicate
+  tables, `uci commit` causes no restart loop.
+- [ ] apk install/upgrade/remove: no fail-open window; `apk del`
+  removes the app-owned `inet goshisen` table (no orphaned queue rule);
+  user config survives as conffiles.
+- [ ] IPv6: `inet` hook queues both families; stateless IPv6 allow/
+  deny verified on the VM; stateful-v6 limit documented (CT-glue gap →
+  INVALID → DROP).
+- [ ] Flow offloading: daemon WARN + `goshisen_flow_offload_active`
+  metric, re-checked every 10 s; documented UCI recommendation.
+- [ ] Malformed packets: live parse-error path verified on the VM
+  (`goshisen_backend_errors_total{kind="parse"}`), fuzz ≥ 60 s clean.
+- [ ] Recovery path documented and tested: `goshisen hook cleanup`
+  restores forwarding after a stop.

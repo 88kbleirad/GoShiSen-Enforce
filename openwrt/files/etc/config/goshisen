@@ -1,0 +1,32 @@
+# GoShiSen-Enforce UCI configuration.
+#
+# The service is DISABLED by default. Enable it explicitly with:
+#   uci set goshisen.main.enabled='1'
+#   uci commit goshisen
+#   /etc/init.d/goshisen enable
+#   /etc/init.d/goshisen start
+
+config goshisen 'main'
+	# Master switch. When 0 the daemon is not started by procd.
+	option enabled '0'
+	# NFQUEUE queue number this daemon binds. Must not collide with
+	# any other NFQUEUE consumer on the device (range 0-65535).
+	option queue_num '100'
+	# Hook scope: openwrt queues only traffic firewall4 has accepted on
+	# the forward path (priority 1, policy accept, no NAT chains).
+	option hook_scope 'openwrt'
+	# Log level: debug | info | warn | error
+	option log_level 'info'
+	# Network interface the daemon reports as its attached interface
+	# (used for host validation only; the hook is on the forward path).
+	# This must be a kernel netdev name (e.g. br-lan), not a firewall
+	# zone name.
+	option interface 'br-lan'
+	# Policy file (YAML; see docs/user-guide.md for the schema).
+	option policy_file '/etc/goshisen/policy.yaml'
+	# Optional management API port (0 disables the API; localhost only).
+	option api_port '0'
+	# Optional Prometheus metrics port (0 disables).
+	option metrics_port '0'
+	# Kernel NFQUEUE queue length.
+	option queue_maxlen '1024'

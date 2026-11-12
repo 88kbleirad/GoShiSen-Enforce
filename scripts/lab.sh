@@ -95,7 +95,7 @@ up() {
 table ip gsh_lab {
     chain forward {
         type filter hook forward priority filter; policy drop;
-        meta l4proto { tcp, udp } counter queue num 0
+        meta l4proto { tcp, udp } counter queue to 0
     }
 }
 NFT

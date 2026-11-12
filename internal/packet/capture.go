@@ -8,6 +8,7 @@ package packet
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -73,7 +74,8 @@ const (
 	nfAccept = 1
 	nfDrop   = 0
 
-	afInet = 2
+	afInet  = 2
+	afInet6 = 10
 )
 
 // queueMsg builds a netlink message type for nfnetlink_queue.
@@ -157,6 +159,18 @@ type Counters struct {
 	Panics       uint64
 }
 
+func (b *Backend) noteError(kind string) {
+	if b.observeErr != nil {
+		b.observeErr(kind)
+	}
+}
+
+// SetErrorObserver installs a callback invoked for backend errors
+// (parse, panic, send) so the daemon can expose them as metrics.
+func (b *Backend) SetErrorObserver(observe func(kind string)) {
+	b.observeErr = observe
+}
+
 // Counters returns a snapshot of the backend counters.
 func (b *Backend) Counters() Counters {
 	return Counters{
@@ -175,10 +189,16 @@ func (b *Backend) Counters() Counters {
 // a verdict back — for every packet, even when parsing fails.
 type Backend struct {
 	conn   *netlink.Conn
+	conn6  *netlink.Conn
 	queue  uint16
 	maxlen int
 
 	decide func(policy.Packet) policy.Verdict
+
+	// observeErr, when set, is called for backend errors (parse,
+	// panic, send) with a stable kind string so the daemon can expose
+	// them as metrics.
+	observeErr func(kind string)
 
 	Stats Stats
 
@@ -205,20 +225,57 @@ func Open(opts Options) (*Backend, error) {
 	if err != nil {
 		return nil, fmt.Errorf("netlink dial: %w", err)
 	}
-	b := &Backend{conn: c, queue: uint16(opts.Queue), maxlen: opts.Maxlen}
+	c6, err := netlink.Dial(unix.NETLINK_NETFILTER, nil)
+	if err != nil {
+		c.Close()
+		return nil, fmt.Errorf("netlink dial (v6): %w", err)
+	}
+	b := &Backend{conn: c, conn6: c6, queue: uint16(opts.Queue), maxlen: opts.Maxlen}
 	if err := b.configure(); err != nil {
 		c.Close()
+		c6.Close()
 		return nil, err
 	}
 	return b, nil
 }
 
-// configure binds the queue, sets copy mode, and sets maxlen.
+// ctFlagsTolerable reports whether a failure to configure conntrack
+// attribute delivery should be tolerated. Kernels that build
+// nfnetlink_queue without the conntrack glue reject
+// NFQA_CFG_F_CONNTRACK with EOPNOTSUPP; the queue remains fully
+// functional and packets arrive without NFQA_CT, which the engine
+// classifies INVALID → fail-closed DROP. Any other error is fatal.
+func ctFlagsTolerable(err error) bool {
+	return errors.Is(err, unix.EOPNOTSUPP)
+}
+
+// configure binds two queue instances: IPv4 on the configured queue
+// (AF_INET) and IPv6 on queue+1 (AF_INET6), matching the two queue
+// rules the hook installs. Each family gets its own socket so the
+// corresponding conntrack attributes are delivered for it. The
+// conntrack-flags message is optional: see ctFlagsTolerable.
 func (b *Backend) configure() error {
-	for _, m := range b.configMessages() {
-		if err := b.send(m); err != nil {
+	if err := b.configureFamily(afInet, b.queue, b.conn); err != nil {
+		return err
+	}
+	return b.configureFamily(afInet6, b.queue+1, b.conn6)
+}
+
+func (b *Backend) configureFamily(family uint8, queue uint16, c *netlink.Conn) error {
+	msgs := b.configMessages(family, queue)
+	// Split off the final conntrack-flags message.
+	ctFlags := msgs[len(msgs)-1]
+	msgs = msgs[:len(msgs)-1]
+	for _, m := range msgs {
+		if err := b.send(c, m); err != nil {
 			return fmt.Errorf("nfqueue config: %w", err)
 		}
+	}
+	if err := b.send(c, ctFlags); err != nil {
+		if ctFlagsTolerable(err) {
+			return nil
+		}
+		return fmt.Errorf("nfqueue config: %w", err)
 	}
 	return nil
 }
@@ -236,13 +293,13 @@ func (b *Backend) configure() error {
 // byte that the kernel decodes as UNBIND (2) — destroying the queue
 // instance right after BIND. See Phase 8.4 report for the byte-level
 // evidence.
-func (b *Backend) configMessages() []netlink.Message {
-	gen := nfgenmsg{family: afInet, version: 0, resID: b.queue}
+func (b *Backend) configMessages(family uint8, queue uint16) []netlink.Message {
+	gen := nfgenmsg{family: family, version: 0, resID: queue}
 	msgs := make([]netlink.Message, 0, 4)
 
-	// 1. BIND (command=1). pf is __be16 (AF_INET = 2).
+	// 1. BIND (command=1). pf is __be16 (AF_INET = 2, AF_INET6 = 10).
 	msgs = append(msgs, configMsg(gen,
-		attr(nfqaCfgCmd, []byte{nfqnlCfgCmdBind, 0, 0, afInet})))
+		attr(nfqaCfgCmd, []byte{nfqnlCfgCmdBind, 0, 0, family})))
 
 	// 2. Copy mode: copy_range=0xffff, copy_mode=NFQNL_COPY_PACKET.
 	params := make([]byte, 8)
@@ -290,8 +347,8 @@ func configMsg(gen nfgenmsg, attrs ...[]byte) netlink.Message {
 	}
 }
 
-func (b *Backend) send(m netlink.Message) error {
-	if _, err := b.conn.Send(m); err != nil {
+func (b *Backend) send(c *netlink.Conn, m netlink.Message) error {
+	if _, err := c.Send(m); err != nil {
 		return err
 	}
 	// Wait for the kernel acknowledgment. A netlink ACK is an
@@ -300,7 +357,7 @@ func (b *Backend) send(m netlink.Message) error {
 	// mdlayher checkMessage). So the first message we successfully
 	// receive after a request is the ACK.
 	for {
-		msgs, err := b.conn.Receive()
+		msgs, err := c.Receive()
 		if err != nil {
 			return err
 		}
@@ -317,20 +374,32 @@ func (b *Backend) SetDecider(decide func(policy.Packet) policy.Verdict) {
 	b.decide = decide
 }
 
-// Run receives packets until ctx is cancelled. Every received packet
+// Run receives packets on the IPv4 (queue N) and IPv6 (queue N+1)
+// queue instances until ctx is cancelled. Every received packet
 // receives exactly one verdict. On any anomaly (parse failure, engine
 // panic) the packet is DROPped — always fail closed.
 func (b *Backend) Run(ctx context.Context) error {
-	// Interrupt a blocked Receive on cancellation by setting a short
-	// read deadline each iteration; when the deadline fires we check
-	// ctx and either return or retry.
-	b.conn.SetDeadline(time.Time{}) // clear any lingering deadline
+	errCh := make(chan error, 2)
+	b.wg.Add(2)
+	go func() { defer b.wg.Done(); errCh <- b.runSocket(ctx, b.conn, afInet) }()
+	go func() { defer b.wg.Done(); errCh <- b.runSocket(ctx, b.conn6, afInet6) }()
+	var firstErr error
+	for range 2 {
+		if err := <-errCh; err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
+func (b *Backend) runSocket(ctx context.Context, c *netlink.Conn, family uint8) error {
+	c.SetDeadline(time.Time{}) // clear any lingering deadline
 	for {
 		if ctx.Err() != nil {
 			return nil
 		}
-		b.conn.SetDeadline(time.Now().Add(500 * time.Millisecond))
-		msgs, err := b.conn.Receive()
+		c.SetDeadline(time.Now().Add(500 * time.Millisecond))
+		msgs, err := c.Receive()
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
@@ -339,6 +408,7 @@ func (b *Backend) Run(ctx context.Context) error {
 				continue // deadline fired; check ctx again
 			}
 			b.Stats.SendErrors.Add(1)
+			b.noteError("send")
 			continue
 		}
 		for i := range msgs {
@@ -346,7 +416,7 @@ func (b *Backend) Run(ctx context.Context) error {
 			if m.Header.Type != queueMsg(nfqnlMsgPacket) {
 				continue
 			}
-			b.handlePacket(m)
+			b.handlePacket(family, m)
 		}
 	}
 }
@@ -355,10 +425,10 @@ func (b *Backend) Run(ctx context.Context) error {
 // sending a verdict. Kernel NFQUEUE packet messages are framed as
 // nlmsghdr + nfgenmsg(4) + attributes; the nfgenmsg must be skipped
 // before attribute parsing.
-func (b *Backend) handlePacket(m netlink.Message) {
+func (b *Backend) handlePacket(family uint8, m netlink.Message) {
 	b.Stats.PacketsSeen.Add(1)
 	pktID, verdict := b.evaluate(packetAttrs(m.Data))
-	if err := b.sendVerdict(pktID, verdict); err != nil {
+	if err := b.sendVerdict(family, pktID, verdict); err != nil {
 		b.Stats.SendErrors.Add(1)
 	}
 	b.Stats.VerdictsSent.Add(1)
@@ -412,6 +482,7 @@ func (b *Backend) evaluate(payload []byte) (uint32, int) {
 	})
 	if copyBuf == nil {
 		b.Stats.ParseErrors.Add(1)
+		b.noteError("parse")
 		return pktID, nfDrop
 	}
 	if b.decide == nil {
@@ -420,11 +491,13 @@ func (b *Backend) evaluate(payload []byte) (uint32, int) {
 	defer func() {
 		if r := recover(); r != nil {
 			b.Stats.Panics.Add(1)
+			b.noteError("panic")
 		}
 	}()
 	res := Parse(copyBuf)
 	if !res.OK {
 		b.Stats.ParseErrors.Add(1)
+		b.noteError("parse")
 		return pktID, nfDrop
 	}
 	p := res.Packet
@@ -504,9 +577,16 @@ func tcpStateFromCT(ctAttr []byte) int {
 	return tcpState
 }
 
-// sendVerdict writes a verdict for a packet id.
-func (b *Backend) sendVerdict(pktID uint32, verdict int) error {
-	gen := nfgenmsg{family: afInet, version: 0, resID: b.queue}
+// sendVerdict writes a verdict for a packet id on the socket of the
+// family the packet arrived on (IPv4 queue N, IPv6 queue N+1).
+func (b *Backend) sendVerdict(family uint8, pktID uint32, verdict int) error {
+	c := b.conn
+	queue := b.queue
+	if family == afInet6 {
+		c = b.conn6
+		queue = b.queue + 1
+	}
+	gen := nfgenmsg{family: family, version: 0, resID: queue}
 	hdr := make([]byte, 8)
 	binary.BigEndian.PutUint32(hdr[0:], uint32(verdict))
 	binary.BigEndian.PutUint32(hdr[4:], pktID)
@@ -519,11 +599,16 @@ func (b *Backend) sendVerdict(pktID uint32, verdict int) error {
 		},
 		Data: data,
 	}
-	_, err := b.conn.Send(m)
+	_, err := c.Send(m)
 	return err
 }
 
-// Close stops the backend and releases the socket.
+// Close stops the backend and releases both sockets (IPv4 and IPv6).
 func (b *Backend) Close() error {
-	return b.conn.Close()
+	err4 := b.conn.Close()
+	err6 := b.conn6.Close()
+	if err4 != nil {
+		return err4
+	}
+	return err6
 }

@@ -39,6 +39,8 @@ func New() *Registry {
 		"Packets dropped by the kernel before reaching the daemon, by cause. fail-closed by design.", "cause")
 	r.gauges["goshisen_active_policy_version"] = newGauge("goshisen_active_policy_version",
 		"Active policy version (0 when none).")
+	r.gauges["goshisen_flow_offload_active"] = newGauge("goshisen_flow_offload_active",
+		"1 when flow offloading is configured in nftables (established flows bypass the queue; enforcement is not applied to them), 0 otherwise.")
 	r.histogram = newHistogram("goshisen_packet_verdict_latency_seconds",
 		"Per-packet processing latency.")
 	return r
@@ -150,6 +152,18 @@ func (r *Registry) SetActivePolicyVersion(version int64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.gauges["goshisen_active_policy_version"].value = version
+}
+
+// SetFlowOffloadActive records the result of the flow-offload
+// detection (1 = offloading configured, 0 = not).
+func (r *Registry) SetFlowOffloadActive(active bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v := int64(0)
+	if active {
+		v = 1
+	}
+	r.gauges["goshisen_flow_offload_active"].value = v
 }
 
 // ObserveLatency records packet processing latency.

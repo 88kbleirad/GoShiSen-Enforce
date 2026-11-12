@@ -97,6 +97,28 @@ func (d *Daemon) watchQueueOverflow(ctx context.Context, read queueStatsReader) 
 	}
 }
 
+// watchFlowOffload re-runs flow-offload detection periodically so a
+// firewall reload that enables or disables offloading is reflected in
+// the metric and the warning without a daemon restart. Best-effort.
+func (d *Daemon) watchFlowOffload(ctx context.Context) {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		if rep := d.detectFlowOffload(); rep.Active {
+			d.metrics.SetFlowOffloadActive(true)
+			d.log.Warn("flow offloading detected: established flows bypass goshisen queue (enforcement gap)",
+				"detail", rep.Detail)
+		} else {
+			d.metrics.SetFlowOffloadActive(false)
+		}
+	}
+}
+
 // delta32 returns the positive difference between two unsigned counters.
 // The kernel counters are 32-bit; under sustained flooding they can wrap.
 // Because we poll every second, a genuine wrap yields a small delta,
@@ -131,6 +153,10 @@ type Daemon struct {
 	// Seams (defaults set by New; overridable in tests).
 	installHook func(hook.Ruleset) error
 	openQueue   func(packet.Options) (Queue, error)
+	// detectFlowOffload reports whether nftables flow offloading is
+	// configured (established flows would bypass the queue). Overridable
+	// in tests.
+	detectFlowOffload func() hook.FlowOffloadReport
 }
 
 // New returns a Daemon ready to run, with logging configured from the
@@ -154,6 +180,7 @@ func New(opts *config.Options) (*Daemon, error) {
 		openQueue: func(o packet.Options) (Queue, error) {
 			return packet.Open(o)
 		},
+		detectFlowOffload: hook.DetectFlowOffload,
 	}, nil
 }
 
@@ -237,21 +264,39 @@ func (d *Daemon) Run(ctx context.Context) error {
 		go d.serveMetrics(apiCtx, d.opts.MetricsPort)
 	}
 
+	scope := hook.ScopeForwardAll
+	switch d.opts.HookScope {
+	case config.HookScopeOpenWrt:
+		scope = hook.ScopeOpenWrt
+	}
+	queueNum := d.opts.QueueNum
 	rs := hook.Ruleset{
-		Filter: hook.FilterConfig{QueueNum: 0},
+		Filter: hook.FilterConfig{QueueNum: queueNum},
 		Nat:    d.opts.Nat,
+		Scope:  scope,
 	}
 	if err := d.installHook(rs); err != nil {
 		return err
 	}
-	d.log.Info("nftables hook installed", "table", hook.Table, "nat_enabled", d.opts.Nat.Enabled)
+	d.log.Info("nftables hook installed", "table", hook.Table, "nat_enabled", d.opts.Nat.Enabled, "scope", scope)
 
-	be, err := d.openQueue(packet.Options{Queue: 0, Maxlen: d.opts.QueueMaxlen})
+	// Flow-offload detection: if offloading is configured, established
+	// flows bypass NFQUEUE entirely. We never silently modify the
+	// user's firewall; we flag it loudly and expose a health metric.
+	if rep := d.detectFlowOffload(); rep.Active {
+		d.log.Warn("flow offloading detected: established flows bypass goshisen queue (enforcement gap)",
+			"detail", rep.Detail)
+		d.metrics.SetFlowOffloadActive(true)
+	} else {
+		d.metrics.SetFlowOffloadActive(false)
+	}
+
+	be, err := d.openQueue(packet.Options{Queue: queueNum, Maxlen: d.opts.QueueMaxlen})
 	if err != nil {
 		return fmt.Errorf("nfqueue: %w", err)
 	}
 	defer be.Close()
-	d.log.Info("NFQUEUE bound", "queue", 0, "maxlen", d.opts.QueueMaxlen)
+	d.log.Info("NFQUEUE bound", "queue", queueNum, "maxlen", d.opts.QueueMaxlen)
 
 	// The enforcement path is now fully up: hook installed and queue
 	// bound. Only now does readiness become true.
@@ -260,8 +305,14 @@ func (d *Daemon) Run(ctx context.Context) error {
 	qCtx, qCancel := context.WithCancel(ctx)
 	defer qCancel()
 	go d.watchQueueOverflow(qCtx, func() (packet.QueueStats, error) {
-		return packet.ReadQueueStats(queueStatsPath, 0)
+		return packet.ReadQueueStats(queueStatsPath, queueNum)
 	})
+	go d.watchFlowOffload(qCtx)
+
+	// Surface backend errors (parse/panic/send) as metrics.
+	if be2, ok := be.(*packet.Backend); ok {
+		be2.SetErrorObserver(func(kind string) { d.metrics.ObserveBackendError(metrics.BackendErrorKind(kind)) })
+	}
 
 	be.SetDecider(func(p policy.Packet) policy.Verdict {
 		start := time.Now()

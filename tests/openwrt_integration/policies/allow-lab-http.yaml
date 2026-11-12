@@ -1,0 +1,20 @@
+# ACCEPT for the lab HTTP path (LAN client -> WAN marker server) plus the
+# stateful reply rule. Used by the OpenWrt e2e test as the positive
+# control. The dst_port must match the host marker server's port
+# (scripts/openwrt-e2e.sh, OPENWRT_HTTP_PORT default 8088).
+version: 1
+default_action: DROP
+rules:
+  - id: allow-lab-http
+    action: ACCEPT
+    protocol: tcp
+    src: 10.0.3.0/24
+    dst: 10.0.2.2
+    dst_port: 8088
+    state: [NEW]
+    description: "ACCEPT lab HTTP to WAN server"
+  - id: allow-established
+    action: ACCEPT
+    protocol: any
+    state: [ESTABLISHED, RELATED]
+    description: "reply traffic for accepted connections"
