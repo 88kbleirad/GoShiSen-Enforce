@@ -52,11 +52,14 @@ need() {
 }
 
 # vm runs one command in the VM over the serial console. The transcript
-# includes echoed input and serial cursor control bytes; strip both so
-# downstream greps never treat the capture as binary.
+# includes echoed input, cursor control bytes, and possibly invalid
+# UTF-8 (the QEMU serial is raw bytes). Replace every byte that is not
+# printable ASCII / tab / newline / CR with '?' instead of deleting it,
+# so lines stay intact and greps never see a lone high byte mid-line;
+# CR is then stripped (serial line endings).
 vm() {
     python3 "$CONSOLE" --port "$CONSOLE_PORT" --cmd "$1" --timeout 25 2>&1 \
-        | tr -cd '\11\12\15\40-\176\200-\377' | sed 's/\r//g'
+        | tr -c '[:print:]\n\r\t' '?' | sed 's/\r//g'
 }
 
 # client runs a command in the LAN client namespace (root or sudo -n).
@@ -143,14 +146,14 @@ apply_policy() { # apply_policy <host-policy-file> <expected-rule-count>
     # output is tagged so the echoed command line cannot be confused
     # with the result; the result line is the last RELOAD_COUNT= line.
     local before
-    before=$(vm "echo RELOAD_COUNT=\$(grep -Ec 'policy (reloaded|published)\" .*rules=$want' /tmp/goshisen2.log)" \
+    before=$(vm "echo RELOAD_COUNT=\$(grep -Ec 'policy (reloaded|published)\" .*source=sighup .*rules=$want([^0-9]|\$)' /tmp/goshisen2.log)" \
         | grep -aE '^RELOAD_COUNT=' | tail -n1 | sed 's/^RELOAD_COUNT=//')
     before=${before:-0}
     vm "kill -HUP $pid" >/dev/null
     local deadline=$((SECONDS + 30))
     while [ $SECONDS -lt $deadline ]; do
         local now
-        now=$(vm "echo RELOAD_COUNT=\$(grep -Ec 'policy (reloaded|published)\" .*rules=$want' /tmp/goshisen2.log)" \
+        now=$(vm "echo RELOAD_COUNT=\$(grep -Ec 'policy (reloaded|published)\" .*source=sighup .*rules=$want([^0-9]|\$)' /tmp/goshisen2.log)" \
             | grep -aE '^RELOAD_COUNT=' | tail -n1 | sed 's/^RELOAD_COUNT=//')
         now=${now:-0}
         if [ "$now" -gt "$before" ]; then
