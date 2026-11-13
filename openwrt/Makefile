@@ -21,7 +21,7 @@ PKG_SOURCE_VERSION:=f5f211a173dab2934a42e3aa8220ab2d54fa12da
 # pinned commit (PKG_SOURCE_PROTO=git); lets the SDK verify the download
 # (mirror hash). Compute with a clean clone: git clone <url>; git checkout
 # <pin>; tar --zstd -cf <name>-<ver>.tar.zst <dir>; sha256sum.
-PKG_MIRROR_HASH:=cd8f2763ad6d980cc18d98ab23f13886f3e0f82da18fd20eda8f0da8b05d9154
+PKG_MIRROR_HASH:=f922e983f58976fc7d101a46f8f2fad4086d1b2a38c14ae5e2bdc19770e09b2d
 PKG_SOURCE_SUBDIR:=$(PKG_NAME)-$(PKG_VERSION)
 
 # Go builds are handled outside OpenWrt's gcc toolchain.
