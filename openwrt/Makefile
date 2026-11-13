@@ -67,6 +67,8 @@ define Package/goshisen/install
 	$(INSTALL_DATA) ./files/etc/config/goshisen $(1)/etc/config/goshisen
 	$(INSTALL_DIR) $(1)/etc/goshisen
 	$(INSTALL_DATA) ./files/etc/goshisen/policy.yaml $(1)/etc/goshisen/policy.yaml
+	$(INSTALL_DIR) $(1)/lib/goshisen
+	$(INSTALL_DATA) ./files/lib/goshisen-lifecycle.sh $(1)/lib/goshisen/goshisen-lifecycle.sh
 endef
 
 # The daemon service stays disabled at install. The pre-firewall boot
@@ -81,10 +83,13 @@ define Package/goshisen/postinst
 endef
 
 define Package/goshisen/prerm
-	# On uninstall the app-owned nftables table must be removed and the
-	# services disabled: the daemon's queue rule (or the boot guard's
-	# default-drop chain) would otherwise stay installed and keep
-	# blocking forwarded traffic.
+	# On uninstall OR downgrade the app-owned nftables table must be
+	# removed and the package-owned rc.d symlinks cleaned unconditionally
+	# (the init scripts are package files removed by apk, but the rc.d
+	# links are runtime state created by `enable` and would otherwise
+	# dangle when a downgrade to a release that does not ship the script
+	# happens). The cleanup never follows symlinks, never does recursive
+	# deletion, and only touches paths owned by this package.
 	if [ -z "$${IPKG_INSTROOT}" ]; then
 		if [ -x /usr/sbin/goshisen ]; then
 			/usr/sbin/goshisen hook cleanup || true
@@ -94,6 +99,15 @@ define Package/goshisen/prerm
 		if [ -x /etc/init.d/goshisen-boot ]; then
 			/etc/init.d/goshisen-boot stop || true
 			/etc/init.d/goshisen-boot disable || true
+		fi
+		# Unconditional: remove package-owned rc.d links even when the
+		# target init script is already gone (downgrade case).
+		if [ -r /lib/goshisen/goshisen-lifecycle.sh ]; then
+			. /lib/goshisen/goshisen-lifecycle.sh
+			goshisen_remove_links || {
+				echo "goshisen: prerm could not clean rc.d links" >&2
+				exit 1
+			}
 		fi
 	fi
 endef

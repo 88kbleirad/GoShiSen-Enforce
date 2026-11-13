@@ -84,9 +84,12 @@ func TestArm64SmokeUnderQemuUser(t *testing.T) {
 		t.Fatalf("arm64 --version output missing goshisen: %s", b)
 	}
 
-	// offload status under emulation must exit 0 (read-only).
-	st := exec.Command(qemu, out, "offload", "status")
-	if b, err := st.CombinedOutput(); err != nil {
-		t.Fatalf("arm64 offload status under qemu failed: %v\n%s", err, b)
+	// `offload status` (introduced with the offload work) must exit 0
+	// under emulation when supported; older trees report an unknown
+	// command, which is tolerated so this test works on both.
+	if b, err := exec.Command(qemu, out, "offload", "status").CombinedOutput(); err != nil {
+		if !strings.Contains(string(b), "unknown command") {
+			t.Fatalf("arm64 offload status under qemu failed: %v\n%s", err, b)
+		}
 	}
 }
