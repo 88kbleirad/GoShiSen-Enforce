@@ -337,8 +337,10 @@ Implementation phases (full acceptance criteria in `mvp-scope.md` §5):
 | 5 | **done** | REST API + metrics: localhost-bound API with bearer auth and version CAS, durable versioned policy store with restart recovery, audit logging, bounded-cardinality Prometheus metrics, liveness/readiness |
 | 6 | **done** | NAT + packaging: kernel DNAT/MASQUERADE in app-owned table (atomic `nft -f` transaction, docs rollback), pre/post-NAT semantics documented, NAT integration tests, multi-stage Dockerfile (no privileged mode) |
 | 7 | in progress | Hardening & release: queue-overflow monitoring + counters, crash/restart hardening + readiness gating, supervisor examples (systemd/lab loop), dependency pins, docs closure, final acceptance run |
+| 8–13 | done (repo history) | OpenWrt packaging + procd lifecycle, IPv6 enforcement (inet hook), release build reproducibility (static archives, SBOM, checksums), flow-offload detection/warn — evidence in `docs/release/` |
+| 14 | done | Flow-offload policy (`offload_policy`: `warn`/`refuse`/`readiness`) — opt-in non-silent control of the established-flow enforcement gap (Issue #6) |
 
-Config-file keys currently recognized: `interface`, `policy_file`, `log_level`, `log_json`, `api_host`, `api_port`, `api_token`, `metrics_port`, `policy_dir`, `queue_maxlen`, `nat` (see `internal/config`). The policy YAML schema in §4 is a separate file format, implemented by `internal/policy` (Phase 2) and wired into the packet path in Phase 3.
+Config-file keys currently recognized: `interface`, `policy_file`, `log_level`, `log_json`, `api_host`, `api_port`, `api_token`, `metrics_port`, `policy_dir`, `queue_maxlen`, `offload_policy`, `hook_scope`, `nat` (see `internal/config`). The policy YAML schema in §4 is a separate file format, implemented by `internal/policy` (Phase 2) and wired into the packet path in Phase 3.
 
 ## 10. Open questions (tracked, not blocking)
 - Whether the kernel's conntrack `ct_event` subscription (or a periodic `/proc/net/nf_conntrack` dump) is needed for "accepted-set expiry" or metrics in a later phase; the current accepted-set grows until daemon restart (bounded per connection, acceptable for the lab).

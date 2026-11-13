@@ -189,3 +189,26 @@ func TestOpenWrtPostinstLinksBootGuard(t *testing.T) {
 		t.Fatal("postinst must keep the daemon service disabled by default")
 	}
 }
+
+// TestOpenWrtUCIRendersOffloadPolicy pins that the UCI offload_policy
+// option is validated and passed through to the rendered daemon YAML.
+// Without the render, the OpenWrt package would silently ignore the
+// opt-in flow-offload control the feature ships.
+func TestOpenWrtUCIRendersOffloadPolicy(t *testing.T) {
+	initd := readPackagedFile(t, filepath.Join("etc", "init.d", "goshisen"))
+	uci := readPackagedFile(t, filepath.Join("etc", "config", "goshisen"))
+
+	if !strings.Contains(uci, "option offload_policy 'warn'") {
+		t.Fatal("UCI config must declare the offload_policy option (default warn)")
+	}
+	if !strings.Contains(initd, "config_get offload main offload_policy") {
+		t.Fatal("init script must read offload_policy from UCI")
+	}
+	if !strings.Contains(initd, "warn|refuse|readiness") {
+		t.Fatal("init script must accept warn|refuse|readiness for offload_policy")
+	}
+	if !strings.Contains(initd, `echo "offload_policy: $(config_get main offload_policy)"`) {
+		t.Fatal("init script must render offload_policy into the daemon YAML")
+
+	}
+}

@@ -39,6 +39,16 @@ metrics_port: 9090
 # Default: 1024.
 queue_maxlen: 1024
 
+# Response when nftables flow offloading is detected (established flows
+# bypass the queue, so enforcement does not apply to them). The daemon
+# only ever detects; it never modifies the firewall.
+#   warn (default) log a WARN and expose goshisen_flow_offload_active.
+#   refuse         fail startup BEFORE installing the hook (fail-closed
+#                  by absence: the system is left untouched).
+#   readiness      keep enforcing, but stay not-ready (API 503) while
+#                  offloading is active; recover when it is removed.
+offload_policy: warn
+
 # Durable policy store directory (versioned policies + active pointer).
 # Restart recovery loads the active version from here.
 policy_dir: policy_store

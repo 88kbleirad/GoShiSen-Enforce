@@ -100,8 +100,13 @@ func (d *Daemon) watchQueueOverflow(ctx context.Context, read queueStatsReader) 
 // watchFlowOffload re-runs flow-offload detection periodically so a
 // firewall reload that enables or disables offloading is reflected in
 // the metric and the warning without a daemon restart. Best-effort.
-func (d *Daemon) watchFlowOffload(ctx context.Context) {
-	ticker := time.NewTicker(10 * time.Second)
+//
+// Under offload_policy=readiness, readiness tracks the enforcement gap
+// in both directions: it drops when offloading appears, and recovers
+// once the ruleset is clean again (the gap is gone). Readiness is never
+// raised during shutdown (ctx cancelled).
+func (d *Daemon) watchFlowOffload(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -109,12 +114,16 @@ func (d *Daemon) watchFlowOffload(ctx context.Context) {
 			return
 		case <-ticker.C:
 		}
-		if rep := d.detectFlowOffload(); rep.Active {
-			d.metrics.SetFlowOffloadActive(true)
+		rep := d.detectFlowOffload()
+		d.metrics.SetFlowOffloadActive(rep.Active)
+		if rep.Active {
 			d.log.Warn("flow offloading detected: established flows bypass goshisen queue (enforcement gap)",
 				"detail", rep.Detail)
-		} else {
-			d.metrics.SetFlowOffloadActive(false)
+			if d.opts.OffloadPolicy == config.OffloadPolicyReadiness {
+				d.ready.Store(false)
+			}
+		} else if d.opts.OffloadPolicy == config.OffloadPolicyReadiness && ctx.Err() == nil {
+			d.ready.Store(true)
 		}
 	}
 }
@@ -157,6 +166,9 @@ type Daemon struct {
 	// configured (established flows would bypass the queue). Overridable
 	// in tests.
 	detectFlowOffload func() hook.FlowOffloadReport
+	// offloadInterval is the flow-offload re-check period (10 s in
+	// production; shortened in tests).
+	offloadInterval time.Duration
 }
 
 // New returns a Daemon ready to run, with logging configured from the
@@ -181,6 +193,7 @@ func New(opts *config.Options) (*Daemon, error) {
 			return packet.Open(o)
 		},
 		detectFlowOffload: hook.DetectFlowOffload,
+		offloadInterval:   10 * time.Second,
 	}, nil
 }
 
@@ -270,6 +283,18 @@ func (d *Daemon) Run(ctx context.Context) error {
 		scope = hook.ScopeOpenWrt
 	}
 	queueNum := d.opts.QueueNum
+
+	// Flow-offload pre-check: offload_policy=refuse means the daemon
+	// must not start enforcing when established flows would bypass the
+	// queue. Fail-closed by absence: return before installing the hook
+	// so the system is left exactly as it was.
+	offload := d.detectFlowOffload()
+	if offload.Active && d.opts.OffloadPolicy == config.OffloadPolicyRefuse {
+		return fmt.Errorf("flow offloading is active but offload_policy=refuse: "+
+			"established flows bypass the queue (enforcement gap); "+
+			"disable flow offloading or set offload_policy=warn/readiness (%s)", offload.Detail)
+	}
+
 	rs := hook.Ruleset{
 		Filter: hook.FilterConfig{QueueNum: queueNum},
 		Nat:    d.opts.Nat,
@@ -283,9 +308,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// Flow-offload detection: if offloading is configured, established
 	// flows bypass NFQUEUE entirely. We never silently modify the
 	// user's firewall; we flag it loudly and expose a health metric.
-	if rep := d.detectFlowOffload(); rep.Active {
+	if offload.Active {
 		d.log.Warn("flow offloading detected: established flows bypass goshisen queue (enforcement gap)",
-			"detail", rep.Detail)
+			"detail", offload.Detail)
 		d.metrics.SetFlowOffloadActive(true)
 	} else {
 		d.metrics.SetFlowOffloadActive(false)
@@ -299,15 +324,23 @@ func (d *Daemon) Run(ctx context.Context) error {
 	d.log.Info("NFQUEUE bound", "queue", queueNum, "maxlen", d.opts.QueueMaxlen)
 
 	// The enforcement path is now fully up: hook installed and queue
-	// bound. Only now does readiness become true.
-	d.ready.Store(true)
+	// bound. Only now does readiness become true. With
+	// offload_policy=readiness, readiness stays false while flow
+	// offloading is active (enforcement gap present); the API keeps
+	// reporting 503 and the metric carries the gauge.
+	if offload.Active && d.opts.OffloadPolicy == config.OffloadPolicyReadiness {
+		d.log.Error("offload_policy=readiness: flow offloading active, staying not-ready",
+			"detail", offload.Detail)
+	} else {
+		d.ready.Store(true)
+	}
 
 	qCtx, qCancel := context.WithCancel(ctx)
 	defer qCancel()
 	go d.watchQueueOverflow(qCtx, func() (packet.QueueStats, error) {
 		return packet.ReadQueueStats(queueStatsPath, queueNum)
 	})
-	go d.watchFlowOffload(qCtx)
+	go d.watchFlowOffload(qCtx, d.offloadInterval)
 
 	// Surface backend errors (parse/panic/send) as metrics.
 	if be2, ok := be.(*packet.Backend); ok {

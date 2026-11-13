@@ -56,6 +56,12 @@ validate_uci() {
 		*) echo "goshisen: unsupported log_level '$log_level'" >&2; return 1 ;;
 	esac
 
+	config_get offload main offload_policy
+	case "$offload" in
+		""|warn|refuse|readiness) ;;
+		*) echo "goshisen: unsupported offload_policy '$offload'" >&2; return 1 ;;
+	esac
+
 	config_get policy main policy_file
 	POLICY_PATH="$policy"
 	[ -n "$policy" ] && [ -f "$policy" ] || {
@@ -88,6 +94,7 @@ render_config() {
 		echo "queue_maxlen: $(config_get main queue_maxlen)"
 		echo "hook_scope: $(config_get main hook_scope)"
 		echo "log_level: $(config_get main log_level)"
+		echo "offload_policy: $(config_get main offload_policy)"
 		echo "interface: $(config_get main interface)"
 		echo "api_port: $(config_get main api_port)"
 		echo "metrics_port: $(config_get main metrics_port)"
