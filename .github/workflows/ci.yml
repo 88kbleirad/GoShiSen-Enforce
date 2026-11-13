@@ -67,6 +67,33 @@ jobs:
             echo "version stamp not applied: got $out"; exit 1
           fi
 
+  arm64:
+    name: arm64 cross-build + static ELF
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.0.0
+        with:
+          go-version: "1.25"
+          cache: true
+      - name: Cross-compile arm64 + static ELF assertions
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
+            go build -trimpath -o /tmp/goshisen-arm64 ./cmd/goshisen
+          file /tmp/goshisen-arm64 | tee /tmp/goshisen-arm64.file
+          grep -q "aarch64" /tmp/goshisen-arm64.file
+          grep -qE "statically linked|static" /tmp/goshisen-arm64.file
+      - name: arm64 regression tests
+        run: go test ./tests/package/ -run 'TestArm64' -v
+      - name: Smoke under qemu-user (when binfmt available)
+        run: |
+          if command -v qemu-aarch64-static >/dev/null 2>&1; then
+            qemu-aarch64-static /tmp/goshisen-arm64 --version
+            qemu-aarch64-static /tmp/goshisen-arm64 offload status
+          else
+            echo "qemu-aarch64-static not present; static-ELF assertions covered"
+          fi
+
   package:
     name: package + verify release archives
     runs-on: ubuntu-24.04
