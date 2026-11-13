@@ -7,6 +7,16 @@ modifies fw4's tables, and never NATs.
 Status: validated on OpenWrt 25.12.6 (x86/64, kernel 6.12.112) in QEMU.
 Only x86_64 is verified; other architectures are untested.
 
+Release r4 (0.2.0-r4, pin `f5f211a`) is verified end-to-end: upgrade
+from v0.2.0-r2, old-config compatibility, boot guard (S12) ordering,
+flow-offload policy modes (warn/refuse/readiness), stateful IPv6
+(allow/deny/established replies with real v6 peers), reload-failure
+atomicity, crash/restart recovery, and rollback to r2. See
+`docs/release/phase16-openwrt-compat.md`. Note: rolling back from r4 to
+r2 leaves dangling `S12goshisen-boot`/`K10goshisen-boot` rc.d symlinks
+(r2 does not ship the guard); remove them with
+`/etc/init.d/goshisen-boot disable` before downgrading.
+
 ## Install
 
 ```sh
