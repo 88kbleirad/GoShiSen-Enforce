@@ -67,8 +67,9 @@ already zero-alloc. The hot cost was the **stateful accepted-set**:
 ## 3. Changes (controlled, semantics-preserving)
 
 1. `internal/policy/engine.go` — `tupleKey` string → struct `tupleKey
-   {lo, hi uint64; ppm uint32}` (5-tuple packed: v4 as two 32-bit
-   halves; v6 as full 128-bit pair; protocol+ports in 32 bits). Reply
+   {lo, hi uint64; ppm uint64}` (5-tuple packed: v4 as two 32-bit
+   halves; v6 as full 128-bit pair; protocol<<32 | srcPort<<16 |
+   dstPort in 64 bits). Reply
    canonicalization preserved (swap src/dst + ports when
    `Direction == DirReply`). `sync.Map` → `sync.RWMutex` + map.
    Pinned by `internal/policy/tuplekey_test.go` (v4/v6 reply mapping,
