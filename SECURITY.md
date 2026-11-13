@@ -64,7 +64,11 @@ based on the OpenWrt lab validation (25.12.6, QEMU).
   `flow_offloading` or `flow_offloading_hw`) makes established flows
   skip nftables entirely. The daemon detects offloading and emits a
   high-severity WARN plus `goshisen_flow_offload_active 1`, re-checked
-  every 10 s, but does not disable it. Disable offloading on routers
+  every 10 s, but never disables it. `offload_policy` lets the operator
+  make the gap non-silent: `refuse` aborts startup before the hook is
+  installed (fail-closed by absence, system untouched), `readiness`
+  keeps enforcing but keeps `/readyz` at 503 while offloading is
+  active. `warn` (default) only reports. Disable offloading on routers
   that rely on GoShiSen enforcement.
 - **Stateful IPv6**: on kernels whose `nfnetlink_queue` does not
   deliver conntrack attributes for IPv6, IPv6 packets arrive as INVALID

@@ -7,6 +7,16 @@ modifies fw4's tables, and never NATs.
 Status: validated on OpenWrt 25.12.6 (x86/64, kernel 6.12.112) in QEMU.
 Only x86_64 is verified; other architectures are untested.
 
+Release r4 (0.2.0-r4, pin `f5f211a`) is verified end-to-end: upgrade
+from v0.2.0-r2, old-config compatibility, boot guard (S12) ordering,
+flow-offload policy modes (warn/refuse/readiness), stateful IPv6
+(allow/deny/established replies with real v6 peers), reload-failure
+atomicity, crash/restart recovery, and rollback to r2. See
+`docs/release/phase16-openwrt-compat.md`. Note: rolling back from r4 to
+r2 leaves dangling `S12goshisen-boot`/`K10goshisen-boot` rc.d symlinks
+(r2 does not ship the guard); remove them with
+`/etc/init.d/goshisen-boot disable` before downgrading.
+
 ## Install
 
 ```sh
@@ -43,6 +53,7 @@ enable it and does not touch the firewall.
 | `api_port` | `0` | optional REST API (loopback only) |
 | `metrics_port` | `0` | optional Prometheus metrics (loopback only) |
 | `queue_maxlen` | `1024` | kernel queue length |
+| `offload_policy` | `warn` | flow-offload response: `warn` (log WARN + gauge), `refuse` (startup fails before hook install when offloading is detected), `readiness` (enforce but never become ready while offloading is active) |
 
 Enable and start:
 
@@ -83,7 +94,7 @@ by the late start order.
 | IPv6 forwarded TCP/UDP | queued (queue `101`; `inet` table). Requires the daemon's AF_INET6 bind, otherwise the kernel drops (fail-closed) |
 | Router-local traffic (SSH, LuCI, DNS, DHCP) | never queued: the hook is `forward` only |
 | Non-TCP/UDP | not queued; firewall4 decides |
-| Flow offloading | **detected and warned**: established flows bypass the queue. The daemon logs a WARN and exposes `goshisen_flow_offload_active 1`, re-checked every 10 s. Recommended: keep `flow_offloading` disabled on routers that rely on GoShiSen enforcement |
+| Flow offloading | **detected and warned by default**: established flows bypass the queue. The daemon logs a WARN and exposes `goshisen_flow_offload_active 1`, re-checked every 10 s. `offload_policy` controls the response: `refuse` fails startup before the hook is installed (fail-closed by absence), `readiness` keeps enforcing but never becomes ready while offloading is active. Recommended: keep `flow_offloading` disabled on routers that rely on GoShiSen enforcement |
 
 Stateful IPv6 note: on kernels whose `nfnetlink_queue` build does not
 deliver conntrack attributes for IPv6, IPv6 packets arrive as INVALID

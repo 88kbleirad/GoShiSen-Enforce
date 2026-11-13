@@ -104,3 +104,110 @@ func TestOpenWrtUCIDefaultInterfaceIsNetdev(t *testing.T) {
 		t.Fatal("UCI default interface must not be the firewall zone name 'lan'")
 	}
 }
+
+// TestOpenWrtBootGuardPackaged pins the pre-firewall fail-closed boot
+// guard: a separate early init script (goshisen-boot, START=12 before
+// firewall4 S19) that, only when the main service is enabled, installs
+// the app-owned table with a default-drop forward chain for BOTH IPv4
+// and IPv6, with no accept/bypass anywhere. The main daemon init keeps
+// START=90 (after network), because moving it earlier would make the
+// daemon exit when br-lan does not exist yet.
+func TestOpenWrtBootGuardPackaged(t *testing.T) {
+	guard := readPackagedFile(t, filepath.Join("etc", "init.d", "goshisen-boot"))
+	if !strings.Contains(guard, "START=12") {
+		t.Fatal("guard init must run before firewall4 (START=12 < 19)")
+	}
+	if !strings.Contains(guard, "service_enabled") {
+		t.Fatal("guard must be gated on the service being enabled")
+	}
+	if !strings.Contains(guard, "table inet goshisen") {
+		t.Fatal("guard must install an inet (dual-stack) table, not family ip/ip6")
+	}
+
+	// The only chain the guard creates is the forward chain with a
+	// default-drop policy; input/output chains must not be created so
+	// router-local traffic is untouched.
+	if !strings.Contains(guard, `add chain inet goshisen forward { type filter hook forward priority filter; policy drop; }`) {
+		t.Fatalf("guard must create exactly the forward drop chain, got:\n%s", guard)
+	}
+	for _, banned := range []string{"chain input", "chain output", "type filter hook input", "type filter hook output"} {
+		if strings.Contains(guard, banned) {
+			t.Fatalf("guard must not create %s chain", banned)
+		}
+	}
+
+	// Fail-closed invariant: no accept and no bypass anywhere in the
+	// nft statements (comments may mention them; filter those out).
+	nftOnly := ""
+	for _, line := range strings.Split(guard, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "#") || trimmed == "" {
+			continue
+		}
+		nftOnly += trimmed + "\n"
+	}
+	for _, banned := range []string{" accept", "bypass", "policy accept"} {
+		if strings.Contains(nftOnly, banned) {
+			t.Fatalf("guard nft statements must not contain %q:\n%s", banned, nftOnly)
+		}
+	}
+	if !strings.Contains(nftOnly, "policy drop;") {
+		t.Fatal("guard chain must have policy drop")
+	}
+
+	main := readPackagedFile(t, filepath.Join("etc", "init.d", "goshisen"))
+	if !strings.Contains(main, "START=90") {
+		t.Fatal("main daemon init must keep START=90 (after network/firewall)")
+	}
+}
+
+// TestOpenWrtBootGuardFileMode pins that the guard init script ships
+// executable (0755) so its rc.d link can run at boot.
+func TestOpenWrtBootGuardFileMode(t *testing.T) {
+	st, err := os.Stat(filepath.Join(openwrtFilesDir(t), "etc", "init.d", "goshisen-boot"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Mode().Perm()&0o111 == 0 {
+		t.Fatalf("goshisen-boot mode = %v, want executable", st.Mode())
+	}
+}
+
+// TestOpenWrtPostinstLinksBootGuard pins that installing the package
+// links the pre-firewall guard (so it runs early) but never enables the
+// daemon service; a disabled install must not block forwarding.
+func TestOpenWrtPostinstLinksBootGuard(t *testing.T) {
+	mk, err := os.ReadFile(filepath.Join(repoRoot(t), "openwrt", "Makefile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(mk)
+	if !strings.Contains(text, "goshisen-boot enable") {
+		t.Fatal("postinst must enable/link goshisen-boot")
+	}
+	if !strings.Contains(text, "goshisen enabled") {
+		t.Fatal("postinst must keep the daemon service disabled by default")
+	}
+}
+
+// TestOpenWrtUCIRendersOffloadPolicy pins that the UCI offload_policy
+// option is validated and passed through to the rendered daemon YAML.
+// Without the render, the OpenWrt package would silently ignore the
+// opt-in flow-offload control the feature ships.
+func TestOpenWrtUCIRendersOffloadPolicy(t *testing.T) {
+	initd := readPackagedFile(t, filepath.Join("etc", "init.d", "goshisen"))
+	uci := readPackagedFile(t, filepath.Join("etc", "config", "goshisen"))
+
+	if !strings.Contains(uci, "option offload_policy 'warn'") {
+		t.Fatal("UCI config must declare the offload_policy option (default warn)")
+	}
+	if !strings.Contains(initd, "config_get offload main offload_policy") {
+		t.Fatal("init script must read offload_policy from UCI")
+	}
+	if !strings.Contains(initd, "warn|refuse|readiness") {
+		t.Fatal("init script must accept warn|refuse|readiness for offload_policy")
+	}
+	if !strings.Contains(initd, `echo "offload_policy: $(config_get main offload_policy)"`) {
+		t.Fatal("init script must render offload_policy into the daemon YAML")
+	}
+}

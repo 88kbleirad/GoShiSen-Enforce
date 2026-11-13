@@ -1,0 +1,43 @@
+#!/bin/sh /etc/rc.common
+# GoShiSen-Enforce pre-firewall fail-closed boot guard.
+#
+# Runs very early (START=12, before firewall4 at S19). When the main
+# service is enabled (UCI goshisen.main.enabled=1) it installs the
+# app-owned table with a default-drop forward chain covering BOTH IPv4
+# and IPv6, so all LAN->WAN forwarding is fail-closed from before
+# firewall4 opens it. The daemon (init script goshisen, START=90) later
+# rebuilds the same table (delete+add, one transaction) with its queue
+# rules, replacing this guard atomically; the replacement table is
+# itself fail-closed until the queues bind (no listener -> kernel drop).
+#
+# Only the forward path is touched: input/output chains are not created,
+# so router-local traffic (SSH, LuCI, DNS, DHCP) is unaffected.
+#
+# If the daemon never starts, the guard remains and forwarded traffic
+# stays blocked (fail-closed). Recovery: `goshisen hook cleanup` removes
+# the whole table; `apk del` prerm does the same and disables this
+# script. When the main service is disabled, this script is a no-op and
+# must not block forwarding.
+
+START=12
+STOP=10
+
+service_enabled() {
+	local enabled
+	config_load goshisen
+	config_get enabled main enabled
+	[ "$enabled" = 1 ]
+}
+
+start() {
+	service_enabled || return 0
+	nft add table inet goshisen 2>/dev/null
+	nft 'add chain inet goshisen forward { type filter hook forward priority filter; policy drop; }'
+}
+
+stop() {
+	# Leave the table for the daemon's Install to replace, or for
+	# `goshisen hook cleanup` / prerm to remove. Removing it here while
+	# the daemon runs would open the fail-open window.
+	return 0
+}
