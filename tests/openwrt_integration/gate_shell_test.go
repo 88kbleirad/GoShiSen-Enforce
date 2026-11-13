@@ -79,3 +79,35 @@ func TestShellGateOldEventStillCounts(t *testing.T) {
 		t.Fatalf("both events must count (harness compares before/after), got %d", n)
 	}
 }
+
+// TestShellVMSanitizer verifies the exact vm() sanitizer pipeline from
+// scripts/openwrt-e2e.sh: high bytes and control bytes are replaced with
+// '?' (not deleted), CR is stripped, and the RELOAD_COUNT= line stays
+// intact for the gate grep.
+func TestShellVMSanitizer(t *testing.T) {
+	if _, err := exec.LookPath("tr"); err != nil {
+		t.Skipf("tr not available: %v", err)
+	}
+	// Same bytes as the failing CI transcript: 0xff 0xfe 0xfd before the
+	// log tail, and a NUL in the tail echo.
+	raw := "\xff\xfe\xfd\n" +
+		`time=... level=INFO msg="policy published" version=1 source=sighup rules=1 default_action=DROP` + "\n" +
+		"RELOAD_COUNT=1\r\n"
+	// tr -c '[:print:]\n\r\t' '?' | sed 's/\r//g'
+	tr := exec.Command("tr", "-c", "[:print:]\n\r\t", "?")
+	tr.Stdin = strings.NewReader(raw)
+	trOut, err := tr.Output()
+	if err != nil {
+		t.Fatalf("tr failed: %v", err)
+	}
+	san := strings.ReplaceAll(string(trOut), "\r", "")
+	if strings.ContainsAny(san, "\x00\xff\xfe\xfd") {
+		t.Fatalf("sanitizer left invalid bytes: %q", san)
+	}
+	if !strings.Contains(san, "RELOAD_COUNT=1") {
+		t.Fatalf("RELOAD_COUNT line lost after sanitize: %q", san)
+	}
+	if n := gateCount(t, "1", san); n != 1 {
+		t.Fatalf("gate must match after sanitizer, got %d (san=%q)", n, san)
+	}
+}
