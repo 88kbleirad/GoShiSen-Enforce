@@ -1,7 +1,8 @@
 # GoShiSen-Enforce — Evidence Index (Prompt 04–10 closure)
 
 **Generated:** 2026-11-13 (UTC) — final closure after Prompt 10 merge.
-**main:** `0d4dcd9f` (HEAD, origin/main)
+**main:** `447298df` (HEAD, origin/main) — after final evidence-docs merge
+**Final docs commit:** `447298df` (PR #22, squash) — the evidence index itself.
 **Release:** v0.2.1 published — tag object `6eb19f3` → commit `9ca71333` (verified).
 **Tag note:** `v0.2.1` points at `9ca71333` — the *release commit* (the tree the
 release assets were built from). Everything after it (`f0c923a`, `8e007a5d`,
@@ -22,6 +23,7 @@ v0.2.1 build.
 | 07 | Merge + publish v0.2.1 | phase16→main `c61da88`; #16 `55065f6f`; #17 `dc6d992d`; #18 `9ca71333`; #19 `f0c923a` | tag CI 43427056935 (success 4/4) | tag `6eb19f3` = `9ca71333`, SSH-verified; release published |
 | 09 | e2e reload-gate fix | PR #20 `8e007a5d` | push 43435999202 / PR 43436009943 (both success 4/4) | harness-only fix + 13 regression tests |
 | 10 | Review + merge #20, record | PR #20 `8e007a5d`; PR #21 `0d4dcd9f` | main post-merge 43437820844 (success 4/4, 0 skips) | release decision: keep v0.2.1 |
+| 11 | Evidence index + backlog | PR #22 `447298df` | push 43439564775 / PR 43439586070 (both success 4/4, 0 skips) | docs-only; tag/release untouched |
 
 ## 2. Release assets and checksums (verified 2026-11-13)
 
