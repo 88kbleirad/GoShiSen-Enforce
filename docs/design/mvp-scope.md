@@ -216,3 +216,12 @@ See `docs/design/architecture.md` §8 for the full matrix. MVP pins:
 - [x] Metrics: `goshisen_flow_offload_state` (0/1/2) + `goshisen_flow_offload_disables_total{result=success|failed}`.
 - [x] OpenWrt package: UCI `offload_policy` accepts enforce; UCI `allow_bypass` option rendered; tests in `tests/package`.
 - [x] Docs: `docs/design/offload-disable-phase.md`, `docs/openwrt.md`, architecture §9.
+
+### Phase 18 — Flowtable bypass observability (backlog #3)
+- [x] Measurement contract: flowtable `counter` is the observable hit source; read-only parsing of `nft -a list ruleset` only.
+- [x] State model: absent / present_zero_hit / present_positive_hit / unknown; zero hits ≠ offload disabled (never inferred).
+- [x] `offload observe` CLI: timestamp, state, per-flowtable cumulative hits, confidence (high/limited/unknown) + reason.
+- [x] Metrics: `goshisen_flowtable_hits_packets` (gauge, -1 unavailable) + `goshisen_flowtable_hits_available`; watchdog/startup record them.
+- [x] Counter reset/wraparound handling (DeltaHits): after < before → report current value, no negative deltas.
+- [x] Tests: parser (with/bare/none/malformed counters), delta (positive/reset/zero), observe (absent/unknown/positive/limited), metrics.
+- [x] Docs: `docs/design/offload-observability-phase.md` (contract, state model, reset, platform limits, safety).
