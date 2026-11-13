@@ -1,6 +1,6 @@
 # GoShiSen-Enforce — MVP Scope
 
-Status: **Phase 6 — NAT + packaging complete (privileged integration still not runnable in this environment: non-root).** Companion to `docs/design/architecture.md`; defines what the lab firewall MVP is, phase-by-phase acceptance criteria, and what is explicitly out of scope.
+Status: **Phase 14 (flow-offload policy) complete; Phase 7 privileged integration still not runnable in this environment (non-root).** Companion to `docs/design/architecture.md`; defines what the lab firewall MVP is, phase-by-phase acceptance criteria, and what is explicitly out of scope.
 
 ---
 
@@ -139,6 +139,14 @@ Each scenario is run against the lab topology (`fw`/`client`/`server`, §7 of ar
 - [ ] Dependency pins in go.mod, `go mod verify` clean, `go vet`/`go test ./...` green (D5).
 - [ ] Docs closure: user guide (config, run, lab), developer guide (build, test, contribute), SECURITY.md, README status accurate.
 - [ ] Final acceptance: full scenario suite + lab cleanup + a cold-clone build.
+
+### Phase 14 — Flow-offload policy (Issue #6)
+- [x] Config: `offload_policy` (`warn` default | `refuse` | `readiness`) validated at load; file/env sources with precedence recorded; no flag (surfaces in `config show`).
+- [x] `refuse`: startup fails with an actionable error BEFORE installing the hook when offloading is detected — fail-closed by absence, system untouched (unit test: hook/queue never touched).
+- [x] `readiness`: daemon enforces but never becomes ready while offloading is active; the 10 s watcher drops readiness when offloading appears later and restores it once the ruleset is clean (unit tests for both edges).
+- [x] `warn` (default): unchanged behavior — WARN log + `goshisen_flow_offload_active` gauge.
+- [x] OpenWrt package: UCI `offload_policy` option validated by the init script and rendered into the daemon YAML; regression tests in `tests/package`.
+- [x] Docs: user guide, `docs/openwrt.md` (UCI table + enforcement gaps), SECURITY.md, architecture §9, mvp-scope status synced.
 
 ---
 
