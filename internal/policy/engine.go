@@ -80,31 +80,38 @@ func (d Direction) String() string {
 // Rule is a single compiled, immutable policy rule.
 type Rule struct {
 	ID          string
-	Action      Action
-	Protocol    Proto
+	Description string
 	Src         Prefix
 	Dst         Prefix
-	SrcPort     *PortRange
-	DstPort     *PortRange
-	Log         bool
-	Description string
+	SrcPort     PortRange
+	DstPort     PortRange
+	Action      Action
+	Protocol    Proto
 
-	// States is the set of connection states this rule matches; empty
-	// means all states (stateless rule).
-	States []State
+	// StateMask is a bitmask of the connection states this rule
+	// matches; 0 means all states (stateless rule). State values are
+	// 1..4, so bit n of StateMask corresponds to State n. Parsed from
+	// the YAML state list at compile time; matching is a single
+	// bitwise test instead of a slice scan.
+	StateMask uint16
+
+	HasSrcPort bool
+	HasDstPort bool
+	Log        bool
 }
 
 // String renders the rule in a one-line, human-readable form.
 func (r Rule) String() string {
-	return fmt.Sprintf("%s %s proto=%s src=%s dst=%s srcport=%v dstport=%v",
-		r.ID, r.Action, r.Protocol, r.Src, r.Dst, portPtrString(r.SrcPort), portPtrString(r.DstPort))
-}
-
-func portPtrString(p *PortRange) string {
-	if p == nil {
-		return "-"
+	srcPort := "-"
+	if r.HasSrcPort {
+		srcPort = r.SrcPort.String()
 	}
-	return p.String()
+	dstPort := "-"
+	if r.HasDstPort {
+		dstPort = r.DstPort.String()
+	}
+	return fmt.Sprintf("%s %s proto=%s src=%s dst=%s srcport=%s dstport=%s",
+		r.ID, r.Action, r.Protocol, r.Src, r.Dst, srcPort, dstPort)
 }
 
 // Snapshot is an immutable compiled policy: a rule list in evaluation
@@ -148,8 +155,49 @@ func (s *Snapshot) Len() int { return len(s.rules) }
 // 5-tuples). The set is populated by Process' NEW-accept verdicts and
 // consulted by stateful ESTABLISHED/RELATED matches.
 type King struct {
-	current  atomic.Pointer[Snapshot]
-	accepted sync.Map // tupleKey -> struct{}
+	current     atomic.Pointer[Snapshot]
+	accepted    sync.RWMutex
+	acceptedMap map[tupleKey]struct{}
+}
+
+// tupleKey is an allocation-free 5-tuple key: two 64-bit words carry the
+// address pair (IPv4 in lo/hi as 32-bit halves; IPv6 as the full 128-bit
+// pair), and one 32-bit word carries protocol + both ports. Unlike the
+// previous fmt.Sprintf-based string key, building it neither allocates
+// nor formats.
+type tupleKey struct {
+	lo  uint64
+	hi  uint64
+	ppm uint32 // protocol<<16 | srcPort<<8 | dstPort
+}
+
+// newTupleKey canonicalizes reply packets (src/dst swapped) so they map
+// to the same connection as the original direction. Without this, the
+// reply direction never matches the accepted-set and ESTABLISHED/RELATED
+// replies are dropped.
+func newTupleKey(p Packet) tupleKey {
+	src, dst := p.Src, p.Dst
+	sport, dport := p.SrcPort, p.DstPort
+	if p.Direction == DirReply {
+		src, dst = dst, src
+		sport, dport = dport, sport
+	}
+	var k tupleKey
+	if src.Is4() {
+		a4 := src.As4()
+		b4 := dst.As4()
+		k.lo = uint64(a4[0])<<24 | uint64(a4[1])<<16 | uint64(a4[2])<<8 | uint64(a4[3])
+		k.hi = uint64(b4[0])<<24 | uint64(b4[1])<<16 | uint64(b4[2])<<8 | uint64(b4[3])
+	} else {
+		a16 := src.As16()
+		b16 := dst.As16()
+		k.lo = uint64(a16[0])<<56 | uint64(a16[1])<<48 | uint64(a16[2])<<40 | uint64(a16[3])<<32 |
+			uint64(a16[4])<<24 | uint64(a16[5])<<16 | uint64(a16[6])<<8 | uint64(a16[7])
+		k.hi = uint64(b16[0])<<56 | uint64(b16[1])<<48 | uint64(b16[2])<<40 | uint64(b16[3])<<32 |
+			uint64(b16[4])<<24 | uint64(b16[5])<<16 | uint64(b16[6])<<8 | uint64(b16[7])
+	}
+	k.ppm = uint32(p.Protocol)<<16 | uint32(sport)<<8 | uint32(dport)
+	return k
 }
 
 // NewKing returns a King whose initial snapshot is an empty, all-DROP
@@ -157,6 +205,7 @@ type King struct {
 func NewKing() *King {
 	k := &King{}
 	k.current.Store(NewSnapshot(ActionDrop, nil))
+	k.acceptedMap = make(map[tupleKey]struct{})
 	return k
 }
 
@@ -169,28 +218,19 @@ func (k *King) Replace(s *Snapshot) *Snapshot { return k.current.Swap(s) }
 
 // MarkAccepted records a connection as accepted by policy.
 func (k *King) MarkAccepted(p Packet) {
-	k.accepted.Store(tupleKey(p), struct{}{})
+	key := newTupleKey(p)
+	k.accepted.Lock()
+	k.acceptedMap[key] = struct{}{}
+	k.accepted.Unlock()
 }
 
 // IsAccepted reports whether the connection was accepted.
 func (k *King) IsAccepted(p Packet) bool {
-	_, ok := k.accepted.Load(tupleKey(p))
+	key := newTupleKey(p)
+	k.accepted.RLock()
+	_, ok := k.acceptedMap[key]
+	k.accepted.RUnlock()
 	return ok
-}
-
-// tupleKey reduces a packet to its 5-tuple.
-func tupleKey(p Packet) string {
-	// Canonicalize so reply packets (src/dst swapped) map to the same
-	// connection as the original direction. Without this, the reply
-	// direction never matches the accepted-set and ESTABLISHED/RELATED
-	// replies are dropped.
-	src, dst := p.Src, p.Dst
-	sport, dport := p.SrcPort, p.DstPort
-	if p.Direction == DirReply {
-		src, dst = dst, src
-		sport, dport = dport, sport
-	}
-	return fmt.Sprintf("%s|%d|%s|%d|%d", src, p.Protocol, dst, sport, dport)
 }
 
 // Process is the stateful decision surface. It evaluates p against the
@@ -293,24 +333,14 @@ func (r Rule) matches(p Packet) bool {
 	if !r.Src.Contains(p.Src) || !r.Dst.Contains(p.Dst) {
 		return false
 	}
-	if r.SrcPort != nil && !r.SrcPort.Contains(p.SrcPort) {
+	if r.HasSrcPort && !r.SrcPort.Contains(p.SrcPort) {
 		return false
 	}
-	if r.DstPort != nil && !r.DstPort.Contains(p.DstPort) {
+	if r.HasDstPort && !r.DstPort.Contains(p.DstPort) {
 		return false
 	}
-	if len(r.States) > 0 {
-		if p.State == StateNone {
-			return false
-		}
-		found := false
-		for _, st := range r.States {
-			if st == p.State {
-				found = true
-				break
-			}
-		}
-		if !found {
+	if r.StateMask != 0 {
+		if p.State == StateNone || r.StateMask&(1<<uint(p.State)) == 0 {
 			return false
 		}
 		// ESTABLISHED and RELATED matches require the connection to have

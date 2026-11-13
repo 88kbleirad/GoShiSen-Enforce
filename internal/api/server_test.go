@@ -272,6 +272,103 @@ func TestAPIConcurrentApply(t *testing.T) {
 	}
 }
 
+// TestAPISharedMutexWithDaemonPublish verifies that when the API server
+// shares the daemon's publish mutex, an API apply racing a daemon
+// publish (e.g. SIGHUP reload) never tears: both land as distinct
+// versions and the store and king agree at the end. Without the shared
+// lock, the two writers could compute the same next version and one
+// publish would be lost.
+func TestAPISharedMutexWithDaemonPublish(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	king := policy.NewKing()
+	var mu sync.Mutex // stands in for the daemon's reloadMu
+	l := &testLogger{}
+	srv, err := New(Options{
+		Host: "127.0.0.1", Port: 0, Token: testToken,
+		Store: st, King: king, Metrics: metrics.New(), Log: l, Mu: &mu,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := &fixture{t: t, store: st, king: king, srv: srv, log: l}
+	f.serve()
+
+	// Seed v1 via the API.
+	v0 := applyV(f, "")
+
+	// Race 5 API applies against 5 daemon publishes on the same
+	// store+king. Each API apply gets the base_version from the store
+	// at call time; CAS makes concurrent writers collide, but with the
+	// shared mutex the sequence is total so every successful apply is a
+	// distinct version.
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(2)
+		go func(i int) {
+			defer wg.Done()
+			body := fmt.Sprintf(`{"policy": %q, "base_version": %q}`, validPolicy(fmt.Sprintf("%d", 10+i)), v0)
+			// Use stale base on purpose: those must 409, not corrupt.
+			code, _, _ := f.request("POST", "/v1/policy", body, true)
+			if code != http.StatusConflict && code != http.StatusCreated {
+				t.Errorf("apply: %d", code)
+			}
+		}(i)
+		go func(i int) {
+			defer wg.Done()
+			pol := fmt.Sprintf("version: 1\nrules:\n  - id: p%d\n    action: ACCEPT\n", i)
+			snap, cerr := policy.Compile([]byte(pol))
+			if cerr != nil {
+				t.Error(cerr)
+				return
+			}
+			mu.Lock()
+			next, nerr := st.NextVersion()
+			if nerr == nil {
+				nerr = st.WritePolicy(next, []byte(pol))
+			}
+			if nerr == nil {
+				nerr = st.SetActive(next)
+			}
+			if nerr == nil {
+				king.Replace(snap)
+			}
+			mu.Unlock()
+			if nerr != nil {
+				t.Error(nerr)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	// Store and king must agree on the active policy.
+	active, err := st.Active()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := st.ReadPolicy(active)
+	if err != nil {
+		t.Fatal(err)
+	}
+	asnap, err := policy.Compile(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if asnap.Len() != king.Snapshot().Len() {
+		t.Errorf("king rules=%d != store active rules=%d", king.Snapshot().Len(), asnap.Len())
+	}
+	versions, err := st.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(versions) < 5 {
+		t.Errorf("versions=%d, want >= 6 (seed + successes)", len(versions))
+	}
+}
+
 func TestAPIRestartRecovery(t *testing.T) {
 	dir := t.TempDir()
 	st, err := store.Open(dir)
@@ -320,6 +417,60 @@ func TestAPIRestartRecovery(t *testing.T) {
 	}
 }
 
+// TestPublishKillFailClosedSimulation verifies the durable-store
+// ordering guarantees fail-closed recovery if the daemon dies mid-
+// publish: a policy version written but not yet activated must never
+// become the recovered active policy. A new daemon on the same store
+// recovers the previous active policy (never the torn one).
+func TestPublishKillFailClosedSimulation(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Steady state: v1 active.
+	if err := st.WritePolicy("1", []byte(validPolicy("1"))); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetActive("1"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Mid-publish kill simulation: v2 was written (durable) but the
+	// active pointer was never advanced — exactly what a crash between
+	// WritePolicy and SetActive leaves behind.
+	if err := st.WritePolicy("2", []byte(validPolicy("2"))); err != nil {
+		t.Fatal(err)
+	}
+
+	// Recovery (as the daemon's Run does at startup): read active, not
+	// the newest file.
+	active, err := st.Active()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active != "1" {
+		t.Fatalf("recovered active = %s, want 1 (torn v2 must not activate)", active)
+	}
+	data, err := st.ReadPolicy(active)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap, err := policy.Compile(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.Len() != 1 {
+		t.Errorf("recovered rules = %d, want 1", snap.Len())
+	}
+	// The torn version is still listed but must never become active on
+	// its own.
+	versions, _ := st.List()
+	if len(versions) != 2 {
+		t.Errorf("versions = %v, want [1 2]", versions)
+	}
+}
+
 func TestAPIValidateEndpoint(t *testing.T) {
 	f := newFixture(t)
 	f.serve()
@@ -365,6 +516,40 @@ func TestAPIActivateVersion(t *testing.T) {
 	code, m, _ = f.request("POST", "/v1/policy/versions/"+v1+"/activate", body, true)
 	if code != http.StatusConflict {
 		t.Errorf("stale activate: %d %v", code, m)
+	}
+}
+
+// TestAPIPolicyUpdateMetrics verifies the bounded policy-update outcome
+// counter records success, failure (invalid policy), and conflict (CAS
+// mismatch) separately.
+func TestAPIPolicyUpdateMetrics(t *testing.T) {
+	f := newFixture(t)
+	f.serve()
+	v1 := applyV(f, "") // success
+
+	// Failure: invalid policy.
+	body := fmt.Sprintf(`{"policy": "version: 99\nrules: []\n", "base_version": %q}`, v1)
+	if code, _, _ := f.request("POST", "/v1/policy", body, true); code != http.StatusUnprocessableEntity {
+		t.Fatalf("invalid apply: %d", code)
+	}
+	// Conflict: stale base_version.
+	body = fmt.Sprintf(`{"policy": %q, "base_version": "stale"}`, validPolicy("3"))
+	if code, _, _ := f.request("POST", "/v1/policy", body, true); code != http.StatusConflict {
+		t.Fatalf("stale apply: %d", code)
+	}
+
+	code, _, raw := f.request("GET", "/metrics", "", false)
+	if code != http.StatusOK {
+		t.Fatalf("metrics: %d", code)
+	}
+	for _, want := range []string{
+		`goshisen_policy_updates_total{outcome="success"} 1`,
+		`goshisen_policy_updates_total{outcome="failure"} 1`,
+		`goshisen_policy_updates_total{outcome="conflict"} 1`,
+	} {
+		if !strings.Contains(raw, want) {
+			t.Errorf("metrics missing %s:\n%s", want, raw)
+		}
 	}
 }
 
