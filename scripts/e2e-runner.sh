@@ -58,19 +58,26 @@ need() {
   done
   die "required tool '$1' missing (apt-get install ...)" 3
 }
-need curl; need wget; need python3; need qemu-system-x86_64; need nft
-need iptables; need ip; need sudo
-# Tests may override the required-tool set (e.g. to simulate a missing tool).
+# Tests may override the required-tool set (e.g. to simulate a missing
+# tool). It runs before the default set so tests do not depend on the
+# host having every default tool.
 # shellcheck disable=SC2153
 if [ -n "${E2E_REQUIRED_TOOLS:-}" ]; then
   for t in $E2E_REQUIRED_TOOLS; do need "$t"; done
 fi
+need curl; need wget; need python3; need qemu-system-x86_64; need nft
+need iptables; need ip; need sudo
 
 # Ensure child lab/e2e invocations see a full PATH (non-login shells often
 # omit /usr/sbin, which holds iptables/ip/qemu).
 export PATH="$PATH:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-if ! sudo -n true 2>/dev/null; then
+if [ -n "${E2E_SUDO_OK:-}" ]; then
+  # Test override: skip the live sudo check (e.g. simulate no-sudo).
+  if [ "$E2E_SUDO_OK" = "no" ]; then
+    die "passwordless sudo required (netns/TAP/lab); environment is BLOCKED" 3
+  fi
+elif ! sudo -n true 2>/dev/null; then
   die "passwordless sudo required (netns/TAP/lab); environment is BLOCKED" 3
 fi
 # NFQUEUE for the e2e is provided by the OpenWrt VM (kmod pins verified by

@@ -74,16 +74,12 @@ func TestRunnerPreflightMissingTool(t *testing.T) {
 	}
 }
 
-// TestRunnerPreflightBlockedNoSudo: with sudo shim failing, runner must
-// exit 3 BLOCKED (no fake pass/skip).
+// TestRunnerPreflightBlockedNoSudo: simulate no passwordless sudo via
+// the E2E_SUDO_OK=no override; runner must exit 3 BLOCKED.
 func TestRunnerPreflightBlockedNoSudo(t *testing.T) {
 	bin := t.TempDir()
-	// Fake sudo that always fails (no passwordless).
-	if err := os.WriteFile(filepath.Join(bin, "sudo"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	// Provide required tools via symlink to real ones so preflight
-	// passes tool presence, then fails on sudo.
+	// passes tool presence, then fails on the sudo gate.
 	for _, tool := range []string{"curl", "wget", "python3", "qemu-system-x86_64", "nft", "iptables", "ip"} {
 		path, err := exec.LookPath(tool)
 		if err != nil {
@@ -91,7 +87,7 @@ func TestRunnerPreflightBlockedNoSudo(t *testing.T) {
 		}
 		_ = os.Symlink(path, filepath.Join(bin, tool))
 	}
-	env := append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	env := append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "E2E_SUDO_OK=no")
 	cmd := exec.Command("bash", e2eScript(t, "e2e-runner.sh"), "--artifacts", t.TempDir())
 	cmd.Env = env
 	out, err := cmd.CombinedOutput()
