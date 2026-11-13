@@ -110,6 +110,65 @@ jobs:
             dist/checksums.txt
             dist/sbom.spdx.json
 
+  verify-signatures:
+    name: sign + verify release artifacts (test key, fail-closed)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.0.0
+        with:
+          go-version: "1.25"
+          cache: true
+      - name: Install packaging tools (syft pinned)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends jq openssl
+          curl -fsSL -o /tmp/syft_1.30.0_linux_amd64.tar.gz \
+            https://github.com/anchore/syft/releases/download/v1.30.0/syft_1.30.0_linux_amd64.tar.gz
+          curl -fsSL -o /tmp/syft-checksums.txt \
+            https://github.com/anchore/syft/releases/download/v1.30.0/syft_1.30.0_checksums.txt
+          grep 'syft_1.30.0_linux_amd64.tar.gz' /tmp/syft-checksums.txt > /tmp/expected.sha
+          (cd /tmp && sha256sum -c expected.sha)
+          tar xzf /tmp/syft_1.30.0_linux_amd64.tar.gz -C /usr/local/bin syft
+      - name: Build archives
+        run: make package VERSION=0.2.1-sigtest
+      - name: Sign with a throwaway test key
+        run: |
+          openssl genpkey -algorithm ed25519 -out "$RUNNER_TEMP/k.pem"
+          openssl pkey -in "$RUNNER_TEMP/k.pem" -pubout -out "$RUNNER_TEMP/k.pub.pem"
+          bash scripts/sign-artifacts.sh \
+            --dist dist --key "$RUNNER_TEMP/k.pem" --public-key "$RUNNER_TEMP/k.pub.pem" \
+            --commit "${{ github.sha }}" --tag 0.2.1-sigtest \
+            --builder ci --toolchain "1.25" --sign
+          bash scripts/verify-signatures.sh \
+            --dist dist --public-key "$RUNNER_TEMP/k.pub.pem" \
+            --commit "${{ github.sha }}" --require-sign
+      - name: Tamper must fail (fail-closed proof)
+        run: |
+          set +e
+          mkdir -p /tmp/dist2
+          cp -r dist/. /tmp/dist2/
+          echo tampered >> /tmp/dist2/goshisen-linux-amd64.tar.gz
+          bash scripts/verify-signatures.sh --dist /tmp/dist2 \
+            --public-key "$RUNNER_TEMP/k.pub.pem" \
+            --commit "${{ github.sha }}" --require-sign \
+            > /tmp/verify-tamper.log 2>&1
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
+            echo "FAIL: tampered artifact verified cleanly" >&2
+            cat /tmp/verify-tamper.log >&2
+            exit 1
+          fi
+          grep -q "bad-signature" /tmp/verify-tamper.log || {
+            echo "FAIL: expected bad-signature error, got:" >&2
+            cat /tmp/verify-tamper.log >&2
+            exit 1
+          }
+          echo "OK: tampered artifact rejected (rc=$rc)"
+
   openwrt-integration:
     name: openwrt e2e (QEMU lab, privileged)
     runs-on: ubuntu-24.04

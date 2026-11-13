@@ -87,6 +87,22 @@ package-dist: ## Build only the current GOARCH archive
 verify-package: package-dist ## Build and validate the archive (arch, version, checksums, SBOM)
 	@bash scripts/verify-package.sh
 
+sign-test: ## Sign dist/ with a throwaway test key (verification exercise)
+	@test -d dist || { echo "run 'make package' first"; exit 1; }
+	@tmp=$$(mktemp -d); \
+	openssl genpkey -algorithm ed25519 -out $$tmp/k.pem 2>/dev/null; \
+	openssl pkey -in $$tmp/k.pem -pubout -out $$tmp/k.pub.pem 2>/dev/null; \
+	bash scripts/sign-artifacts.sh --dist dist --key $$tmp/k.pem --public-key $$tmp/k.pub.pem \
+		--commit $$(git rev-parse HEAD 2>/dev/null || echo unknown) --tag dev \
+		--builder local --toolchain "$$(go version)" --sign; \
+	bash scripts/verify-signatures.sh --dist dist --public-key $$tmp/k.pub.pem \
+		--commit $$(git rev-parse HEAD 2>/dev/null || echo unknown) --require-sign; \
+	rm -rf $$tmp
+
+verify-signatures: ## Verify dist/ with the committed public key (if present)
+	@test -f dist/public_key.pem || { echo "no dist/public_key.pem (run sign-test or release signing)"; exit 1; }
+	@bash scripts/verify-signatures.sh --dist dist --public-key dist/public_key.pem --require-sign
+
 sbom: ## Generate an SPDX SBOM over the source tree
 	@syft scan -o spdx-json=sbom.spdx.json . 2>/dev/null || \
 		echo "ERROR: syft not installed (see scripts/package.sh)" >&2
