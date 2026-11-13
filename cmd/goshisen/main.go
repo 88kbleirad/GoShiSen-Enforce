@@ -94,10 +94,10 @@ func runHook(opts *cli.Options) error {
 	return fmt.Errorf("internal: unhandled hook subcommand %q", opts.Subcommand)
 }
 
-// runOffload implements the `offload status` and `offload disable`
-// subcommands. status is read-only; disable removes nftables
-// flow-offload state (flowtables + flow-offload rules only) and
-// re-verifies. Nothing else is touched.
+// runOffload implements the `offload status`, `offload observe`, and
+// `offload disable` subcommands. status/observe are read-only; disable
+// removes nftables flow-offload state (flowtables + flow-offload rules
+// only) and re-verifies. Nothing else is touched.
 func runOffload(opts *cli.Options) error {
 	switch opts.Subcommand {
 	case "", "status":
@@ -111,6 +111,23 @@ func runOffload(opts *cli.Options) error {
 			fmt.Printf("offload: FAILED (disable did not take effect): %s\n", rep.Detail)
 		default:
 			fmt.Printf("offload: UNKNOWN (cannot prove safety): %s\n", rep.Detail)
+		}
+		return nil
+	case "observe":
+		// Read-only measurement snapshot (never modifies state).
+		s := hook.ObserveFlowOffload()
+		fmt.Printf("offload observe: at=%s state=%s confidence=%s\n",
+			s.At, s.State, s.Confidence)
+		if s.Reason != "" {
+			fmt.Printf("  reason: %s\n", s.Reason)
+		}
+		for _, ft := range s.Flowtables {
+			fmt.Printf("  flowtable %s/%s/%s packets=%d bytes=%d\n",
+				ft.Family, ft.Table, ft.Name, ft.Packets, ft.Bytes)
+		}
+		if s.HitsAvailable {
+			fmt.Printf("  hits: packets=%d bytes=%d (cumulative, monotonic)\n",
+				s.HitsPackets, s.HitsBytes)
 		}
 		return nil
 	case "disable":

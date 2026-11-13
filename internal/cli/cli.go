@@ -47,6 +47,10 @@ COMMANDS:
   offload status
                 Report flow-offload state: disabled, ENABLED (enforcement
                 gap), failed, or unknown. Read-only, no changes
+  offload observe
+                Take a read-only measurement snapshot: flowtable names,
+                cumulative hit counters (if available), sample time,
+                enforcement state, and confidence. Never modifies state
   offload disable
                 Remove nftables flow-offload state (flowtables and
                 flow-offload rules only) and re-verify. Idempotent.
@@ -237,7 +241,7 @@ func (o *Options) ValidateCommand() error {
 		}
 	case "offload":
 		switch o.Subcommand {
-		case "", "status", "disable":
+		case "", "status", "observe", "disable":
 			return nil
 		}
 	}

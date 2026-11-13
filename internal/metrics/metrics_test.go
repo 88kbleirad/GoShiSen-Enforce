@@ -115,3 +115,30 @@ func TestFlowOffloadStateMetrics(t *testing.T) {
 		t.Errorf("missing disable failed counter:\n%s", out)
 	}
 }
+
+func TestFlowTableHitsMetrics(t *testing.T) {
+	r := New()
+	r.SetFlowTableHits(true, 1234)
+
+	var buf bytes.Buffer
+	r.WritePrometheus(&buf)
+	out := buf.String()
+
+	if !strings.Contains(out, "goshisen_flowtable_hits_packets 1234") {
+		t.Errorf("missing hits packets gauge:\n%s", out)
+	}
+	if !strings.Contains(out, "goshisen_flowtable_hits_available 1") {
+		t.Errorf("missing hits available gauge:\n%s", out)
+	}
+
+	r.SetFlowTableHits(false, 0)
+	buf.Reset()
+	r.WritePrometheus(&buf)
+	out = buf.String()
+	if !strings.Contains(out, "goshisen_flowtable_hits_packets -1") {
+		t.Errorf("missing -1 unavailable gauge:\n%s", out)
+	}
+	if !strings.Contains(out, "goshisen_flowtable_hits_available 0") {
+		t.Errorf("missing hits unavailable gauge:\n%s", out)
+	}
+}
