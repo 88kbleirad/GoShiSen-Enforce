@@ -1,6 +1,6 @@
 # GoShiSen-Enforce — MVP Scope
 
-Status: **Phase 14 (flow-offload policy) complete; Phase 7 privileged integration still not runnable in this environment (non-root).** Companion to `docs/design/architecture.md`; defines what the lab firewall MVP is, phase-by-phase acceptance criteria, and what is explicitly out of scope.
+Status: **Phase 16 (performance) complete; Phase 15 (atomic policy publish) complete; Phase 7 privileged integration still not runnable in this environment (non-root).** Companion to `docs/design/architecture.md`; defines what the lab firewall MVP is, phase-by-phase acceptance criteria, and what is explicitly out of scope.
 
 ---
 
@@ -30,7 +30,7 @@ Non-goals of the MVP are listed in §6; they are *design-reserved* (architecture
 | C5 | Conntrack integration | **Done (Phase 4):** kernel attach metadata per packet (`NFQA_CT`/`NFQA_CT_INFO`); state/direction mapped to the engine; accepted-set in `King`; TCP state from kernel protoinfo. No userspace conntrack mirror/event subscription (not needed: decision uses per-packet CT metadata). |
 | C6 | Lab harness | **Done (Phase 3):** `scripts/lab.sh` up/down/status; unique `gsh_` resource names; root-gated; host firewall untouched. |
 | C7 | Metrics/logs | Prometheus counters (accepted/dropped per action+protocol) and queue overflow stats; audit log lines for `log: true` rules. |
-| C8 | Reload | Atomic snapshot replacement is implemented (`policy.King`); daemon loads policy at startup. `SIGHUP` wiring lands in Phase 5. Failed reload keeps old policy; connections survive reload. |
+| C8 | Reload | **Done (Phase 15):** atomic snapshot replacement (`policy.King`) published through one durable pipeline shared by SIGHUP and the API (compile → store write+activate → king swap, under one lock). Failed/partial publish keeps the old policy in store and ruleset; mid-publish crash recovery never activates a torn version; `goshisen_policy_updates_total` outcome metrics; `policy dry-run` preview. |
 
 ---
 
@@ -147,6 +147,21 @@ Each scenario is run against the lab topology (`fw`/`client`/`server`, §7 of ar
 - [x] `warn` (default): unchanged behavior — WARN log + `goshisen_flow_offload_active` gauge.
 - [x] OpenWrt package: UCI `offload_policy` option validated by the init script and rendered into the daemon YAML; regression tests in `tests/package`.
 - [x] Docs: user guide, `docs/openwrt.md` (UCI table + enforcement gaps), SECURITY.md, architecture §9, mvp-scope status synced.
+
+### Phase 15 — Atomic policy publish
+- [x] Unified publish pipeline shared by SIGHUP reload and REST API apply/activate: compile → next version from durable store → durable write (policy then active pointer) → king swap, all under one process-wide mutation lock. No policy is ever visible half-applied; any failure keeps the previous policy in both the store and the live ruleset.
+- [x] Fail-closed mid-publish recovery: a version written but not yet activated never becomes active after a daemon restart (recovery reads the active pointer).
+- [x] Metrics: `goshisen_policy_updates_total{outcome="success"|"failure"|"conflict"}`; `goshisen_active_policy_version` reflects the store's active version after recovery.
+- [x] `policy dry-run --policy-file F --policy-dir D`: validates F and previews the exact publish (next version, rules delta, default-action change) without writing; missing store is an error (never created).
+- [x] Tests: malformed YAML / invalid policy keep the old ruleset; concurrent publishes serialize to distinct versions with store/king agreement; CAS conflict on stale base; partial store failure keeps the old policy; IPv4+IPv6 policies publish and decide correctly; end-to-end SIGHUP reload while running; restart recovery after a simulated mid-publish kill.
+
+### Phase 16 — Performance
+- [x] Benchmark suite committed: parser (`internal/packet/parser_bench_test.go`), engine (`internal/policy/engine_bench_test.go`), full decision pipeline incl. metrics (`internal/packet/pipeline_bench_test.go` — guarded by `TestPipelineRuns` against a dead path).
+- [x] Baseline captured pre-optimization on the same idle machine (3 runs, median + σ), profile showed `fmt.doPrintf` ≈ 55% of CPU in `King.Process` (string-keyed accepted-set).
+- [x] Hot path optimized: zero-allocation packed 5-tuple key (`tupleKey` struct, no `fmt`/string), `sync.RWMutex`+map accepted-set, compact `Rule` (state bitmask + value ports), single-lock fixed-array packet metrics (`ObservePacket`), pooled verdict buffer, inlined attribute parse.
+- [x] Results (median, same env, 3 runs): King.Process NEW accept 934→103 ns (−89%), ESTABLISHED 409→53 ns (−87%), tupleKey 359→4.4 ns (−99%), pipeline e2e NEW accept 1129→253 ns (−78%), established reply 634→193 ns (−70%), default-drop 668→206 ns (−69%), metrics-only 86.5→15.8 ns (−82%), latency p50 1.04→0.31 µs, p95 1.72→0.31 µs, p99 2.69→0.48 µs; **0 allocations per packet** (was 15–16).
+- [x] Semantics preserved: stateful reply canonicalization pinned by `internal/policy/tuplekey_test.go` (v4/v6); `go test -race ./...` and `make check` green; verdict wire format unchanged (`TestVerdictMessageGolden`).
+- [x] Docs: `docs/design/performance-phase.md` (baseline/profile/result, env, variance), architecture §9 row 16, mvp-scope status synced. Worker count unchanged (2 goroutines, one per queue socket v4/v6); policy-size scaling verified (200-rule worst case).
 
 ---
 

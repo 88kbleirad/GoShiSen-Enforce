@@ -27,8 +27,8 @@ integration: build ## Run the real netns integration suite (requires root)
 	$(GO) test ./tests/integration/ -v -count=1
 
 fuzz: ## Fuzz the packet parser (30s)
-	$(GO) test ./internal/packet/ -run='^$$' -fuzz=FuzzParse -fuzztime=30s
-
+	$(GO) test ./internal/packet/ -run='^$$' -fuzz='^FuzzParse$$' -fuzztime=30s
+	$(GO) test ./internal/packet/ -run='^$$' -fuzz='^FuzzParseAttrs$$' -fuzztime=30s
 all: check
 
 # The default release build is a statically linked, reproducible binary

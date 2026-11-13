@@ -248,9 +248,16 @@ See §4.1. Policy load failures abort startup or keep the previous policy on rel
 ### 6.6 Policy reloads
 - Reload trigger: `SIGHUP` (the daemon reloads the policy file) and the REST API's versioned apply/activate endpoints (Phase 5; atomic, CAS-guarded).
 - The new policy is parsed and validated fully **before** switching; on any error the old policy stays active and the reload is logged/rejected.
+- A publish follows a strict order, so a policy is never applied half-way:
+  1. serialize with the process-wide policy-mutation lock (one `sync.Mutex` shared by the daemon's SIGHUP path and the REST API),
+  2. compile/validate the new policy, then compute the next version from the durable store,
+  3. write the policy file and then the active pointer (both fsync'd; either both land or neither does),
+  4. only after the store is durable, swap the in-memory snapshot (`King.Replace`) and record the success metric.
+  Any failure before step 4 leaves both the durable store and the live ruleset on the previous policy. If the daemon dies mid-publish (after the write, before activation), restart recovery reads the *active* pointer, so the torn version never becomes active.
 - Switch is atomic: the engine swaps an immutable pointer to the compiled rule list. Packets in flight are evaluated against the snapshot they started with; new packets see the new list.
 - The `King` accepted-set is **not** cleared by reload (accepted connections survive policy swaps).
 - A reload that changes ports/addresses affects only new decisions; already-accepted connections continue under ESTABLISHED/RELATED rules until they expire (kernel timeouts/events).
+- Outcome observability: `goshisen_policy_updates_total{outcome="success"|"failure"|"conflict"}` records every publish attempt; `goshisen_active_policy_version` tracks the active version. SIGHUP reloads are logged with their source (`sighup`) and version.
 
 ---
 
@@ -339,6 +346,8 @@ Implementation phases (full acceptance criteria in `mvp-scope.md` §5):
 | 7 | in progress | Hardening & release: queue-overflow monitoring + counters, crash/restart hardening + readiness gating, supervisor examples (systemd/lab loop), dependency pins, docs closure, final acceptance run |
 | 8–13 | done (repo history) | OpenWrt packaging + procd lifecycle, IPv6 enforcement (inet hook), release build reproducibility (static archives, SBOM, checksums), flow-offload detection/warn — evidence in `docs/release/` |
 | 14 | done | Flow-offload policy (`offload_policy`: `warn`/`refuse`/`readiness`) — opt-in non-silent control of the established-flow enforcement gap (Issue #6) |
+| 15 | done | Atomic policy publish: unified SIGHUP/API publish pipeline (compile → durable store → king swap under one lock), outcome metrics, `policy dry-run` preview, fail-closed mid-publish recovery |
+| 16 | done | Performance: zero-allocation accepted-set key (packed 5-tuple struct, no `fmt`/string), compact `Rule` (state bitmask, value ports), single-lock allocation-free packet metrics (fixed enum-indexed arrays), pooled verdict buffer, inlined attribute parse; benchmark suite + baseline/profile/optimize evidence in `docs/design/performance-phase.md` (−70–99% on stateful/pipeline paths, −82% p95/p99, 0 allocs/packet) |
 
 Config-file keys currently recognized: `interface`, `policy_file`, `log_level`, `log_json`, `api_host`, `api_port`, `api_token`, `metrics_port`, `policy_dir`, `queue_maxlen`, `offload_policy`, `hook_scope`, `nat` (see `internal/config`). The policy YAML schema in §4 is a separate file format, implemented by `internal/policy` (Phase 2) and wired into the packet path in Phase 3.
 

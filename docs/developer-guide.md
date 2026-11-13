@@ -66,12 +66,12 @@ NAT lives in `internal/hook` (kernel-side nftables chains in the app-owned table
 
 - `internal/config`: precedence layering, strict YAML, env bool parsing, validation errors, source summary, redaction, `~` expansion, `queue_maxlen` (default/file/env/flag + bounds).
 - `internal/cli`: help/version, flag parsing, subcommand validation, `policy simulate` target parsing, `--queue-maxlen`.
-- `internal/app`: logger text/JSON, level filtering, lifecycle with the fake queue (policy-before-hook, graceful shutdown, queue-open failure), queue-overflow watcher (deltas, rate-limited warning, unavailable-stats exit), `-race` clean.
+- `internal/app`: logger text/JSON, level filtering, lifecycle with the fake queue (policy-before-hook, graceful shutdown, queue-open failure), queue-overflow watcher (deltas, rate-limited warning, unavailable-stats exit), atomic publish (`publish` order, malformed/partial-failure keeps old policy, concurrent publishes serialize to distinct versions, IPv4/IPv6 reload, end-to-end SIGHUP reload while running), `-race` clean.
 - `internal/policy`: CIDR boundary, port boundary, overlapping rules/ordering, default deny, invalid configs, snapshot immutability, atomic replace, concurrency, stateful semantics (accepted-set, five-tuple-not-enough, reload-keeps-established).
 - `internal/packet`: parser (valid TCP/UDP, options, truncations, fragments, unsupported protocols, no-panic sweep); backend `evaluate` verdicts (accept/drop/parse-error/panic); `applyCTInfo` mapping; counters; kernel queue-stats parser (`qstats.go`); fail-closed invariant (never requests `NFQA_CFG_F_FAIL_OPEN`).
 - `internal/packet` fuzz: `make fuzz` (30s) — `FuzzParse` clean.
 - `internal/store`: version validation, atomic writes (no stray temp files), active-pointer integrity.
-- `internal/api`: auth (missing/valid + audit + no token leak), invalid-policy preserves active, version conflict, concurrent apply (exactly one 201), restart recovery, activate/rollback, body limit, readiness, metrics; all under `-race`.
+- `internal/api`: auth (missing/valid + audit + no token leak), invalid-policy preserves active, version conflict, concurrent apply (exactly one 201), restart recovery, activate/rollback, body limit, readiness, metrics, policy-update outcome metric, shared-mutex concurrency with daemon publishes, mid-publish kill recovery (torn version never activates); all under `-race`.
 - `internal/metrics`: bounded label cardinality, no secret/flow-derived labels, histogram/gauge/counter output, queue-overflow counter (bounded `cause` enum).
 - `tests/integration`: real-traffic scenarios (Phase 3 six + Phase 4 six + Phase 6 five + Phase 7 overflow). **Root-gated**: `checkPrereqs` skips with an explicit reason. Run with `sudo make integration` (CI has a dedicated privileged job).
 - CLI smoke tests run in CI (help/version, missing-config error, invalid-policy error).
