@@ -7,6 +7,8 @@ package package_test
 // cover: sign+verify success, wrong key, tampered artifact, missing signature,
 // stale provenance.
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -35,6 +37,29 @@ func writeEd25519Key(t *testing.T, dir string) (priv, pub string) {
 		t.Fatalf("openssl pkey: %v: %s", err, out)
 	}
 	return priv, pub
+}
+
+func sha256Hex(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+func rawPubHex(t *testing.T, pub string) string {
+	t.Helper()
+	out, err := exec.Command("openssl", "pkey", "-pubin", "-in", pub, "-text", "-noout").CombinedOutput()
+	if err != nil {
+		t.Fatalf("openssl pkey -text: %v: %s", err, out)
+	}
+	lines := strings.Split(string(out), "\n")
+	hex := ""
+	for _, ln := range lines {
+		ln = strings.TrimSpace(ln)
+		if ln == "" || strings.HasPrefix(ln, "pub:") || strings.HasPrefix(ln, "ED25519") {
+			continue
+		}
+		hex += strings.ReplaceAll(ln, ":", "")
+	}
+	return hex
 }
 
 func makeFixtureArtifacts(t *testing.T, dir string) {

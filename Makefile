@@ -99,9 +99,9 @@ sign-test: ## Sign dist/ with a throwaway test key (verification exercise)
 		--commit $$(git rev-parse HEAD 2>/dev/null || echo unknown) --require-sign; \
 	rm -rf $$tmp
 
-verify-signatures: ## Verify dist/ with the committed public key (if present)
-	@test -f dist/public_key.pem || { echo "no dist/public_key.pem (run sign-test or release signing)"; exit 1; }
-	@bash scripts/verify-signatures.sh --dist dist --public-key dist/public_key.pem --require-sign
+verify-signatures: ## Verify dist/ with the committed production public key
+	@test -f keys/goshisen-release.pub.pem || { echo "no keys/goshisen-release.pub.pem"; exit 1; }
+	@bash scripts/verify-signatures.sh --dist dist --public-key keys/goshisen-release.pub.pem --require-sign
 
 sbom: ## Generate an SPDX SBOM over the source tree
 	@syft scan -o spdx-json=sbom.spdx.json . 2>/dev/null || \

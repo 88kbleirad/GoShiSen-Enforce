@@ -5,7 +5,7 @@ the verification hook that will close it. No item changes v0.2.1 assets.
 
 | # | Priority | Item | Risk it mitigates | Proposed owner | Verification hook |
 | --- | --- | --- | --- | --- | --- |
-| 1 | High | Artifact signing / provenance (apk + release archives; proposal at `docs/design/signing-proposal.md`) | Distributions can be tampered with; apk currently installed with `--allow-untrusted` | 88kbleirad | Signed apk/archives; `apk verify` / GPG check in release workflow |
+| 1 | High | Artifact signing / provenance (apk + release archives) — **implemented**: `docs/release/signing-design.md`, trust anchor `keys/goshisen-release.pub.pem` | Distributions can be tampered with; apk currently installed with `--allow-untrusted` transition exception | 88kbleirad | Signed apk/archives; `apk verify` / GPG check in release workflow. Remaining: native `usign` apk verification (removes `--allow-untrusted`) |
 | 2 | High | Offload detect and disable clearly (current: detect/warn only; `offload_policy` modes do not disable offloading) | Established flows bypass the queue while offloading is active | 88kbleirad | User-visible disable path + docs; VM test with flow_offloading=1 |
 | 3 | Medium | Flowtable bypass observability in the lab (TCG offloads 0 packets → bypass itself unobservable) | Gap between policy and enforcement unmeasured on real hardware | 88kbleirad | Hardware/paravirt target where flowtable offloads packets; counter evidence |
 | 4 | Medium | arm64 runtime verification (binaries built/verified static only; runtime requires arm64 host) | Untested runtime behavior on arm64 | 88kbleirad | arm64 runner or qemu-user e2e; `go test` on arm64 host |

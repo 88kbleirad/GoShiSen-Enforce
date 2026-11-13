@@ -22,8 +22,19 @@ r2 leaves dangling `S12goshisen-boot`/`K10goshisen-boot` rc.d symlinks
 ```sh
 # from the package artifact (signature checks: see "Signing" below)
 wget -O /tmp/goshisen.apk https://example/goshisen-0.2.0-r1.apk
+wget -O /tmp/goshisen.apk.sig https://example/goshisen-0.2.0-r1.apk.sig
+wget -O /tmp/goshisen-release.pub.pem \
+  https://raw.githubusercontent.com/88kbleirad/GoShiSen-Enforce/main/keys/goshisen-release.pub.pem
+openssl pkeyutl -verify -rawin -pubin -inkey /tmp/goshisen-release.pub.pem \
+  -in /tmp/goshisen.apk -sigfile /tmp/goshisen.apk.sig
 apk add --allow-untrusted /tmp/goshisen.apk
 ```
+
+**Signature verification is mandatory** — the `apk add` above must only be run
+after `openssl ... -verify` prints `Signature Verified Successfully`. The
+`--allow-untrusted` flag is a **transition exception** (see "Signing" below)
+and is never a substitute for the Ed25519 check; it will be removed once native
+`usign` apk verification ships.
 
 The package installs:
 
@@ -139,14 +150,31 @@ blocked by the forward hook, so these commands remain reachable.
 
 ## Signing
 
-Release `.apk` artifacts are built by the SDK and are **not signed with
-a key trusted by a stock OpenWrt** unless you add one. Two options:
+Release `.apk` artifacts are signed with the release Ed25519 key (same key as
+the release archives; signatures attach as `<artifact>.sig`, verified with the
+committed public key `keys/goshisen-release.pub.pem`). Native `usign` apk
+verification (key under `/etc/apk/keys/`) is a follow-up; until it ships, install
+the apk in two steps:
 
-1. Add the release public key to `/etc/apk/keys/` (recommended; then
-   `apk add` works without `--allow-untrusted`).
-2. Install with `--allow-untrusted`. This skips signature verification:
-   anyone who can serve the package can install arbitrary code. Only do
-   this with an artifact whose sha256 you verified out of band.
+1. **Verify the signature first** (mandatory, see Install above):
+
+   ```sh
+   openssl pkeyutl -verify -rawin -pubin -inkey goshisen-release.pub.pem \
+     -in goshisen.apk -sigfile goshisen.apk.sig
+   # must print: Signature Verified Successfully
+   ```
+
+2. `apk add --allow-untrusted goshisen.apk` — **transition exception**:
+   `--allow-untrusted` skips apk's *own* trust check, so the Ed25519
+   verification in step 1 is REQUIRED and MUST have succeeded first. The flag
+   stays only until native `usign` verification lands (backlog #1) and will be
+   removed then; there is no silent fallback — the install fails (human
+   interrupt) if step 1 fails. Do not install an artifact whose signature you
+   have not verified, even with this exception.
+
+The public key fingerprint (SHA-256 of DER SPKI) is
+`24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0`
+(key created 2026-11-13; verify it out-of-band).
 
 ## Verification commands
 
