@@ -12,16 +12,16 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=goshisen
 PKG_VERSION:=0.2.0
-PKG_RELEASE:=3
+PKG_RELEASE:=4
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/88kbleirad/GoShiSen-Enforce.git
-PKG_SOURCE_VERSION:=0196527cc0dd177cca66b3b153d3a4f0859115cd
+PKG_SOURCE_VERSION:=f5f211a173dab2934a42e3aa8220ab2d54fa12da
 # sha256 of the source tarball the SDK produces from a git clone of the
 # pinned commit (PKG_SOURCE_PROTO=git); lets the SDK verify the download
 # (mirror hash). Compute with a clean clone: git clone <url>; git checkout
 # <pin>; tar --zstd -cf <name>-<ver>.tar.zst <dir>; sha256sum.
-PKG_MIRROR_HASH:=8bf004e973c24762125add7704f53edc152f4fbc8dd12eccfed202cfd0c49b50
+PKG_MIRROR_HASH:=cd8f2763ad6d980cc18d98ab23f13886f3e0f82da18fd20eda8f0da8b05d9154
 PKG_SOURCE_SUBDIR:=$(PKG_NAME)-$(PKG_VERSION)
 
 # Go builds are handled outside OpenWrt's gcc toolchain.
