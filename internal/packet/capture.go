@@ -136,6 +136,41 @@ func parseAttrs(b []byte, fn func(typ uint16, payload []byte) bool) {
 	}
 }
 
+// packetAttrsFetcher fetches one attribute from a stream. It returns the
+// payload and true when found, false otherwise. Parsing is inlined in
+// the hot path instead of walking the stream with a closure.
+type packetAttrsFetcher func(typ uint16) ([]byte, bool)
+
+// newPacketAttrsFetcher returns a fetcher over the given attribute
+// stream. It parses the stream once per fetch; a fresh fetcher should be
+// created for each message.
+func newPacketAttrsFetcher(b []byte) packetAttrsFetcher {
+	return func(typ uint16) ([]byte, bool) {
+		for len(b) >= 4 {
+			l := int(binary.NativeEndian.Uint16(b[0:]))
+			if l < 4 || l > len(b) {
+				return nil, false
+			}
+			if t := binary.NativeEndian.Uint16(b[2:]); t == typ {
+				return b[4:l], true
+			}
+			al := (l + 3) &^ 3
+			if al > len(b) {
+				return nil, false
+			}
+			b = b[al:]
+		}
+		return nil, false
+	}
+}
+
+// verdictBufPool reuses the per-verdict netlink message buffer. The
+// kernel copies the contents on send, so the buffer can be reused for
+// every verdict without a data race.
+var verdictBufPool = sync.Pool{
+	New: func() any { return make([]byte, 0, 20) },
+}
+
 // Stats exposes backend counters.
 type Stats struct {
 	PacketsSeen  atomic.Uint64
@@ -451,42 +486,68 @@ func packetAttrs(data []byte) []byte {
 	return data
 }
 
-// evaluate parses the payload and decides. It recovers from any panic and
-// returns DROP so a verdict is always produced.
-func (b *Backend) evaluate(payload []byte) (uint32, int) {
-	var pktID uint32
-	var copyBuf []byte
-	var ctInfo byte
-	var ctPresent bool
-	var ctAttr []byte
-	parseAttrs(payload, func(typ uint16, p []byte) bool {
+// nfqueueAttrs is the decoded attribute set of one NFQUEUE packet
+// message. It is stack-allocated per packet in evaluate; the slice
+// fields alias the message buffer (no copying).
+type nfqueueAttrs struct {
+	pktID         uint32
+	payload       []byte
+	ctInfo        byte
+	ctInfoPresent bool
+	ctAttr        []byte
+}
+
+// parseNFQueueAttrs walks the attribute stream once and aggregates the
+// attributes the decision path needs: packet id, packet payload,
+// conntrack info bits and conntrack tuple blob. Unknown attributes are
+// skipped. The result aliases b.
+func parseNFQueueAttrs(b []byte) nfqueueAttrs {
+	var a nfqueueAttrs
+	for len(b) >= 4 {
+		l := int(binary.NativeEndian.Uint16(b[0:]))
+		if l < 4 || l > len(b) {
+			return a
+		}
+		typ := binary.NativeEndian.Uint16(b[2:])
+		p := b[4:l]
 		switch typ {
 		case nfqaPacketHdr:
 			if len(p) >= 4 {
-				pktID = binary.BigEndian.Uint32(p[0:])
+				a.pktID = binary.BigEndian.Uint32(p[0:])
 			}
 		case nfqaPayload:
-			copyBuf = p
+			a.payload = p
 		case nfqaCTInfo:
 			// NFQA_CT_INFO is a __be32 (see ctnetlink_glue_build:
 			// nla_put_be32(..., htonl(ctinfo))). Reading only the first
 			// byte would always yield 0 for valid ctinfo values.
 			if len(p) >= 4 {
-				ctInfo = byte(binary.BigEndian.Uint32(p[0:4]))
-				ctPresent = true
+				a.ctInfo = byte(binary.BigEndian.Uint32(p[0:4]))
+				a.ctInfoPresent = true
 			}
 		case nfqaCT:
-			ctAttr = p
+			a.ctAttr = p
 		}
-		return true
-	})
-	if copyBuf == nil {
+		al := (l + 3) &^ 3
+		if al > len(b) {
+			return a
+		}
+		b = b[al:]
+	}
+	return a
+}
+
+// evaluate parses the payload and decides. It recovers from any panic and
+// returns DROP so a verdict is always produced.
+func (b *Backend) evaluate(payload []byte) (uint32, int) {
+	a := parseNFQueueAttrs(payload)
+	if a.payload == nil {
 		b.Stats.ParseErrors.Add(1)
 		b.noteError("parse")
-		return pktID, nfDrop
+		return a.pktID, nfDrop
 	}
 	if b.decide == nil {
-		return pktID, nfDrop
+		return a.pktID, nfDrop
 	}
 	defer func() {
 		if r := recover(); r != nil {
@@ -494,20 +555,20 @@ func (b *Backend) evaluate(payload []byte) (uint32, int) {
 			b.noteError("panic")
 		}
 	}()
-	res := Parse(copyBuf)
+	res := Parse(a.payload)
 	if !res.OK {
 		b.Stats.ParseErrors.Add(1)
 		b.noteError("parse")
-		return pktID, nfDrop
+		return a.pktID, nfDrop
 	}
 	p := res.Packet
-	applyCTInfo(&p, ctInfo, ctPresent, ctAttr)
+	applyCTInfo(&p, a.ctInfo, a.ctInfoPresent, a.ctAttr)
 	v := b.decide(p)
 	switch v.Action {
 	case policy.ActionAccept:
-		return pktID, nfAccept
+		return a.pktID, nfAccept
 	default:
-		return pktID, nfDrop
+		return a.pktID, nfDrop
 	}
 }
 
@@ -586,20 +647,25 @@ func (b *Backend) sendVerdict(family uint8, pktID uint32, verdict int) error {
 		c = b.conn6
 		queue = b.queue + 1
 	}
-	gen := nfgenmsg{family: family, version: 0, resID: queue}
-	hdr := make([]byte, 8)
-	binary.BigEndian.PutUint32(hdr[0:], uint32(verdict))
-	binary.BigEndian.PutUint32(hdr[4:], pktID)
-	data := gen.marshal()
-	data = append(data, attr(nfqaVerdictHdr, hdr)...)
+	// Reuse a pooled buffer for the verdict message. The kernel copies
+	// the data on send, so reuse is race-free. Layout: nfgenmsg(4) +
+	// verdict header attr (len/type(4) + 8-byte payload, aligned).
+	buf := verdictBufPool.Get().([]byte)[:0]
+	buf = append(buf, family, 0)
+	buf = binary.BigEndian.AppendUint16(buf, queue)
+	buf = binary.NativeEndian.AppendUint16(buf, 12) // nla_len: 4+8
+	buf = binary.NativeEndian.AppendUint16(buf, nfqaVerdictHdr)
+	buf = binary.BigEndian.AppendUint32(buf, uint32(verdict))
+	buf = binary.BigEndian.AppendUint32(buf, pktID)
 	m := netlink.Message{
 		Header: netlink.Header{
 			Type:  queueMsg(nfqnlMsgVerdict),
 			Flags: netlink.Request,
 		},
-		Data: data,
+		Data: buf,
 	}
 	_, err := c.Send(m)
+	verdictBufPool.Put(buf[:0])
 	return err
 }
 

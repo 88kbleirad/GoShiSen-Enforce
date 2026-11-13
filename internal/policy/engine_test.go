@@ -57,7 +57,7 @@ rules:
 	if r.Src.String() != "any" || r.Dst.String() != "any" {
 		t.Errorf("defaults not applied: src=%s dst=%s", r.Src, r.Dst)
 	}
-	if r.DstPort == nil || !r.DstPort.Contains(80) {
+	if !r.HasDstPort || !r.DstPort.Contains(80) {
 		t.Errorf("dst_port not parsed: %v", r.DstPort)
 	}
 }
@@ -100,10 +100,10 @@ rules:
     dst_port: 53
 `)
 	r := s.Rules()[0]
-	if r.SrcPort == nil || r.SrcPort.Lo != 1024 || r.SrcPort.Hi != 2048 {
+	if !r.HasSrcPort || r.SrcPort.Lo != 1024 || r.SrcPort.Hi != 2048 {
 		t.Errorf("src_port range = %v", r.SrcPort)
 	}
-	if r.DstPort == nil || r.DstPort.Lo != 53 || r.DstPort.Hi != 53 {
+	if !r.HasDstPort || r.DstPort.Lo != 53 || r.DstPort.Hi != 53 {
 		t.Errorf("dst_port single = %v", r.DstPort)
 	}
 	if r.SrcPort.String() != "1024:2048" || r.DstPort.String() != "53" {

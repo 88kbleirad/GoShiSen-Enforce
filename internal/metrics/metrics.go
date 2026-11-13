@@ -13,6 +13,41 @@ import (
 	"time"
 )
 
+// Label enum tables. The per-packet verdict counters are fixed arrays
+// indexed by these values, so the hot path (ObservePacket) does no
+// string construction and no map lookup — only a mutex and integer
+// increments.
+var (
+	actionNames     = [2]string{"drop", "accept"}
+	protocolNames   = [3]string{"any", "tcp", "udp"}
+	stateNames      = [5]string{"unknown", "new", "established", "related", "invalid"}
+	backendErrNames = [4]string{"receive", "send", "parse", "panic"}
+	overflowNames   = [2]string{"kernel_drop", "user_drop"}
+	outcomeNames    = [3]string{"success", "failure", "conflict"}
+)
+
+const (
+	// ActionDropIdx and ActionAcceptIdx index actionNames.
+	ActionDropIdx = iota
+	ActionAcceptIdx
+)
+
+const (
+	// ProtoAnyIdx, ProtoTCPIdx, ProtoUDPIdx index protocolNames.
+	ProtoAnyIdx = iota
+	ProtoTCPIdx
+	ProtoUDPIdx
+)
+
+const (
+	// StateUnknownIdx .. StateInvalidIdx index stateNames.
+	StateUnknownIdx = iota
+	StateNewIdx
+	StateEstablishedIdx
+	StateRelatedIdx
+	StateInvalidIdx
+)
+
 // Registry is a small, hand-rolled Prometheus text-format registry. It
 // deliberately avoids a third-party client library (stdlib-first).
 type Registry struct {
@@ -21,6 +56,11 @@ type Registry struct {
 	counters  map[string]*counter
 	gauges    map[string]*gauge
 	histogram *histogram
+
+	// Per-packet verdict counters: fixed arrays, indexed by the label
+	// enums above. No allocation, no string keys, no map growth.
+	packetsTotal   [2][3]int64
+	packetsByState [5]int64
 }
 
 // New creates a registry with all daemon metrics registered.
@@ -29,14 +69,12 @@ func New() *Registry {
 		counters: make(map[string]*counter),
 		gauges:   make(map[string]*gauge),
 	}
-	r.counters["goshisen_packets_total"] = newCounter("goshisen_packets_total",
-		"Packets decided, by action and protocol.", "action", "protocol")
-	r.counters["goshisen_packets_by_state_total"] = newCounter("goshisen_packets_by_state_total",
-		"Packets decided, by state.", "state")
 	r.counters["goshisen_backend_errors_total"] = newCounter("goshisen_backend_errors_total",
 		"Backend errors (receive/send/parse/panic).", "kind")
 	r.counters["goshisen_queue_overflow_total"] = newCounter("goshisen_queue_overflow_total",
 		"Packets dropped by the kernel before reaching the daemon, by cause. fail-closed by design.", "cause")
+	r.counters["goshisen_policy_updates_total"] = newCounter("goshisen_policy_updates_total",
+		"Policy publish attempts, by bounded outcome.", "outcome")
 	r.gauges["goshisen_active_policy_version"] = newGauge("goshisen_active_policy_version",
 		"Active policy version (0 when none).")
 	r.gauges["goshisen_flow_offload_active"] = newGauge("goshisen_flow_offload_active",
@@ -80,61 +118,39 @@ func newHistogram(name, help string) *histogram {
 	return &histogram{name: name, help: help, buckets: defaultBuckets, counts: make([]int64, len(defaultBuckets))}
 }
 
-// VerdictLabels is a bounded set of verdict labels.
+// VerdictLabels is the per-packet verdict label tuple as enum indexes.
+// Indexes (not strings) keep the hot path allocation-free.
 type VerdictLabels struct {
-	Action   string // "accept" | "drop"
-	Protocol string // "tcp" | "udp" | "any"
-	State    string // "new" | "established" | "related" | "invalid" | "unknown"
+	ActionIdx   int
+	ProtocolIdx int
+	StateIdx    int
 }
 
-// ObserveVerdict records a packet verdict.
-func (r *Registry) ObserveVerdict(v VerdictLabels) {
+// ObservePacket records one packet decision: verdict counters, state
+// counter, and processing latency under a single lock acquisition. This
+// is the per-packet hot path of the daemon.
+func (r *Registry) ObservePacket(v VerdictLabels, d time.Duration) {
+	secs := d.Seconds()
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	key := v.Action + "|" + v.Protocol
-	r.counters["goshisen_packets_total"].values[key]++
-	skey := v.State
-	if skey == "" {
-		skey = "unknown"
+	r.packetsTotal[v.ActionIdx][v.ProtocolIdx]++
+	r.packetsByState[v.StateIdx]++
+	h := r.histogram
+	h.sum += secs
+	h.count++
+	for i, b := range h.buckets {
+		if secs <= b {
+			h.counts[i]++
+		}
 	}
-	r.counters["goshisen_packets_by_state_total"].values[skey]++
+	r.mu.Unlock()
 }
-
-// BackendErrorKind is a bounded enum of backend error kinds. Using a
-// typed enum (not a free-form string) keeps metric label cardinality
-// bounded by construction.
-type BackendErrorKind string
-
-const (
-	// BackendErrReceive is a netlink receive error in the queue loop.
-	BackendErrReceive BackendErrorKind = "receive"
-	// BackendErrSend is a netlink send (verdict) error.
-	BackendErrSend BackendErrorKind = "send"
-	// BackendErrParse is a packet parse failure.
-	BackendErrParse BackendErrorKind = "parse"
-	// BackendErrPanic is a recovered engine panic.
-	BackendErrPanic BackendErrorKind = "panic"
-)
 
 // ObserveBackendError records a backend error by bounded kind.
 func (r *Registry) ObserveBackendError(kind BackendErrorKind) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.counters["goshisen_backend_errors_total"].values[string(kind)]++
+	r.counters["goshisen_backend_errors_total"].values[backendErrNames[kind]]++
 }
-
-// OverflowCause is a bounded enum of kernel queue-drop causes.
-type OverflowCause string
-
-const (
-	// OverflowKernelDrop is a packet dropped because the queue was full
-	// (queue_maxlen exhausted) — the kernel's fail-closed path.
-	OverflowKernelDrop OverflowCause = "kernel_drop"
-	// OverflowUserDrop is a packet dropped because netlink unicast to
-	// the daemon's socket failed (no listener / socket error). The
-	// kernel still drops the packet — never fail-open.
-	OverflowUserDrop OverflowCause = "user_drop"
-)
 
 // ObserveQueueOverflow records one or more packets dropped by the
 // kernel queue. The cause is a fixed enum; cardinality stays bounded.
@@ -144,7 +160,14 @@ func (r *Registry) ObserveQueueOverflow(cause OverflowCause, n uint64) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.counters["goshisen_queue_overflow_total"].values[string(cause)] += int64(n)
+	r.counters["goshisen_queue_overflow_total"].values[overflowNames[cause]] += int64(n)
+}
+
+// ObservePolicyUpdate records one policy publish attempt outcome.
+func (r *Registry) ObservePolicyUpdate(outcome PolicyUpdateOutcome) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.counters["goshisen_policy_updates_total"].values[outcomeNames[outcome]]++
 }
 
 // SetActivePolicyVersion sets the active policy version gauge (0 = none).
@@ -166,19 +189,75 @@ func (r *Registry) SetFlowOffloadActive(active bool) {
 	r.gauges["goshisen_flow_offload_active"].value = v
 }
 
-// ObserveLatency records packet processing latency.
-func (r *Registry) ObserveLatency(d time.Duration) {
-	secs := d.Seconds()
+// PolicyUpdateOutcome is a bounded enum of policy publish results. Using
+// a typed enum keeps the metric's label cardinality bounded by
+// construction.
+type PolicyUpdateOutcome uint8
+
+const (
+	// PolicyUpdateSuccess is a policy that was validated and published.
+	PolicyUpdateSuccess PolicyUpdateOutcome = iota
+	// PolicyUpdateFailure is a publish rejected because the policy was
+	// invalid or the durable write failed; the previous policy stays
+	// active.
+	PolicyUpdateFailure
+	// PolicyUpdateConflict is a publish rejected by optimistic
+	// concurrency (base_version mismatch). Nothing changed.
+	PolicyUpdateConflict
+)
+
+// String renders the outcome as its metric label spelling.
+func (o PolicyUpdateOutcome) String() string { return outcomeNames[o] }
+
+// OverflowCause is a bounded enum of kernel queue-drop causes.
+type OverflowCause uint8
+
+const (
+	// OverflowKernelDrop is a packet dropped because the queue was full
+	// (queue_maxlen exhausted) — the kernel's fail-closed path.
+	OverflowKernelDrop OverflowCause = iota
+	// OverflowUserDrop is a packet dropped because netlink unicast to
+	// the daemon's socket failed (no listener / socket error). The
+	// kernel still drops the packet — never fail-open.
+	OverflowUserDrop
+)
+
+// String renders the cause as its metric label spelling.
+func (c OverflowCause) String() string { return overflowNames[c] }
+
+// BackendErrorKind is a bounded enum of backend error kinds. Using a
+// typed enum (not a free-form string) keeps metric label cardinality
+// bounded by construction.
+type BackendErrorKind uint8
+
+const (
+	// BackendErrReceive is a netlink receive error in the queue loop.
+	BackendErrReceive BackendErrorKind = iota
+	// BackendErrSend is a netlink send (verdict) error.
+	BackendErrSend
+	// BackendErrParse is a packet parse failure.
+	BackendErrParse
+	// BackendErrPanic is a recovered engine panic.
+	BackendErrPanic
+)
+
+// String renders the kind as its metric label spelling.
+func (k BackendErrorKind) String() string { return backendErrNames[k] }
+
+// Counters returns a race-safe snapshot of the total packets-decided
+// counter (all action/protocol label combinations). It exists for tests
+// and benchmarks that need an observable counter without parsing the
+// Prometheus text form.
+func (r *Registry) Counters() int64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	h := r.histogram
-	h.sum += secs
-	h.count++
-	for i, b := range h.buckets {
-		if secs <= b {
-			h.counts[i]++
+	var total int64
+	for a := range r.packetsTotal {
+		for p := range r.packetsTotal[a] {
+			total += r.packetsTotal[a][p]
 		}
 	}
+	return total
 }
 
 // WritePrometheus renders the registry in Prometheus text exposition
@@ -186,6 +265,25 @@ func (r *Registry) ObserveLatency(d time.Duration) {
 func (r *Registry) WritePrometheus(w io.Writer) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	// Fixed per-packet verdict counters.
+	fmt.Fprintf(w, "# HELP goshisen_packets_total %s\n", "Packets decided, by action and protocol.")
+	fmt.Fprintf(w, "# TYPE goshisen_packets_total counter\n")
+	for a := range r.packetsTotal {
+		for p := range r.packetsTotal[a] {
+			if n := r.packetsTotal[a][p]; n != 0 {
+				fmt.Fprintf(w, "goshisen_packets_total{action=%q,protocol=%q} %d\n",
+					actionNames[a], protocolNames[p], n)
+			}
+		}
+	}
+	fmt.Fprintf(w, "# HELP goshisen_packets_by_state_total %s\n", "Packets decided, by state.")
+	fmt.Fprintf(w, "# TYPE goshisen_packets_by_state_total counter\n")
+	for s := range r.packetsByState {
+		if n := r.packetsByState[s]; n != 0 {
+			fmt.Fprintf(w, "goshisen_packets_by_state_total{state=%q} %d\n", stateNames[s], n)
+		}
+	}
 
 	names := make([]string, 0, len(r.counters)+len(r.gauges))
 	for n := range r.counters {

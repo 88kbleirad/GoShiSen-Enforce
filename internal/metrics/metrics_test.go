@@ -9,9 +9,9 @@ import (
 
 func TestRegistryVerdicts(t *testing.T) {
 	r := New()
-	r.ObserveVerdict(VerdictLabels{Action: "accept", Protocol: "tcp", State: "new"})
-	r.ObserveVerdict(VerdictLabels{Action: "accept", Protocol: "tcp", State: "new"})
-	r.ObserveVerdict(VerdictLabels{Action: "drop", Protocol: "udp", State: "established"})
+	r.ObservePacket(VerdictLabels{ActionIdx: ActionAcceptIdx, ProtocolIdx: ProtoTCPIdx, StateIdx: StateNewIdx}, time.Microsecond)
+	r.ObservePacket(VerdictLabels{ActionIdx: ActionAcceptIdx, ProtocolIdx: ProtoTCPIdx, StateIdx: StateNewIdx}, time.Microsecond)
+	r.ObservePacket(VerdictLabels{ActionIdx: ActionDropIdx, ProtocolIdx: ProtoUDPIdx, StateIdx: StateEstablishedIdx}, time.Microsecond)
 
 	var buf bytes.Buffer
 	r.WritePrometheus(&buf)
@@ -37,12 +37,11 @@ func TestRegistryBounds(t *testing.T) {
 	// Cardinality is bounded by the fixed enum; hammer a few and ensure
 	// the registry stays small.
 	for i := 0; i < 100; i++ {
-		r.ObserveVerdict(VerdictLabels{Action: "drop", Protocol: "tcp", State: "invalid"})
+		r.ObservePacket(VerdictLabels{ActionIdx: ActionDropIdx, ProtocolIdx: ProtoTCPIdx, StateIdx: StateInvalidIdx}, 10*time.Microsecond)
 	}
 	r.ObserveBackendError(BackendErrParse)
 	r.ObserveBackendError(BackendErrParse)
-	r.ObserveLatency(10 * time.Microsecond)
-	r.ObserveLatency(2 * time.Millisecond)
+	r.ObservePacket(VerdictLabels{ActionIdx: ActionDropIdx, ProtocolIdx: ProtoTCPIdx, StateIdx: StateInvalidIdx}, 2*time.Millisecond)
 	r.SetActivePolicyVersion(7)
 
 	var buf bytes.Buffer
@@ -54,7 +53,7 @@ func TestRegistryBounds(t *testing.T) {
 	if !strings.Contains(out, "goshisen_active_policy_version 7") {
 		t.Errorf("missing active version gauge:\n%s", out)
 	}
-	if !strings.Contains(out, "goshisen_packet_verdict_latency_seconds_count 2") {
+	if !strings.Contains(out, "goshisen_packet_verdict_latency_seconds_count 101") {
 		t.Errorf("missing histogram count:\n%s", out)
 	}
 }

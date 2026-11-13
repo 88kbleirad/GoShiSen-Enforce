@@ -1,0 +1,13 @@
+goos: linux
+goarch: amd64
+pkg: github.com/88kbleirad/GoShiSen-Enforce/internal/policy
+cpu: 11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz
+BenchmarkDecideSmallPolicyNew-12            	29938350	        38.67 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDecideSmallPolicyEstablished-12    	45502693	        26.90 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDecideLargePolicy-12               	  557720	      2155 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDecideNoMatchDefaultDrop-12        	46313536	        25.93 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKingProcessNewAccept-12            	 1275399	       938.3 ns/op	     272 B/op	      16 allocs/op
+BenchmarkKingProcessEstablished-12          	 2963659	       408.8 ns/op	     104 B/op	       7 allocs/op
+BenchmarkTupleKey-12                        	 3160755	       365.6 ns/op	     104 B/op	       6 allocs/op
+PASS
+ok  	github.com/88kbleirad/GoShiSen-Enforce/internal/policy	8.354s

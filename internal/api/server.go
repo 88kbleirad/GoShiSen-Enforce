@@ -46,7 +46,7 @@ type Logger interface {
 
 // Server is the API server.
 type Server struct {
-	mu         sync.Mutex // serializes policy mutations
+	mu         *sync.Mutex // shared policy-mutation lock (nil → own)
 	token      string
 	store      *store.Store
 	king       *policy.King
@@ -66,6 +66,12 @@ type Options struct {
 	King    *policy.King
 	Metrics *metrics.Registry
 	Log     Logger
+	// Mu optionally serializes policy mutations with the daemon's own
+	// publish path (SIGHUP reload). When nil, the server uses its own
+	// internal mutex; sharing one mutex guarantees a total order on
+	// policy publishes so no update is lost between the API and a
+	// daemon reload.
+	Mu *sync.Mutex
 	// Ready reports whether the daemon is ready to serve traffic
 	// (policy active, hook installed, queue bound).
 	Ready func() bool
@@ -89,7 +95,12 @@ func New(o Options) (*Server, error) {
 	if ready == nil {
 		ready = func() bool { return true }
 	}
+	mu := o.Mu
+	if mu == nil {
+		mu = &sync.Mutex{}
+	}
 	s := &Server{
+		mu:      mu,
 		token:   o.Token,
 		store:   o.Store,
 		king:    o.King,
@@ -367,6 +378,7 @@ func (s *Server) handleApplyNew(w http.ResponseWriter, r *http.Request) {
 	snap, err := policy.Compile([]byte(req.Policy))
 	if err != nil {
 		s.audit(r, "apply_policy", "invalid", "", "rejected")
+		s.metrics.ObservePolicyUpdate(metrics.PolicyUpdateFailure)
 		writeError(w, http.StatusUnprocessableEntity, "invalid_policy", err.Error())
 		return
 	}
@@ -381,26 +393,31 @@ func (s *Server) handleApplyNew(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.BaseVersion != active {
 		s.audit(r, "apply_policy", "conflict", active, "base_version mismatch")
+		s.metrics.ObservePolicyUpdate(metrics.PolicyUpdateConflict)
 		writeError(w, http.StatusConflict, "version_conflict",
 			fmt.Sprintf("active version is %q, not %q", active, req.BaseVersion))
 		return
 	}
 
-	next, err := s.nextVersion()
+	next, err := s.store.NextVersion()
 	if err != nil {
+		s.metrics.ObservePolicyUpdate(metrics.PolicyUpdateFailure)
 		writeError(w, http.StatusInternalServerError, "store_error", err.Error())
 		return
 	}
 	if err := s.store.WritePolicy(next, []byte(req.Policy)); err != nil {
+		s.metrics.ObservePolicyUpdate(metrics.PolicyUpdateFailure)
 		writeError(w, http.StatusConflict, "store_write_failed", err.Error())
 		return
 	}
 	if err := s.store.SetActive(next); err != nil {
+		s.metrics.ObservePolicyUpdate(metrics.PolicyUpdateFailure)
 		writeError(w, http.StatusInternalServerError, "store_error", err.Error())
 		return
 	}
 	s.king.Replace(snap)
 	s.setVersionMetric(next)
+	s.metrics.ObservePolicyUpdate(metrics.PolicyUpdateSuccess)
 	s.audit(r, "apply_policy", "applied", next, fmt.Sprintf("rules=%d", snap.Len()))
 	writeJSON(w, http.StatusCreated, map[string]any{"applied": next, "previous": active})
 }
@@ -439,6 +456,7 @@ func (s *Server) handleActivate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Stored policies are validated on write; this protects against
 		// tampering/corruption and preserves the active policy.
+		s.metrics.ObservePolicyUpdate(metrics.PolicyUpdateFailure)
 		writeError(w, http.StatusUnprocessableEntity, "invalid_stored_policy", err.Error())
 		return
 	}
@@ -447,21 +465,25 @@ func (s *Server) handleActivate(w http.ResponseWriter, r *http.Request) {
 	defer s.mu.Unlock()
 	active, err := s.store.Active()
 	if err != nil {
+		s.metrics.ObservePolicyUpdate(metrics.PolicyUpdateFailure)
 		writeError(w, http.StatusInternalServerError, "store_error", err.Error())
 		return
 	}
 	if req.BaseVersion != active {
 		s.audit(r, "activate_policy", "conflict", active, "base_version mismatch")
+		s.metrics.ObservePolicyUpdate(metrics.PolicyUpdateConflict)
 		writeError(w, http.StatusConflict, "version_conflict",
 			fmt.Sprintf("active version is %q, not %q", active, req.BaseVersion))
 		return
 	}
 	if err := s.store.SetActive(target); err != nil {
+		s.metrics.ObservePolicyUpdate(metrics.PolicyUpdateFailure)
 		writeError(w, http.StatusInternalServerError, "store_error", err.Error())
 		return
 	}
 	s.king.Replace(snap)
 	s.setVersionMetric(target)
+	s.metrics.ObservePolicyUpdate(metrics.PolicyUpdateSuccess)
 	s.audit(r, "activate_policy", "activated", target, "")
 	writeJSON(w, http.StatusOK, map[string]any{"active": target, "previous": active})
 }
@@ -484,25 +506,6 @@ func (s *Server) handleReady(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 	s.metrics.WritePrometheus(w)
-}
-
-// nextVersion returns the next numeric version (max existing + 1, or 1).
-func (s *Server) nextVersion() (string, error) {
-	versions, err := s.store.List()
-	if err != nil {
-		return "", err
-	}
-	max := 0
-	for _, v := range versions {
-		n, err := strconv.Atoi(v)
-		if err != nil {
-			continue
-		}
-		if n > max {
-			max = n
-		}
-	}
-	return strconv.Itoa(max + 1), nil
 }
 
 func (s *Server) setVersionMetric(version string) {

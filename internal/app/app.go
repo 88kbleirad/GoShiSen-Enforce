@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -159,6 +160,14 @@ type Daemon struct {
 	// shutdown begins. Read by the API's /readyz handler.
 	ready atomic.Bool
 
+	// reloadMu serializes every policy mutation in the process: REST API
+	// apply/activate and SIGHUP file reload. Without it, two writers
+	// could compute the same next version and tear a publish (one
+	// WritePolicy overwriting the other), leaving the durable active
+	// pointer and the in-memory snapshot disagreeing. The API server is
+	// handed this mutex when it is constructed (api.Options.Mu).
+	reloadMu sync.Mutex
+
 	// Seams (defaults set by New; overridable in tests).
 	installHook func(hook.Ruleset) error
 	openQueue   func(packet.Options) (Queue, error)
@@ -237,13 +246,18 @@ func (d *Daemon) Run(ctx context.Context) error {
 			if snap2, cerr := policy.Compile(data); cerr == nil {
 				snap = snap2
 				d.log.Info("recovered active policy from store", "version", active)
+				if v, perr := strconv.ParseInt(active, 10, 64); perr == nil {
+					d.metrics.SetActivePolicyVersion(v)
+				}
 			}
 		}
 	}
 	d.king.Replace(snap)
 	d.log.Info("policy loaded", "rules", snap.Len(), "default_action", snap.DefaultAction())
-	if v, perr := strconv.ParseInt(strings.TrimSuffix(filepath.Base(d.opts.PolicyFile), ".yaml"), 10, 64); perr == nil {
-		d.metrics.SetActivePolicyVersion(v)
+	if active, aerr := d.store.Active(); aerr != nil || active == "" {
+		if v, perr := strconv.ParseInt(strings.TrimSuffix(filepath.Base(d.opts.PolicyFile), ".yaml"), 10, 64); perr == nil {
+			d.metrics.SetActivePolicyVersion(v)
+		}
 	}
 
 	// Start the REST API (localhost bind) and metrics endpoint before the
@@ -262,6 +276,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 			Metrics: d.metrics,
 			Log:     d.log,
 			Ready:   d.Ready,
+			Mu:      &d.reloadMu,
 		})
 		if err != nil {
 			return fmt.Errorf("api: %w", err)
@@ -344,32 +359,48 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 	// Surface backend errors (parse/panic/send) as metrics.
 	if be2, ok := be.(*packet.Backend); ok {
-		be2.SetErrorObserver(func(kind string) { d.metrics.ObserveBackendError(metrics.BackendErrorKind(kind)) })
+		be2.SetErrorObserver(func(kind string) {
+			switch kind {
+			case "receive":
+				d.metrics.ObserveBackendError(metrics.BackendErrReceive)
+			case "send":
+				d.metrics.ObserveBackendError(metrics.BackendErrSend)
+			case "parse":
+				d.metrics.ObserveBackendError(metrics.BackendErrParse)
+			case "panic":
+				d.metrics.ObserveBackendError(metrics.BackendErrPanic)
+			}
+		})
 	}
 
 	be.SetDecider(func(p policy.Packet) policy.Verdict {
 		start := time.Now()
 		v := d.king.Process(p)
-		d.metrics.ObserveLatency(time.Since(start))
-		stateLabel := "unknown"
+		stateIdx := metrics.StateUnknownIdx
 		switch p.State {
 		case policy.StateNew:
-			stateLabel = "new"
+			stateIdx = metrics.StateNewIdx
 		case policy.StateEstablished:
-			stateLabel = "established"
+			stateIdx = metrics.StateEstablishedIdx
 		case policy.StateRelated:
-			stateLabel = "related"
+			stateIdx = metrics.StateRelatedIdx
 		case policy.StateInvalid:
-			stateLabel = "invalid"
+			stateIdx = metrics.StateInvalidIdx
 		}
-		actionLabel := "drop"
+		actionIdx := metrics.ActionDropIdx
 		if v.Action == policy.ActionAccept {
-			actionLabel = "accept"
+			actionIdx = metrics.ActionAcceptIdx
 		}
-		protoLabel := p.Protocol.String()
-		d.metrics.ObserveVerdict(metrics.VerdictLabels{
-			Action: actionLabel, Protocol: protoLabel, State: stateLabel,
-		})
+		protoIdx := metrics.ProtoAnyIdx
+		switch p.Protocol {
+		case policy.ProtoTCP:
+			protoIdx = metrics.ProtoTCPIdx
+		case policy.ProtoUDP:
+			protoIdx = metrics.ProtoUDPIdx
+		}
+		d.metrics.ObservePacket(metrics.VerdictLabels{
+			ActionIdx: actionIdx, ProtocolIdx: protoIdx, StateIdx: stateIdx,
+		}, time.Since(start))
 		return v
 	})
 
@@ -406,13 +437,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 			)
 			return nil
 		case <-reload:
-			snap, err := d.loadPolicy()
-			if err != nil {
-				d.log.Warn("policy reload rejected; keeping previous policy", "error", err)
-				continue
-			}
-			d.king.Replace(snap)
-			d.log.Info("policy reloaded", "rules", snap.Len(), "default_action", snap.DefaultAction())
+			// Compile → durable store → king swap. Any failure keeps the
+			// previous policy (both store and live ruleset).
+			d.reloadFromFile()
 		}
 	}
 }
@@ -448,6 +475,73 @@ func (d *Daemon) loadPolicy() (*policy.Snapshot, error) {
 		return nil, fmt.Errorf("read %s: %w", d.opts.PolicyFile, err)
 	}
 	return policy.Compile(data)
+}
+
+// publish activates a compiled policy durably and atomically. The
+// caller must have validated snap (Compile). The publish proceeds in a
+// strict order:
+//
+//  1. serialize with the API's policy mutations (reloadMu),
+//  2. compute the next version from the durable store,
+//  3. write the policy file (immutable, fsync'd) and the active pointer
+//     (fsync'd) — both or neither,
+//  4. only after the store is durable, swap the in-memory snapshot
+//     (king.Replace) and record the success.
+//
+// Any failure before step 4 leaves the store AND the live ruleset on
+// the previous policy: the policy is never published half-applied. The
+// previous policy is never lost. The returned version is the new active
+// version, or "" when the publish was rejected.
+//
+// source names the reload trigger ("sighup" vs "api"); it appears only
+// in logs, never in metrics (label cardinality stays bounded).
+func (d *Daemon) publish(snap *policy.Snapshot, data []byte, source string) (string, error) {
+	d.reloadMu.Lock()
+	defer d.reloadMu.Unlock()
+
+	next, err := d.store.NextVersion()
+	if err != nil {
+		d.metrics.ObservePolicyUpdate(metrics.PolicyUpdateFailure)
+		return "", fmt.Errorf("policy publish: %w", err)
+	}
+	if err := d.store.WritePolicy(next, data); err != nil {
+		d.metrics.ObservePolicyUpdate(metrics.PolicyUpdateFailure)
+		return "", fmt.Errorf("policy publish: %w", err)
+	}
+	if err := d.store.SetActive(next); err != nil {
+		d.metrics.ObservePolicyUpdate(metrics.PolicyUpdateFailure)
+		return "", fmt.Errorf("policy publish: %w", err)
+	}
+	d.king.Replace(snap)
+	if n, perr := strconv.ParseInt(next, 10, 64); perr == nil {
+		d.metrics.SetActivePolicyVersion(n)
+	}
+	d.metrics.ObservePolicyUpdate(metrics.PolicyUpdateSuccess)
+	d.log.Info("policy published", "version", next, "source", source,
+		"rules", snap.Len(), "default_action", snap.DefaultAction().String())
+	return next, nil
+}
+
+// reloadFromFile re-reads the configured policy file and publishes it.
+// Invalid YAML, compile errors, or store failures keep the previous
+// policy active (fail-closed: nothing is published half-applied).
+func (d *Daemon) reloadFromFile() {
+	d.log.Info("policy reload requested (SIGHUP)")
+	data, err := os.ReadFile(d.opts.PolicyFile)
+	if err != nil {
+		d.log.Warn("policy reload rejected; keeping previous policy", "error", err)
+		d.metrics.ObservePolicyUpdate(metrics.PolicyUpdateFailure)
+		return
+	}
+	snap, err := policy.Compile(data)
+	if err != nil {
+		d.log.Warn("policy reload rejected; keeping previous policy", "error", err)
+		d.metrics.ObservePolicyUpdate(metrics.PolicyUpdateFailure)
+		return
+	}
+	if _, err := d.publish(snap, data, "sighup"); err != nil {
+		d.log.Warn("policy reload rejected; keeping previous policy", "error", err)
+	}
 }
 
 // newLogger builds the process logger per configuration.
