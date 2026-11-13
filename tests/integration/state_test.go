@@ -90,6 +90,7 @@ func startStateFirewall(t *testing.T, polPath string) {
 	cmd := exec.Command("ip", "netns", "exec", "gsh_fw", bin,
 		"--interface", "gsh-fw1",
 		"--policy-file", polPath,
+		"--policy-dir", filepath.Join(t.TempDir(), "policy_store"),
 		"--log-level", "debug")
 	cmd.Dir = root
 	logFile, err := os.Create(filepath.Join(t.TempDir(), "daemon.log"))

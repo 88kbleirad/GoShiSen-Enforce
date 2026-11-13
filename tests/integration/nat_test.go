@@ -27,7 +27,9 @@ func startFirewallNAT(t *testing.T, natYAML, policyYAML string) {
 		t.Fatal(err)
 	}
 	confPath := filepath.Join(dir, "cfg.yaml")
-	conf := "interface: gsh-fw1\npolicy_file: " + polPath + "\n" + natYAML + "\n"
+	conf := "interface: gsh-fw1\npolicy_file: " + polPath + "\n" +
+		"policy_dir: " + filepath.Join(dir, "policy_store") + "\n" +
+		natYAML + "\n"
 	if err := os.WriteFile(confPath, []byte(conf), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -306,7 +308,9 @@ rules:
 		t.Fatal(err)
 	}
 	confPath := filepath.Join(dir, "cfg.yaml")
-	conf := "interface: gsh-fw1\npolicy_file: " + polPath + "\n" + nat + "\n"
+	conf := "interface: gsh-fw1\npolicy_file: " + polPath + "\n" +
+		"policy_dir: " + filepath.Join(dir, "policy_store") + "\n" +
+		nat + "\n"
 	if err := os.WriteFile(confPath, []byte(conf), 0o644); err != nil {
 		t.Fatal(err)
 	}
