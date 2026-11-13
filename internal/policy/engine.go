@@ -162,13 +162,15 @@ type King struct {
 
 // tupleKey is an allocation-free 5-tuple key: two 64-bit words carry the
 // address pair (IPv4 in lo/hi as 32-bit halves; IPv6 as the full 128-bit
-// pair), and one 32-bit word carries protocol + both ports. Unlike the
-// previous fmt.Sprintf-based string key, building it neither allocates
-// nor formats.
+// pair) and one 64-bit word carries protocol + both ports
+// (protocol<<32 | srcPort<<16 | dstPort). Unlike the previous
+// fmt.Sprintf-based string key, building it neither allocates nor
+// formats, and every field occupies its own bit range, so distinct
+// connections can never alias.
 type tupleKey struct {
 	lo  uint64
 	hi  uint64
-	ppm uint32 // protocol<<16 | srcPort<<8 | dstPort
+	ppm uint64
 }
 
 // newTupleKey canonicalizes reply packets (src/dst swapped) so they map
@@ -196,7 +198,7 @@ func newTupleKey(p Packet) tupleKey {
 		k.hi = uint64(b16[0])<<56 | uint64(b16[1])<<48 | uint64(b16[2])<<40 | uint64(b16[3])<<32 |
 			uint64(b16[4])<<24 | uint64(b16[5])<<16 | uint64(b16[6])<<8 | uint64(b16[7])
 	}
-	k.ppm = uint32(p.Protocol)<<16 | uint32(sport)<<8 | uint32(dport)
+	k.ppm = uint64(p.Protocol)<<32 | uint64(sport)<<16 | uint64(dport)
 	return k
 }
 
