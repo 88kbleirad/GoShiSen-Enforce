@@ -37,6 +37,27 @@ func TestTupleKeySemantics(t *testing.T) {
 			}
 		})
 	}
+
+	// Regression: packaging must not alias 16-bit ports (the previous
+	// ppm packing used 8 bits per port, so different port pairs
+	// collided — e.g. (0,514) == (514,514) — and established replies
+	// were dropped). Exercise ports across the full 16-bit range.
+	high := pkt("10.0.0.1", "10.0.0.2", 0x0100, 0xFFFF, DirOriginal)
+	i := pkt("10.0.0.1", "10.0.0.2", 0xFFFF, 0x0100, DirOriginal)
+	hr := pkt("10.0.0.2", "10.0.0.1", 0xFFFF, 0x0100, DirReply)
+	if newTupleKey(high) == newTupleKey(i) {
+		t.Errorf("port aliasing: %+v == %+v", high, i)
+	}
+	// Protocol must not alias ports either: same 5-tuple with TCP and
+	// UDP are different connections.
+	udp := high
+	udp.Protocol = ProtoUDP
+	if newTupleKey(high) == newTupleKey(udp) {
+		t.Errorf("protocol aliasing: tcp and udp keys equal: %+v", high)
+	}
+	if newTupleKey(high) != newTupleKey(hr) {
+		t.Errorf("high-port reply not canonical: %+v != %+v", high, hr)
+	}
 	// Distinct connections must not collide.
 	a := pkt("10.0.0.1", "10.0.0.2", 12345, 80, DirOriginal)
 	b := pkt("10.0.0.1", "10.0.0.2", 12346, 80, DirOriginal)
