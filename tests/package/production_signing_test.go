@@ -72,6 +72,22 @@ func TestReleaseKeyRejectsForeignSignature(t *testing.T) {
 	}
 }
 
+// cleanSignEnv returns the ambient environment with all signing-related
+// variables removed, so tests never inherit RELEASE_SIGN_KEY / RELEASE_PUB_KEY /
+// RUNNER_TEMP from the caller's shell.
+func cleanSignEnv(extra ...string) []string {
+	var env []string
+	for _, kv := range os.Environ() {
+		if strings.HasPrefix(kv, "RELEASE_SIGN_KEY=") ||
+			strings.HasPrefix(kv, "RELEASE_PUB_KEY=") ||
+			strings.HasPrefix(kv, "RUNNER_TEMP=") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	return append(env, extra...)
+}
+
 // TestReleaseSignFailsWithoutSecret asserts release-sign.sh fails closed when
 // the GH_RELEASE_SIGNING_KEY secret is absent.
 func TestReleaseSignFailsWithoutSecret(t *testing.T) {
@@ -84,6 +100,7 @@ func TestReleaseSignFailsWithoutSecret(t *testing.T) {
 		"--dist", dist, "--commit", "deadbeef", "--tag", "v0.0.0-test",
 		"--builder", "test", "--toolchain", "go1.25")
 	// NO RELEASE_SIGN_KEY in environment → must fail
+	cmd.Env = cleanSignEnv()
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("release-sign.sh must fail when secret is missing (got rc 0): %s", out)
@@ -109,7 +126,7 @@ func TestReleaseSignFailsOnKeyMismatch(t *testing.T) {
 	cmd := exec.Command("bash", filepath.Join(repoRoot(t), "scripts", "release-sign.sh"),
 		"--dist", dist, "--commit", "deadbeef", "--tag", "v0.0.0-test",
 		"--builder", "test", "--toolchain", "go1.25")
-	cmd.Env = append(os.Environ(), "RELEASE_SIGN_KEY="+string(keyData))
+	cmd.Env = cleanSignEnv("RELEASE_SIGN_KEY=" + string(keyData))
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("release-sign.sh must fail on key mismatch (got rc 0): %s", out)
@@ -138,7 +155,7 @@ func TestReleaseSignSucceedsWithMatchingKey(t *testing.T) {
 		"--builder", "test", "--toolchain", "go1.25")
 	scratch := filepath.Join(dir, "scratch")
 	os.MkdirAll(scratch, 0o755)
-	cmd.Env = append(os.Environ(),
+	cmd.Env = cleanSignEnv(
 		"RELEASE_SIGN_KEY="+string(keyData),
 		"RELEASE_PUB_KEY="+pub,
 		"RUNNER_TEMP="+scratch,
