@@ -143,7 +143,11 @@ lab jobs reject skips.
 | #16 | rc/core-phase15-16 | `d3830f7` | `43414029007` | success (4/4 jobs, 0 skips) |
 | #17 | rc/feat-dry-run | `87093c7` | `43414112649` | success (4/4 jobs, 0 skips) |
 | #18 | rc/packaging-docs | `19d106c` | `43414117668` | success (4/4 jobs, 0 skips) |
-| #18 | rc/packaging-docs | `66afd98` (report final) | `43415443639` | success (4/4 jobs, 0 skips) |
+
+Docs-only commits on top of these heads (this report, and the run-ID
+bookkeeping) re-run the identical four-job suite; every run recorded on
+PRs #16/#17/#18 is green. No PR has been merged, no tag pushed, no
+release published.
 
 All runs: build/vet/test, package+verify release archives, integration (real netns,
 privileged), openwrt e2e (QEMU lab, privileged) — all success, zero skips.
