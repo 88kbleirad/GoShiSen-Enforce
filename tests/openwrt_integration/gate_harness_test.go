@@ -21,9 +21,9 @@ const reloadGateRE = `policy (reloaded|published)" .*source=sighup .*rules=([0-9
 var reloadGateRe = regexp.MustCompile(reloadGateRE)
 
 // sanitizeTranscript mirrors the vm() pipeline in openwrt-e2e.sh:
-// python3 openwrt-console.py ... | tr -cd '\11\12\15\40-\176\200-\377'
-// | sed 's/\r//g'. Bytes <0x20 except TAB/LF/CR are dropped; bytes
-// >=0x80 are kept (they are printable in some legacy code pages).
+// python3 openwrt-console.py ... | tr -c '[:print:]\n\r\t' '?'
+// | sed 's/\r//g'. Bytes outside printable ASCII / TAB / LF / CR are
+// replaced with '?' (not deleted) so lines stay intact.
 func sanitizeTranscript(raw []byte) string {
 	var b strings.Builder
 	for _, c := range raw {
