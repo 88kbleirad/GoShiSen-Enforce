@@ -35,6 +35,10 @@ COMMANDS:
                 verdict and matching rule ID. Makes no system changes.
                 Requires --src/--dst; options --protocol (tcp|udp|any),
                 --source-port, --dest-port
+  policy dry-run  Validate a policy file and preview the exact publish the
+                daemon would perform against the durable policy store
+                (--policy-dir): next version, rules delta vs active, default
+                action change. Reads the store, writes nothing
   hook status   Print whether the app-owned nftables table (inet goshisen)
                 is installed. Read-only, no changes
   hook cleanup  Delete the app-owned nftables table (inet goshisen) only.
@@ -73,6 +77,8 @@ EXAMPLES:
   GOSHISEN_LOG_JSON=true goshisen -c goshisen.yaml
   goshisen config check -c goshisen.yaml   # validate without running
   goshisen policy validate --policy-file policies/my-rules.yaml
+  goshisen policy dry-run --policy-file policies/my-rules.yaml \
+    --policy-dir policy_store
   goshisen policy simulate --policy-file policies/my-rules.yaml \
     --protocol tcp --state new --src 10.0.0.1 --dst 10.0.0.2 --dest-port 22
 `
@@ -213,7 +219,7 @@ func (o *Options) ValidateCommand() error {
 		}
 	case "policy":
 		switch o.Subcommand {
-		case "", "validate", "simulate":
+		case "", "validate", "simulate", "dry-run":
 			return nil
 		}
 	case "hook":

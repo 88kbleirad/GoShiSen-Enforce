@@ -13,6 +13,7 @@ import (
 	"github.com/88kbleirad/GoShiSen-Enforce/internal/config"
 	"github.com/88kbleirad/GoShiSen-Enforce/internal/hook"
 	"github.com/88kbleirad/GoShiSen-Enforce/internal/policy"
+	"github.com/88kbleirad/GoShiSen-Enforce/internal/store"
 )
 
 func main() {
@@ -87,9 +88,11 @@ func runHook(opts *cli.Options) error {
 	return fmt.Errorf("internal: unhandled hook subcommand %q", opts.Subcommand)
 }
 
-// runPolicy implements the `policy validate` and `policy simulate`
-// subcommands. Both are offline: they compile a policy file and evaluate
-// an in-memory packet; neither touches the network or firewall state.
+// runPolicy implements the `policy validate`, `policy simulate`, and
+// `policy dry-run` subcommands. All are offline: they compile a policy
+// file and evaluate an in-memory packet; neither touches the network or
+// firewall state. dry-run reads the durable policy store (never writes)
+// to preview the exact publish the daemon would perform.
 func runPolicy(opts *cli.Options) error {
 	// Args are all words after the first flag batch: ["policy", "simulate",
 	// "--policy-file", …]. Skip the command and any subcommand.
@@ -125,6 +128,8 @@ func runPolicy(opts *cli.Options) error {
 			fmt.Printf("  %s\n", r)
 		}
 		return nil
+	case "dry-run":
+		return runPolicyDryRun(opts, polFile, raw, snap)
 	case "simulate":
 		tgt, err := cli.ParseSimTarget(opts)
 		if err != nil {
@@ -140,6 +145,65 @@ func runPolicy(opts *cli.Options) error {
 		return nil
 	}
 	return fmt.Errorf("internal: unhandled policy subcommand %q", opts.Subcommand)
+}
+
+// runPolicyDryRun validates a policy and previews the publish the
+// daemon would perform against the durable store: the next version
+// that would be assigned, the rule delta vs the active policy, and any
+// default-action change. It is strictly read-only.
+func runPolicyDryRun(opts *cli.Options, polFile string, raw []byte, snap *policy.Snapshot) error {
+	resolved, err := cli.Resolve(opts, os.LookupEnv)
+	if err != nil {
+		return fmt.Errorf("configuration: %w", err)
+	}
+	st, err := store.OpenReadOnly(resolved.PolicyDir)
+	if err != nil {
+		return fmt.Errorf("policy dry-run: open store: %w", err)
+	}
+	next, err := st.NextVersion()
+	if err != nil {
+		return fmt.Errorf("policy dry-run: %w", err)
+	}
+
+	active, err := st.Active()
+	if err != nil {
+		return fmt.Errorf("policy dry-run: %w", err)
+	}
+	activeRules, activeDefault := -1, "none"
+	if active != "" {
+		data, rerr := st.ReadPolicy(active)
+		if rerr != nil {
+			return fmt.Errorf("policy dry-run: read active: %w", rerr)
+		}
+		asnap, cerr := policy.Compile(data)
+		if cerr != nil {
+			return fmt.Errorf("policy dry-run: active policy %s is corrupt: %w", active, cerr)
+		}
+		activeRules, activeDefault = asnap.Len(), asnap.DefaultAction().String()
+	}
+
+	fmt.Printf("policy %s: valid, %d rule(s), default action %s\n",
+		polFile, snap.Len(), snap.DefaultAction())
+	fmt.Printf("dry-run: would publish version %s (active: %s)\n", next, active)
+	fmt.Printf("  rules: %d -> %d (%s)\n", activeRules, snap.Len(),
+		func() string {
+			if activeRules < 0 {
+				return "first policy"
+			}
+			switch d := snap.Len() - activeRules; {
+			case d > 0:
+				return fmt.Sprintf("+%d", d)
+			case d == 0:
+				return "no change"
+			default:
+				return fmt.Sprintf("%d", d)
+			}
+		}())
+	fmt.Printf("  default action: %s -> %s\n", activeDefault, snap.DefaultAction())
+	if active != "" {
+		fmt.Printf("  target: %s (version %s) — nothing written\n", st.VersionPath(next), next)
+	}
+	return nil
 }
 
 // runConfig implements the `config show` and `config check` subcommands.

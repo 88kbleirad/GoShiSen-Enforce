@@ -21,9 +21,10 @@ func ApplyPolicyFlags(o *Options, rest []string, stderr io.Writer) error {
 	fs.SetOutput(stderr)
 	fs.Usage = func() { fmt.Fprint(stderr, "usage: goshisen policy [validate|simulate] [flags]\n") }
 
-	var policyFile, simProto, simSrc, simDst, simSport, simDport, simState string
+	var policyFile, policyDir, simProto, simSrc, simDst, simSport, simDport, simState string
 	fs.StringVar(&policyFile, "policy-file", "", "path to YAML policy file")
-	fs.StringVar(&simProto, "protocol", "", "L4 protocol: tcp, udp, any")
+	fs.StringVar(&policyDir, "policy-dir", "", "durable policy store directory (policy dry-run)")
+	fs.StringVar(&simProto, "protocol", "", "simulated L4 protocol: tcp, udp, any")
 	fs.StringVar(&simSrc, "src", "", "simulated source IP")
 	fs.StringVar(&simDst, "dst", "", "simulated destination IP")
 	fs.StringVar(&simSport, "source-port", "", "simulated source port")
@@ -42,6 +43,9 @@ func ApplyPolicyFlags(o *Options, rest []string, stderr io.Writer) error {
 	}
 	if policyFile != "" {
 		o.Overrides.PolicyFile = &policyFile
+	}
+	if policyDir != "" {
+		o.Overrides.PolicyDir = &policyDir
 	}
 	o.SimProto = simProto
 	o.SimSrc = simSrc
