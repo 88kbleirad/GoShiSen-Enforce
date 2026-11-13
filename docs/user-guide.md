@@ -35,6 +35,7 @@ Commands:
 | `config check` | validates configuration and host read-only: policy file readable, interface present and up. Makes no system changes; exit code 0 on success |
 | `policy validate --policy-file <path>` | compiles the policy file, rejects invalid rules, prints a summary of the compiled rules. Makes no system changes |
 | `policy simulate --policy-file <path> --src <ip> --dst <ip> [--protocol tcp\|udp\|any] [--state new\|established\|related\|invalid] [--source-port <n>] [--dest-port <n>]` | evaluates a synthetic packet against the policy and prints the verdict and matching rule ID (or `(default)`). Stateful rules require `--state`; otherwise the packet is stateless and stateful rules do not match. Makes no system changes |
+| `policy dry-run --policy-file <path> --policy-dir <dir>` | validates the policy and previews the exact publish the daemon would perform against the durable policy store: the next version, the rules delta vs the active policy, and the default-action change. Reads the store, writes nothing; a missing store is an error (never created) |
 | `hook status` | reports whether the application-owned nftables table (`ip goshisen`) is installed. Read-only; makes no changes |
 | `hook cleanup` | deletes only the application-owned nftables table (`ip goshisen`). Requires root (CAP_NET_ADMIN); never touches any other nftables state |
 | *(none)* | run the daemon |
@@ -153,7 +154,8 @@ The daemon exposes a management API (default `127.0.0.1:8080`). See `api/openapi
 - **Auth:** set `api_token` (config) or `GOSHISEN_API_TOKEN`. It is never accepted as a CLI flag. With no token set, administrative operations are refused (401).
 - **Concurrency:** applying a policy requires `base_version` equal to the current active version; otherwise `409 version_conflict`. Concurrent writers therefore cannot silently overwrite each other.
 - **Invalid policies:** rejected with `422 invalid_policy` before any state change; the active policy is preserved.
-- **Durability:** policies are stored as immutable versioned files with an atomically-updated active pointer; restart recovery reloads the active version. `policy_dir` configures the store.
+- **Durability:** policies are stored as immutable versioned files with an atomically-updated active pointer; restart recovery reloads the active version. `policy_dir` configures the store. `SIGHUP` reloads the configured policy file through the same durable pipeline as the API (every reload becomes a new store version), so the daemon's policy and the store's active version never diverge.
+- **Atomic publish:** a policy is only switched after it is fully validated and the store is durable; on any error (invalid YAML, compile failure, store write failure) the previous policy stays active in both the store and the live ruleset. `goshisen_policy_updates_total{outcome="success"|"failure"|"conflict"}` records each attempt.
 - **Audit:** every admin action is logged (action, outcome, version); tokens are never logged.
 
 Example (the sample config ships no token; set one via env for the example):
@@ -228,6 +230,15 @@ goshisen -c configs/goshisen.yaml config show
 
 # Validate a policy and see the compiled rules:
 goshisen policy validate --policy-file policies/examples/allow-lab.yaml
+
+# Preview the publish the daemon would perform (reads the store, writes nothing):
+goshisen policy dry-run --policy-file policies/examples/allow-lab.yaml \
+  --policy-dir policy_store
+#   policy .../allow-lab.yaml: valid, N rule(s), default action DROP
+#   dry-run: would publish version 2 (active: 1)
+#   rules: 1 -> 2 (+1)
+#   default action: DROP -> DROP
+#   target: .../policy_store/2.yaml (version 2) — nothing written
 
 # Simulate a TCP packet to port 80 (NEW, so the allow-http rule matches):
 goshisen policy simulate --policy-file policies/examples/allow-lab.yaml \
