@@ -143,14 +143,14 @@ apply_policy() { # apply_policy <host-policy-file> <expected-rule-count>
     # output is tagged so the echoed command line cannot be confused
     # with the result; the result line is the last RELOAD_COUNT= line.
     local before
-    before=$(vm "echo RELOAD_COUNT=\$(grep -c 'policy reloaded\" rules=$want' /tmp/goshisen2.log)" \
+    before=$(vm "echo RELOAD_COUNT=\$(grep -Ec 'policy (reloaded|published)\" rules=$want' /tmp/goshisen2.log)" \
         | grep -aE '^RELOAD_COUNT=' | tail -n1 | sed 's/^RELOAD_COUNT=//')
     before=${before:-0}
     vm "kill -HUP $pid" >/dev/null
     local deadline=$((SECONDS + 30))
     while [ $SECONDS -lt $deadline ]; do
         local now
-        now=$(vm "echo RELOAD_COUNT=\$(grep -c 'policy reloaded\" rules=$want' /tmp/goshisen2.log)" \
+        now=$(vm "echo RELOAD_COUNT=\$(grep -Ec 'policy (reloaded|published)\" rules=$want' /tmp/goshisen2.log)" \
             | grep -aE '^RELOAD_COUNT=' | tail -n1 | sed 's/^RELOAD_COUNT=//')
         now=${now:-0}
         if [ "$now" -gt "$before" ]; then
