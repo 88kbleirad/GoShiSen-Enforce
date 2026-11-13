@@ -84,10 +84,13 @@ Assets (19): 4 artifacts + `*.sig` + `*.provenance.json` + `*.provenance.json.si
 ## 8. Evidence / audit trail
 
 - PR #24 commits involved: `51b62ca`, `c33c427`, `ddb91c4`, `bf433c4`,
-  `c0fa57f`.
-- CI: PR runs + candidate run `43451010054` all 5/5 jobs green (final head
-  `c0fa57f` build/vet/test, package+verify, integration, openwrt e2e,
-  verify-signatures).
+  `c0fa57f`, `53a769a`, `70b96a6`.
+- Candidate run `43451010054` (v0.2.1-rc.2) — all workflow steps green including
+  the production sign + verify steps.
+- PR CI on the final head `70b96a6` (run `43452209485`): **5/5 jobs success** —
+  build/vet/test, package + verify release archives, integration (real netns lab),
+  openwrt e2e (QEMU lab), sign + verify release artifacts (test key, fail-closed).
+- Earlier code heads also 5/5: `c0fa57f` (43451484634), `53a769a` (43451523675).
 - `make check` (fmt/vet/test/build/verify-static) passes; `go test ./tests/...`
   passes (16 signing tests incl. 7 production, now hermetic).
 
