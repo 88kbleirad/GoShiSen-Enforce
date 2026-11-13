@@ -37,7 +37,7 @@ no private key bytes.
 
 ## 4. Downloaded asset verification (v0.2.1-rc.2)
 
-Assets (20): 4 artifacts + `*.sig` + `*.provenance.json` + `*.provenance.json.sig`
+Assets (19): 4 artifacts + `*.sig` + `*.provenance.json` + `*.provenance.json.sig`
 + `provenance-index.txt(.sig)` + `public_key.pem`.
 
 | Check | Result |
