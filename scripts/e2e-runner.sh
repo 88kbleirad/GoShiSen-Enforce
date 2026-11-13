@@ -43,49 +43,109 @@ done
 say() { echo "[e2e-runner] $*"; }
 die() { echo "[e2e-runner] ERROR: $*" >&2; exit "${2:-1}"; }
 
-# --- dependency preflight (fail early, actionable) ---
-need() {
-  # search the standard system PATH even when the caller's PATH is sparse
-  # (e.g. non-login shells without /usr/sbin).
-  local p tool
-  for p in "$PATH" /usr/local/sbin /usr/local/bin /usr/sbin /usr/bin /sbin /bin; do
-    [ -n "$p" ] || continue
-    for tool in "$1"; do
-      if [ -x "$p/$tool" ] && [ ! -d "$p/$tool" ]; then
-        return 0
-      fi
-    done
-  done
-  die "required tool '$1' missing (apt-get install ...)" 3
-}
-# Tests may override the required-tool set (e.g. to simulate a missing
-# tool). It runs before the default set so tests do not depend on the
-# host having every default tool.
-# shellcheck disable=SC2153
-if [ -n "${E2E_REQUIRED_TOOLS:-}" ]; then
-  for t in $E2E_REQUIRED_TOOLS; do need "$t"; done
-fi
-# The sudo gate may be overridden by tests (E2E_SUDO_OK=no) so the
-# BLOCKED path is testable on hosts with passwordless sudo.
-# shellcheck disable=SC2153
-if [ -n "${E2E_SUDO_OK:-}" ]; then
-  if [ "$E2E_SUDO_OK" = "no" ]; then
-    die "passwordless sudo required (netns/TAP/lab); environment is BLOCKED" 3
-  fi
-elif ! sudo -n true 2>/dev/null; then
-  die "passwordless sudo required (netns/TAP/lab); environment is BLOCKED" 3
-fi
-need curl; need wget; need python3; need qemu-system-x86_64; need nft
-need iptables; need ip; need sudo
+# ---------------------------------------------------------------------------
+# Preflight: typed, deterministic state machine.
+#
+# States (stable output schema, one line each):
+#   [e2e-runner] CONFIG_ERROR: <reason>          (bad args/input)
+#   [e2e-runner] BLOCKED: <reason>               (privilege/capability)
+#   [e2e-runner] MISSING_DEPENDENCY: <reason>    (tool/module absent)
+#   [e2e-runner] RESOURCE: <reason>              (port/filesystem busy)
+#   [e2e-runner] READY: privileged e2e preflight passed
+#
+# Exit 3 is used for the whole environment class (CONFIG_ERROR/BLOCKED/
+# MISSING_DEPENDENCY/RESOURCE) so existing callers keep working; the
+# token in the output is the authoritative state.
+#
+# Gates run in this fixed order so the result is deterministic and does
+# not depend on which tools happen to be installed on the test host.
+# Each gate is injectable via E2E_MOCK_* for tests (see below).
+# ---------------------------------------------------------------------------
 
-# Ensure child lab/e2e invocations see a full PATH (non-login shells often
-# omit /usr/sbin, which holds iptables/ip/qemu).
+# mock_state_out <state> <reason>  — emit the schema line and exit 3.
+mock_state_out() {
+  echo "[e2e-runner] $1: $2" >&2
+  exit 3
+}
+
+preflight_privilege() {
+  # root is sufficient; otherwise passwordless sudo is required. In tests
+  # this is mocked via E2E_MOCK_SUDO=no/yes.
+  if [ "$(id -u)" = 0 ]; then
+    return 0
+  fi
+  if [ -n "${E2E_MOCK_SUDO:-}" ]; then
+    if [ "$E2E_MOCK_SUDO" != "yes" ]; then
+      mock_state_out BLOCKED "privileged execution requires sudo/capability (E2E_MOCK_SUDO=no)"
+    fi
+    return 0
+  fi
+  if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+    return 0
+  fi
+  mock_state_out BLOCKED "privileged execution requires sudo/capability (netns/TAP/lab)"
+}
+
+preflight_dependencies() {
+  # In tests, E2E_MOCK_MISSING_TOOLS lists tools to treat as absent.
+  local missing_list="${E2E_MOCK_MISSING_TOOLS:-}"
+  local tool p found
+  for tool in curl wget python3 qemu-system-x86_64 nft iptables ip sudo; do
+    found=0
+    # enforced-missing mock takes precedence
+    for t in $missing_list; do
+      if [ "$t" = "$tool" ]; then found=1; break; fi
+    done
+    if [ "$found" = 1 ]; then
+      mock_state_out MISSING_DEPENDENCY "required tool '$tool' missing (apt-get install ...)"
+    fi
+    found=0
+    for p in "$PATH" /usr/local/sbin /usr/local/bin /usr/sbin /usr/bin /sbin /bin; do
+      if [ -x "$p/$tool" ] && [ ! -d "$p/$tool" ]; then found=1; break; fi
+    done
+    if [ "$found" = 0 ]; then
+      mock_state_out MISSING_DEPENDENCY "required tool '$tool' missing (apt-get install ...)"
+    fi
+  done
+}
+
+preflight_resources() {
+  # NFQUEUE for the lab e2e is provided by the OpenWrt VM (kmod pins);
+  # host-side absence is only a note, not a failure. Port checks are
+  # early-warning only (the boot phase is authoritative).
+  if [ -n "${E2E_MOCK_PORT_OCCUPIED:-}" ]; then
+    mock_state_out RESOURCE "port ${E2E_MOCK_PORT_OCCUPIED} is already in use"
+  fi
+  if [ ! -e /proc/net/netfilter/nfnetlink_queue ]; then
+    say "note: host NFQUEUE absent (lab VM provides it via kmods)"
+  fi
+}
+
+preflight() {
+  # 1. CONFIG gate
+  if [ -n "${E2E_MOCK_CONFIG:-}" ]; then
+    mock_state_out CONFIG_ERROR "invalid configuration (E2E_MOCK_CONFIG=${E2E_MOCK_CONFIG})"
+  fi
+  [ -n "$DAEMON" ] || mock_state_out CONFIG_ERROR "--daemon path is required"
+  [ -n "$IMAGE" ] || mock_state_out CONFIG_ERROR "--image path is required"
+
+  # 2. PRIVILEGE gate
+  preflight_privilege
+
+  # 3. DEPENDENCY gate
+  preflight_dependencies
+
+  # 4. RESOURCE gate
+  preflight_resources
+
+  echo "[e2e-runner] READY: privileged e2e preflight passed"
+}
+# --- run the typed preflight (ordered gates) ---
 export PATH="$PATH:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-# NFQUEUE for the e2e is provided by the OpenWrt VM (kmod pins verified by
-# image-prep). Host-side NFQUEUE is only needed for the NATIVE integration
-# suite, not this QEMU lab. Log the host state for diagnostics.
-if [ ! -e /proc/net/netfilter/nfnetlink_queue ]; then
-  say "note: host NFQUEUE absent (lab VM provides it via kmods)"
+preflight
+if [ -n "${E2E_PREFLIGHT_ONLY:-}" ]; then
+  say "preflight-only mode: stopping (state READY)"
+  exit 0
 fi
 
 # --- environment manifest (traceability) ---

@@ -83,3 +83,26 @@ QEMU TCG only; hardware-capable environment records its own metadata if used
   native integration suite is the one that requires host NFQUEUE.
 - **Unprivileged workstation** (no nopasswd sudo) → exit 3 BLOCKED, verified.
 
+
+## 8. Typed preflight states (Prompt 20)
+
+The preflight is a deterministic state machine with a stable output schema; the
+privilege gate precedes the tool gate, so no-sudo reports BLOCKED even when other
+tools are missing:
+
+```
+[e2e-runner] CONFIG_ERROR: <reason>
+[e2e-runner] BLOCKED: <reason>
+[e2e-runner] MISSING_DEPENDENCY: <reason>
+[e2e-runner] RESOURCE: <reason>
+[e2e-runner] READY: privileged e2e preflight passed
+```
+
+Gates and order: CONFIG (args/input) → PRIVILEGE (root, else passwordless sudo)
+→ DEPENDENCY (curl/wget/python3/qemu/nft/iptables/ip/sudo) → RESOURCE (ports;
+host NFQUEUE absence is a note) → READY. Exit 3 covers the whole environment class
+(compatible with previous callers); the token line is authoritative.
+
+Test injectability (no host tool dependency): `E2E_MOCK_SUDO=no|yes`,
+`E2E_MOCK_MISSING_TOOLS="tool …"`, `E2E_MOCK_PORT_OCCUPIED=<port>`,
+`E2E_MOCK_CONFIG=bad`, `E2E_PREFLIGHT_ONLY=1` (stop after READY).
