@@ -95,7 +95,11 @@ render_config() {
 		echo "hook_scope: $(config_get main hook_scope)"
 		echo "log_level: $(config_get main log_level)"
 		echo "offload_policy: $(config_get main offload_policy)"
-		echo "allow_bypass: $(config_get main allow_bypass)"
+		# allow_bypass is a YAML boolean; UCI stores 0/1.
+		case "$(config_get main allow_bypass)" in
+			1|on|true) echo "allow_bypass: true" ;;
+			*) echo "allow_bypass: false" ;;
+		esac
 		echo "interface: $(config_get main interface)"
 		echo "api_port: $(config_get main api_port)"
 		echo "metrics_port: $(config_get main metrics_port)"

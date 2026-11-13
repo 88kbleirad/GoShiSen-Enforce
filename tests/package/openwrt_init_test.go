@@ -210,8 +210,8 @@ func TestOpenWrtUCIRendersOffloadPolicy(t *testing.T) {
 	if !strings.Contains(initd, `echo "offload_policy: $(config_get main offload_policy)"`) {
 		t.Fatal("init script must render offload_policy into the daemon YAML")
 	}
-	if !strings.Contains(initd, `echo "allow_bypass: $(config_get main allow_bypass)"`) {
-		t.Fatal("init script must render allow_bypass into the daemon YAML")
+	if !strings.Contains(initd, `echo "allow_bypass: true"`) {
+		t.Fatal("init script must render allow_bypass as YAML boolean")
 	}
 	if !strings.Contains(uci, "option allow_bypass '0'") {
 		t.Fatal("UCI config must declare allow_bypass (default 0)")
