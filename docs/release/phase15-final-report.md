@@ -269,3 +269,32 @@ gh release edit v0.2.1 --draft=false --repo 88kbleirad/GoShiSen-Enforce
 - Container image publish (dockerfile exists; deferred).
 - Real-hardware/other-kernel re-verification of IPv6 stateful path.
 - LuCI/UI proposal (`docs/design/luci-proposal.md`).
+
+## Post-release fixes that do NOT change the release (Prompt 09/10)
+
+**PR #20 — OpenWrt e2e reload-gate fix** (merged `8e007a5d` on 2026-11-13):
+
+- Scope: test harness only — `scripts/openwrt-e2e.sh`, new regression tests
+  `tests/openwrt_integration/gate_harness_test.go` + `gate_shell_test.go`,
+  and report `docs/release/prompt09-e2e-gate-fix.md`. No binary, package,
+  policy engine, or release asset changed.
+- Root cause: gate ERE had no numeric boundary (`rules=1` matched `rules=10`),
+  was source-blind (counted `source=api` publishes as SIGHUP success), and the
+  console sanitizer deleted/kept high bytes (`tr -cd`) so invalid UTF-8 from
+  the QEMU serial (0xff/0xfe/0xfd) could garble the transcript.
+- Fix: ERE `policy (reloaded|published)" .*source=sighup .*rules=N([^0-9]|$)`
+  (full-token boundary + requires SIGHUP source; before/after delta retained);
+  sanitizer now replaces non-printable bytes with `?` (`tr -c '[:print:]\n\r\t' '?'`).
+- Regression coverage: 13 new tests (regex-level + real grep(1)/tr(1) pipelines,
+  incl. invalid UTF-8, NUL, API source, stale events, rules boundary).
+- CI: PR #20 head `701a378` — push run `43435999202` and pull_request run
+  `43436009943` both success, 4/4 jobs, 0 skips (openwrt e2e privileged PASS).
+- Live verification (instabox sandbox, OpenWrt 25.12.6 QEMU TCG): DROP control
+  rules=1 PASS (curl exit=28, drop verdicts +7, hook +7, queue drops +0); ACCEPT
+  control rules=2 PASS (HTTP 200, marker, accept verdicts +11: new +1, est +10);
+  evidence `/data/phase16-openwrt-compat-artifacts/e2e-gate-fix.txt`
+  (sha256 `c9d9f96c…`).
+- **Release decision: keep v0.2.1 unchanged.** The fix only touches the test
+  harness and regression coverage — no runtime behavior of the released
+  daemon/package was affected, so no patch release (v0.2.2) is warranted.
+  Tag `v0.2.1` (`6eb19f3` → `9ca71333`, verified) and its assets are untouched.
