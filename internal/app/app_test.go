@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -466,6 +467,119 @@ func TestRunOffloadPolicyReadiness(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("Run did not exit")
 	}
+}
+
+// TestRunOffloadPolicyReadinessRecovers verifies that under
+// offload_policy=readiness the watcher drops readiness when offloading
+// appears AND restores it when offloading is removed (enforcement gap
+// gone). Without recovery, readiness would stay false forever.
+func TestRunOffloadPolicyReadinessRecovers(t *testing.T) {
+	opts := testOptions(t)
+	opts.APIPort = 0
+	opts.OffloadPolicy = config.OffloadPolicyReadiness
+	d, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	offload := atomic.Bool{}
+	offload.Store(true)
+	d.detectFlowOffload = func() hook.FlowOffloadReport {
+		if offload.Load() {
+			return hook.FlowOffloadReport{Active: true, Detail: "flowtable f"}
+		}
+		return hook.FlowOffloadReport{}
+	}
+	d.installHook = func(rs hook.Ruleset) error { return nil }
+	fq := newFakeQueue()
+	d.openQueue = func(packet.Options) (Queue, error) { return fq, nil }
+	d.offloadInterval = 10 * time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- d.Run(ctx) }()
+	select {
+	case <-fq.ran:
+	case <-time.After(3 * time.Second):
+		t.Fatal("queue never started")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for d.Ready() && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if d.Ready() {
+		t.Fatal("ready = true under readiness policy while offload active")
+	}
+
+	// Offload clears; the watcher must restore readiness.
+	offload.Store(false)
+	deadline = time.Now().Add(5 * time.Second)
+	for !d.Ready() && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !d.Ready() {
+		t.Fatal("ready stayed false after offload removed under readiness policy")
+	}
+
+	// Offload reappears; readiness drops again.
+	offload.Store(true)
+	deadline = time.Now().Add(5 * time.Second)
+	for d.Ready() && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if d.Ready() {
+		t.Fatal("ready stayed true after offload reappeared under readiness policy")
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("Run = %v, want nil", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run did not exit")
+	}
+}
+
+// TestWatchFlowOffloadReadinessRecovery drives the watcher directly with
+// a short interval to verify the ready-state transition on both edges.
+func TestWatchFlowOffloadReadinessRecovery(t *testing.T) {
+	opts := testOptions(t)
+	opts.OffloadPolicy = config.OffloadPolicyReadiness
+	d, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	offload := atomic.Bool{}
+	offload.Store(true)
+	d.detectFlowOffload = func() hook.FlowOffloadReport {
+		if offload.Load() {
+			return hook.FlowOffloadReport{Active: true, Detail: "flow add @ft"}
+		}
+		return hook.FlowOffloadReport{}
+	}
+	d.ready.Store(true) // simulate enforcement already up
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go d.watchFlowOffload(ctx, 10*time.Millisecond)
+
+	waitReady := func(want bool) {
+		t.Helper()
+		deadline := time.Now().Add(3 * time.Second)
+		for d.Ready() != want && time.Now().Before(deadline) {
+			time.Sleep(10 * time.Millisecond)
+		}
+		if d.Ready() != want {
+			t.Fatalf("ready = %v, want %v", d.Ready(), want)
+		}
+	}
+
+	waitReady(false) // offload active → not ready
+	offload.Store(false)
+	waitReady(true) // offload cleared → ready
+	cancel()
 }
 
 // TestRunOffloadPolicyWarnDefault verifies the default policy keeps the

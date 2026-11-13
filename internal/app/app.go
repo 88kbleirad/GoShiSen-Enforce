@@ -100,8 +100,13 @@ func (d *Daemon) watchQueueOverflow(ctx context.Context, read queueStatsReader) 
 // watchFlowOffload re-runs flow-offload detection periodically so a
 // firewall reload that enables or disables offloading is reflected in
 // the metric and the warning without a daemon restart. Best-effort.
-func (d *Daemon) watchFlowOffload(ctx context.Context) {
-	ticker := time.NewTicker(10 * time.Second)
+//
+// Under offload_policy=readiness, readiness tracks the enforcement gap
+// in both directions: it drops when offloading appears, and recovers
+// once the ruleset is clean again (the gap is gone). Readiness is never
+// raised during shutdown (ctx cancelled).
+func (d *Daemon) watchFlowOffload(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -117,7 +122,7 @@ func (d *Daemon) watchFlowOffload(ctx context.Context) {
 			if d.opts.OffloadPolicy == config.OffloadPolicyReadiness {
 				d.ready.Store(false)
 			}
-		} else if d.opts.OffloadPolicy != config.OffloadPolicyReadiness {
+		} else if d.opts.OffloadPolicy == config.OffloadPolicyReadiness && ctx.Err() == nil {
 			d.ready.Store(true)
 		}
 	}
@@ -161,6 +166,9 @@ type Daemon struct {
 	// configured (established flows would bypass the queue). Overridable
 	// in tests.
 	detectFlowOffload func() hook.FlowOffloadReport
+	// offloadInterval is the flow-offload re-check period (10 s in
+	// production; shortened in tests).
+	offloadInterval time.Duration
 }
 
 // New returns a Daemon ready to run, with logging configured from the
@@ -185,6 +193,7 @@ func New(opts *config.Options) (*Daemon, error) {
 			return packet.Open(o)
 		},
 		detectFlowOffload: hook.DetectFlowOffload,
+		offloadInterval:   10 * time.Second,
 	}, nil
 }
 
@@ -331,7 +340,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	go d.watchQueueOverflow(qCtx, func() (packet.QueueStats, error) {
 		return packet.ReadQueueStats(queueStatsPath, queueNum)
 	})
-	go d.watchFlowOffload(qCtx)
+	go d.watchFlowOffload(qCtx, d.offloadInterval)
 
 	// Surface backend errors (parse/panic/send) as metrics.
 	if be2, ok := be.(*packet.Backend); ok {
