@@ -160,3 +160,22 @@ func TestOpenWrtMakefileInstallsCleanup(t *testing.T) {
 		t.Fatal("library must use unlink (no follow)")
 	}
 }
+
+func TestOpenWrtDocsDowngradeProcedure(t *testing.T) {
+	doc, err := os.ReadFile(filepath.Join(openwrtFilesDir(t), "..", "..", "docs", "openwrt.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(doc)
+	// Pre-downgrade disable is the supported, verified path.
+	if !strings.Contains(s, "/etc/init.d/goshisen-boot disable") {
+		t.Fatal("docs must instruct disabling the boot guard before downgrade")
+	}
+	// Post-downgrade rescue uses fixed paths + unlink (no follow).
+	if !strings.Contains(s, "unlink /etc/rc.d/S12goshisen-boot") {
+		t.Fatal("docs must document the unlink rescue for dangling guard links")
+	}
+	if !strings.Contains(s, "rc.d links (verified)") {
+		t.Fatal("docs must state uninstall removes all four rc.d links")
+	}
+}

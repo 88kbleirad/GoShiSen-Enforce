@@ -39,16 +39,32 @@ Root cause: r4's `prerm` removes the rc.d links **only if** `/etc/init.d/goshise
 - If a link points elsewhere (not `../init.d/...`), it is not ours to remove → verify target prefix before unlinking (only `../init.d/goshisen*`).
 - If `prerm` cannot verify a path (permissions), fail with an explicit message; do NOT return success (no false success).
 
-## 5. Tests
+## 5. Empirical apk behavior (verified live, OpenWrt 25.12.6 QEMU)
+
+- **apk v3 does NOT run the old package's pre-deinstall on downgrade.** A clean
+  `apk add --no-network --allow-untrusted <r2.apk>` over r4 leaves all four rc.d
+  links in place while `/etc/init.d/goshisen-boot` is removed → S12/K10
+  `goshisen-boot` dangle. The r4 prerm fix therefore cannot fire on downgrade;
+  it fires on **uninstall** (verified: `apk del` after fixed-r4 install removes
+  all four links, `NO-LINKS`).
+- **Pre-downgrade `goshisen-boot disable` is the verified fail-safe**: it
+  removes S12/K10 while the target init script still exists; after the downgrade
+  no boot-guard links remain (only S90/K10 goshisen, which r2 owns).
+- **Post-downgrade rescue**: the `disable` command and the lifecycle lib are both
+  gone (r2 does not ship them). The deterministic rescue is
+  `unlink /etc/rc.d/S12goshisen-boot /etc/rc.d/K10goshisen-boot`
+  (fixed paths, no follow, no recursive deletion). This is documented.
+
+## 6. Tests
 
 Shell-level (repo `tests/package/`): install→links present; upgrade r2→r4→links present; downgrade r4→r2→links gone; uninstall→links gone; repeated cleanup idempotent; missing target; malformed symlink; target-prefix mismatch (foreign rc.d untouched); path traversal guard (no `../../`).
 
-Live OpenWrt QEMU (r2/r4 apks): baseline r2, upgrade, reboot/boot guard, downgrade, reboot, version check, uninstall, inventory evidence.
+Live OpenWrt QEMU (r2/r4 apks): baseline r2, upgrade, reboot/boot guard, downgrade, reboot, version check, uninstall, inventory evidence — verified as above.
 
-## 6. QEMU/hardware limit
+## 7. QEMU/hardware limit
 
 Boot/reboot ordering is observed under QEMU TCG; hardware boot timing is not claimed (same limitation as prior prompts).
 
-## 7. Rollback
+## 8. Rollback
 
 PR revert restores prior prerm behavior; cleanup is additive and guarded to package-owned paths. No tags/releases touched.
