@@ -1,0 +1,21 @@
+formatting ok
+go vet  ./...
+go test  ./...
+?   	github.com/88kbleirad/GoShiSen-Enforce/cmd/goshisen	[no test files]
+ok  	github.com/88kbleirad/GoShiSen-Enforce/internal/api	(cached)
+ok  	github.com/88kbleirad/GoShiSen-Enforce/internal/app	(cached)
+ok  	github.com/88kbleirad/GoShiSen-Enforce/internal/cli	(cached)
+ok  	github.com/88kbleirad/GoShiSen-Enforce/internal/config	(cached)
+ok  	github.com/88kbleirad/GoShiSen-Enforce/internal/hook	(cached)
+ok  	github.com/88kbleirad/GoShiSen-Enforce/internal/metrics	(cached)
+ok  	github.com/88kbleirad/GoShiSen-Enforce/internal/packet	(cached)
+ok  	github.com/88kbleirad/GoShiSen-Enforce/internal/policy	(cached)
+?   	github.com/88kbleirad/GoShiSen-Enforce/internal/store	[no test files]
+ok  	github.com/88kbleirad/GoShiSen-Enforce/tests/integration	(cached)
+?   	github.com/88kbleirad/GoShiSen-Enforce/tests/integration/probe	[no test files]
+ok  	github.com/88kbleirad/GoShiSen-Enforce/tests/openwrt_integration	(cached)
+ok  	github.com/88kbleirad/GoShiSen-Enforce/tests/package	(cached)
+CGO_ENABLED=0 go build -trimpath -buildvcs=false  \
+	-ldflags '-buildid= -s -w -X github.com/88kbleirad/GoShiSen-Enforce/internal/cli.Version=v0.2.0-12-gbfbf813 -X github.com/88kbleirad/GoShiSen-Enforce/internal/app.Version=v0.2.0-12-gbfbf813' -o bin/goshisen ./cmd/goshisen
+built bin/goshisen (v0.2.0-12-gbfbf813)
+static: ok

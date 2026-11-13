@@ -271,14 +271,16 @@ func Compile(data []byte) (*Snapshot, error) {
 			fail("dst: %v", derr)
 		}
 
-		var srcPort, dstPort *PortRange
+		var srcPort, dstPort PortRange
+		var hasSrcPort, hasDstPort bool
 		if yr.SrcPort != "" {
 			if protoOK && proto == ProtoAny {
 				fail("src_port requires protocol tcp or udp (got %q)", yr.Protocol)
 			} else if pr, err := parsePortRange(yr.SrcPort); err != nil {
 				fail("src_port: %v", err)
 			} else if protoOK {
-				srcPort = &pr
+				srcPort = pr
+				hasSrcPort = true
 			}
 		}
 		if yr.DstPort != "" {
@@ -287,8 +289,14 @@ func Compile(data []byte) (*Snapshot, error) {
 			} else if pr, err := parsePortRange(yr.DstPort); err != nil {
 				fail("dst_port: %v", err)
 			} else if protoOK {
-				dstPort = &pr
+				dstPort = pr
+				hasDstPort = true
 			}
+		}
+
+		var stateMask uint16
+		for _, st := range statesList {
+			stateMask |= 1 << uint(st)
 		}
 
 		if len(errs) == before {
@@ -300,7 +308,9 @@ func Compile(data []byte) (*Snapshot, error) {
 				Dst:         dst,
 				SrcPort:     srcPort,
 				DstPort:     dstPort,
-				States:      statesList,
+				HasSrcPort:  hasSrcPort,
+				HasDstPort:  hasDstPort,
+				StateMask:   stateMask,
 				Log:         yr.Log,
 				Description: yr.Description,
 			})

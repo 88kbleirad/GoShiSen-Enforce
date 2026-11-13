@@ -1,0 +1,28 @@
+goos: linux
+goarch: amd64
+pkg: github.com/88kbleirad/GoShiSen-Enforce/internal/policy
+cpu: 11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz
+BenchmarkDecideSmallPolicyNew-12            	33000542	        34.61 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDecideSmallPolicyEstablished-12    	52268174	        23.74 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDecideLargePolicy-12               	  599649	      1960 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDecideNoMatchDefaultDrop-12        	52854764	        23.03 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKingProcessNewAccept-12            	12598071	        95.57 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKingProcessEstablished-12          	24389096	        50.73 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTupleKey-12                        	295883325	         4.084 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/88kbleirad/GoShiSen-Enforce/internal/policy	8.430s
+goos: linux
+goarch: amd64
+pkg: github.com/88kbleirad/GoShiSen-Enforce/internal/packet
+cpu: 11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz
+BenchmarkParseIPv4TCP-12                  	67530812	        16.88 ns/op	2369.52 MB/s	       0 B/op	       0 allocs/op
+BenchmarkParseIPv4UDP-12                  	72062844	        16.80 ns/op	1666.35 MB/s	       0 B/op	       0 allocs/op
+BenchmarkParseIPv6TCP-12                  	66795142	        18.31 ns/op	3276.00 MB/s	       0 B/op	       0 allocs/op
+BenchmarkParseIPv4Truncated-12            	100000000	        11.30 ns/op	       0 B/op	       0 allocs/op
+BenchmarkPipelineNewAccept-12             	 5255259	       230.0 ns/op	13808876206170 verdicts	       0 B/op	       0 allocs/op
+BenchmarkPipelineEstablishedReply-12      	 6623229	       178.2 ns/op	21933591128064 verdicts	       0 B/op	       0 allocs/op
+BenchmarkPipelineNewDrop-12               	 6161170	       198.4 ns/op	18980010965035 verdicts	       0 B/op	       0 allocs/op
+BenchmarkPipelineMetricsOnly-12           	79807164	        14.97 ns/op	       0 B/op	       0 allocs/op
+BenchmarkPipelineLatencyPercentiles-12    	 4277148	       287.7 ns/op	         0.2470 p50-us	         0.2700 p95-us	         0.3990 p99-us	      41 B/op	       0 allocs/op
+PASS
+ok  	github.com/88kbleirad/GoShiSen-Enforce/internal/packet	10.863s

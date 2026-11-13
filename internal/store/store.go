@@ -41,6 +41,23 @@ func Open(dir string) (*Store, error) {
 	return &Store{dir: dir}, nil
 }
 
+// OpenReadOnly opens an existing store directory without creating it.
+// It fails if the directory does not exist, so a read-only caller (e.g.
+// `policy dry-run`) never materializes filesystem state.
+func OpenReadOnly(dir string) (*Store, error) {
+	if dir == "" {
+		return nil, errors.New("store: empty directory")
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		return nil, fmt.Errorf("store: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("store: %s is not a directory", dir)
+	}
+	return &Store{dir: dir}, nil
+}
+
 // Dir returns the store directory.
 func (s *Store) Dir() string { return s.dir }
 
@@ -182,6 +199,26 @@ func (s *Store) List() ([]string, error) {
 	}
 	sort.Strings(versions)
 	return versions, nil
+}
+
+// NextVersion returns the next numeric policy version to assign (max
+// existing version + 1, or "1" when the store is empty).
+func (s *Store) NextVersion() (string, error) {
+	versions, err := s.List()
+	if err != nil {
+		return "", err
+	}
+	max := 0
+	for _, v := range versions {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			continue
+		}
+		if n > max {
+			max = n
+		}
+	}
+	return strconv.Itoa(max + 1), nil
 }
 
 func atomicWrite(path string, data []byte) error {

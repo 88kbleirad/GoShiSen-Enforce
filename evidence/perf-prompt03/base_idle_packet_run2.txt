@@ -1,0 +1,15 @@
+goos: linux
+goarch: amd64
+pkg: github.com/88kbleirad/GoShiSen-Enforce/internal/packet
+cpu: 11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz
+BenchmarkParseIPv4TCP-12                  	66845924	        16.77 ns/op	2385.62 MB/s	       0 B/op	       0 allocs/op
+BenchmarkParseIPv4UDP-12                  	71671580	        16.77 ns/op	1670.03 MB/s	       0 B/op	       0 allocs/op
+BenchmarkParseIPv6TCP-12                  	66834412	        18.13 ns/op	3309.23 MB/s	       0 B/op	       0 allocs/op
+BenchmarkParseIPv4Truncated-12            	100000000	        11.30 ns/op	       0 B/op	       0 allocs/op
+BenchmarkPipelineNewAccept-12             	 1000000	      1129 ns/op	         0 verdicts	     288 B/op	      15 allocs/op
+BenchmarkPipelineEstablishedReply-12      	 1907016	       628.8 ns/op	         0 verdicts	     112 B/op	       7 allocs/op
+BenchmarkPipelineNewDrop-12               	 1825072	       655.5 ns/op	         0 verdicts	     112 B/op	       8 allocs/op
+BenchmarkPipelineMetricsOnly-12           	13281343	        85.99 ns/op	      16 B/op	       1 allocs/op
+BenchmarkPipelineLatencyPercentiles-12    	  960860	      1178 ns/op	         1.026 p50-us	         1.681 p95-us	         2.628 p99-us	     319 B/op	      15 allocs/op
+PASS
+ok  	github.com/88kbleirad/GoShiSen-Enforce/internal/packet	10.518s

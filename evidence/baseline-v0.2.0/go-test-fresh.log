@@ -1,0 +1,14 @@
+?   	github.com/88kbleirad/GoShiSen-Enforce/cmd/goshisen	[no test files]
+ok  	github.com/88kbleirad/GoShiSen-Enforce/internal/api	0.034s
+ok  	github.com/88kbleirad/GoShiSen-Enforce/internal/app	5.104s
+ok  	github.com/88kbleirad/GoShiSen-Enforce/internal/cli	0.003s
+ok  	github.com/88kbleirad/GoShiSen-Enforce/internal/config	0.005s
+ok  	github.com/88kbleirad/GoShiSen-Enforce/internal/hook	0.208s
+ok  	github.com/88kbleirad/GoShiSen-Enforce/internal/metrics	0.003s
+ok  	github.com/88kbleirad/GoShiSen-Enforce/internal/packet	0.005s
+ok  	github.com/88kbleirad/GoShiSen-Enforce/internal/policy	0.005s
+?   	github.com/88kbleirad/GoShiSen-Enforce/internal/store	[no test files]
+ok  	github.com/88kbleirad/GoShiSen-Enforce/tests/integration	0.004s
+?   	github.com/88kbleirad/GoShiSen-Enforce/tests/integration/probe	[no test files]
+ok  	github.com/88kbleirad/GoShiSen-Enforce/tests/openwrt_integration	0.003s
+ok  	github.com/88kbleirad/GoShiSen-Enforce/tests/package	0.053s
