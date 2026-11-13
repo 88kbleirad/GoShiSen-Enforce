@@ -233,8 +233,14 @@ sha256sum -c dist/checksums.txt
 gh release edit v0.2.1 --draft=false --repo 88kbleirad/GoShiSen-Enforce
 ```
 
-> Nothing in this phase tagged, merged, or published without approval; all PRs
-> remain OPEN.
+> **Prompt 07 execution (2026-11-13):** phase16-openwrt-compat merged to main first
+> (boot-guard + r4 package + offload), then PRs #16 -> #17 -> #18 squash-merged
+> (main head `9ca71333`; every head CI-successful, 4/4 jobs, 0 skips). Tag
+> `v0.2.1` created SSH-signed (ED25519 `SHA256:0gqDKmaCx9LINggxwf3ERSvmT+GvFD3hMwZp+OQakWc`,
+> GitHub verification: valid). Release published:
+> https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.1 —
+> `sha256sum -c checksums.txt` OK (amd64 `126c2a9e...`, arm64 `2d8ca943...`),
+> SBOM SPDX-2.3 valid, amd64 binary reports `goshisen v0.2.1`.
 
 ---
 
