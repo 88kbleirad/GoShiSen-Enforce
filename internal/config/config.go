@@ -32,11 +32,17 @@ const (
 	DefaultLogLevel = "info"
 	DefaultLogJSON  = false
 
-	DefaultAPIHost     = "127.0.0.1"
-	DefaultAPIPort     = 8080
-	DefaultMetricsPort = 9090
-	DefaultPolicyDir   = "policy_store"
-	DefaultQueueMaxlen = 1024
+	DefaultAPIHost       = "127.0.0.1"
+	DefaultAPIPort       = 8080
+	DefaultMetricsPort   = 9090
+	DefaultPolicyDir     = "policy_store"
+	DefaultQueueMaxlen   = 1024
+	DefaultOffloadPolicy = "warn"
+	// OffloadPolicyWarn, OffloadPolicyRefuse, OffloadPolicyReadiness are
+	// the accepted values for File.OffloadPolicy.
+	OffloadPolicyWarn      = "warn"
+	OffloadPolicyRefuse    = "refuse"
+	OffloadPolicyReadiness = "readiness"
 )
 
 // File is the YAML configuration file schema. Unknown keys are rejected.
@@ -86,6 +92,15 @@ type File struct {
 	// "openwrt" places the hook after firewall4's forward chain
 	// (priority 1, policy accept) and creates no NAT chains.
 	HookScope string `yaml:"hook_scope"`
+
+	// OffloadPolicy controls what the daemon does when nftables flow
+	// offloading is detected: established flows skip NFQUEUE, so
+	// enforcement does not apply to them.
+	//   warn      (default) log a WARN and expose the health gauge.
+	//   refuse    exit at startup with an error (never install the hook).
+	//   readiness keep enforcing but never become ready (readiness stays
+	//             false while offloading is active).
+	OffloadPolicy string `yaml:"offload_policy"`
 
 	// Nat configures kernel-side NAT (nftables dstnat/srcnat chains).
 	Nat NatConfig `yaml:"nat"`
@@ -152,28 +167,30 @@ type Options struct {
 func Load(configFile string, env func(string) (string, bool), ov Overrides) (*Options, error) {
 	o := &Options{
 		File: File{
-			LogLevel:    DefaultLogLevel,
-			LogJSON:     DefaultLogJSON,
-			APIHost:     DefaultAPIHost,
-			APIPort:     DefaultAPIPort,
-			MetricsPort: DefaultMetricsPort,
-			PolicyDir:   DefaultPolicyDir,
-			QueueMaxlen: DefaultQueueMaxlen,
+			LogLevel:      DefaultLogLevel,
+			LogJSON:       DefaultLogJSON,
+			APIHost:       DefaultAPIHost,
+			APIPort:       DefaultAPIPort,
+			MetricsPort:   DefaultMetricsPort,
+			PolicyDir:     DefaultPolicyDir,
+			QueueMaxlen:   DefaultQueueMaxlen,
+			OffloadPolicy: DefaultOffloadPolicy,
 		},
 		ConfigFile: configFile,
 		Sources: map[string]string{
-			"interface":    "default",
-			"policy_file":  "default",
-			"log_level":    "default",
-			"log_json":     "default",
-			"api_host":     "default",
-			"api_port":     "default",
-			"api_token":    "default",
-			"metrics_port": "default",
-			"policy_dir":   "default",
-			"queue_maxlen": "default",
-			"queue_num":    "default",
-			"hook_scope":   "default",
+			"interface":      "default",
+			"policy_file":    "default",
+			"log_level":      "default",
+			"log_json":       "default",
+			"api_host":       "default",
+			"api_port":       "default",
+			"api_token":      "default",
+			"metrics_port":   "default",
+			"policy_dir":     "default",
+			"queue_maxlen":   "default",
+			"queue_num":      "default",
+			"hook_scope":     "default",
+			"offload_policy": "default",
 		},
 	}
 
@@ -253,6 +270,10 @@ func (o *Options) loadFile(path string) error {
 	if f.HookScope != "" {
 		o.HookScope = f.HookScope
 		o.Sources["hook_scope"] = "file"
+	}
+	if f.OffloadPolicy != "" {
+		o.OffloadPolicy = f.OffloadPolicy
+		o.Sources["offload_policy"] = "file"
 	}
 	if f.QueueNum != 0 {
 		o.QueueNum = f.QueueNum
@@ -334,6 +355,10 @@ func (o *Options) loadEnv(env func(string) (string, bool)) error {
 	if v, ok := get("HOOK_SCOPE"); ok {
 		o.HookScope = v
 		o.Sources["hook_scope"] = "env"
+	}
+	if v, ok := get("OFFLOAD_POLICY"); ok {
+		o.OffloadPolicy = v
+		o.Sources["offload_policy"] = "env"
 	}
 	if v, ok := get("QUEUE_NUM"); ok {
 		n, err := strconv.Atoi(strings.TrimSpace(v))
@@ -445,6 +470,11 @@ func (o *Options) validate() error {
 	}
 	if o.HookScope == HookScopeOpenWrt && o.Nat.Enabled {
 		errs = append(errs, errors.New("nat is not supported with hook_scope openwrt (firewall4 owns NAT)"))
+	}
+	switch o.OffloadPolicy {
+	case OffloadPolicyWarn, OffloadPolicyRefuse, OffloadPolicyReadiness:
+	default:
+		errs = append(errs, fmt.Errorf("offload_policy %q must be warn, refuse, or readiness", o.OffloadPolicy))
 	}
 	if o.Nat.Enabled {
 		if o.Nat.Masquerade.Enabled {

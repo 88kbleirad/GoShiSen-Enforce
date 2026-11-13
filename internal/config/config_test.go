@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -315,6 +316,27 @@ queue_num: 70000
 `)
 	if _, err := Load(p, envStub(nil), Overrides{}); err == nil {
 		t.Fatal("Load accepted queue_num out of range")
+	}
+}
+
+func TestValidateOffloadPolicy(t *testing.T) {
+	for _, bad := range []string{"bogus", "refuse-now"} {
+		p := writeTemp(t, "goshisen.yaml", fmt.Sprintf(`
+policy_file: /etc/goshisen/policy.yaml
+offload_policy: %s
+`, bad))
+		if _, err := Load(p, envStub(nil), Overrides{}); err == nil {
+			t.Fatalf("Load accepted invalid offload_policy %q", bad)
+		}
+	}
+	for _, good := range []string{"warn", "refuse", "readiness"} {
+		p := writeTemp(t, "goshisen.yaml", fmt.Sprintf(`
+policy_file: /etc/goshisen/policy.yaml
+offload_policy: %s
+`, good))
+		if _, err := Load(p, envStub(nil), Overrides{}); err != nil {
+			t.Fatalf("Load rejected valid offload_policy %q: %v", good, err)
+		}
 	}
 }
 
