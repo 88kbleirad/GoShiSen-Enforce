@@ -31,7 +31,14 @@ config goshisen 'main'
 	# Kernel NFQUEUE queue length.
 	option queue_maxlen '1024'
 	# Flow-offload policy when nftables flow offloading is detected
-	# (established flows bypass the queue): warn (default) logs WARN +
-	# gauge; refuse fails startup before installing the hook; readiness
-	# keeps enforcing but never becomes ready while offloading is active.
+	# (established flows bypass the queue — enforcement gap):
+	#   warn      (default) log WARN + gauge, keep enforcing
+	#   refuse    fail startup before installing the hook
+	#   readiness keep enforcing but never become ready while offloading
+	#   enforce   actively disable the offload (verified); fail closed if
+	#             disable fails or state is unknown
 	option offload_policy 'warn'
+	# Explicit diagnostic/development escape hatch for offload_policy=enforce
+	# only: allow_bypass=1 downgrades enforce to warn (loud warning). Never
+	# default; invalid with other policies.
+	option allow_bypass '0'

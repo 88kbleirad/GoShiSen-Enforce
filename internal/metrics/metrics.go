@@ -79,6 +79,10 @@ func New() *Registry {
 		"Active policy version (0 when none).")
 	r.gauges["goshisen_flow_offload_active"] = newGauge("goshisen_flow_offload_active",
 		"1 when flow offloading is configured in nftables (established flows bypass the queue; enforcement is not applied to them), 0 otherwise.")
+	r.gauges["goshisen_flow_offload_state"] = newGauge("goshisen_flow_offload_state",
+		"Flow-offload state: 0 disabled, 1 enabled (enforcement gap), 2 unknown (cannot prove safe).")
+	r.counters["goshisen_flow_offload_disables_total"] = newCounter("goshisen_flow_offload_disables_total",
+		"Flow-offload disable attempts and their outcome (bounded, by result).", "result")
 	r.histogram = newHistogram("goshisen_packet_verdict_latency_seconds",
 		"Per-packet processing latency.")
 	return r
@@ -187,6 +191,25 @@ func (r *Registry) SetFlowOffloadActive(active bool) {
 		v = 1
 	}
 	r.gauges["goshisen_flow_offload_active"].value = v
+}
+
+// SetFlowOffloadState records the richer flow-offload state (0
+// disabled, 1 enabled, 2 unknown).
+func (r *Registry) SetFlowOffloadState(state int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.gauges["goshisen_flow_offload_state"].value = int64(state)
+}
+
+// RecordFlowOffloadDisable counts a disable attempt outcome.
+func (r *Registry) RecordFlowOffloadDisable(ok bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	result := "failed"
+	if ok {
+		result = "success"
+	}
+	r.counters["goshisen_flow_offload_disables_total"].values[result]++
 }
 
 // PolicyUpdateOutcome is a bounded enum of policy publish results. Using

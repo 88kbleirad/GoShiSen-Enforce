@@ -106,6 +106,11 @@ func (d *Daemon) watchQueueOverflow(ctx context.Context, read queueStatsReader) 
 // in both directions: it drops when offloading appears, and recovers
 // once the ruleset is clean again (the gap is gone). Readiness is never
 // raised during shutdown (ctx cancelled).
+//
+// Under offload_policy=enforce, an offload that appears after startup
+// is re-attempted; if the disable fails the daemon logs an error and
+// (without allow_bypass) records the state as failed — it does not
+// silently stop enforcing.
 func (d *Daemon) watchFlowOffload(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -116,10 +121,26 @@ func (d *Daemon) watchFlowOffload(ctx context.Context, interval time.Duration) {
 		case <-ticker.C:
 		}
 		rep := d.detectFlowOffload()
-		d.metrics.SetFlowOffloadActive(rep.Active)
+		d.metrics.SetFlowOffloadState(int(rep.State))
+		if rep.State == hook.FlowOffloadEnabled && d.opts.OffloadPolicy == config.OffloadPolicyEnforce {
+			dis := d.disableFlowOffload()
+			d.metrics.RecordFlowOffloadDisable(dis.State == hook.FlowOffloadDisabled)
+			if dis.State == hook.FlowOffloadDisabled {
+				d.log.Info("offload_policy=enforce: flow offloading disabled (verified)", "detail", dis.Detail)
+				rep = dis
+			} else if !d.opts.AllowBypass {
+				d.log.Error("offload_policy=enforce: flow offloading active and disable failed, enforcement gap remains",
+					"state", dis.State.String(), "detail", dis.Detail)
+				rep = dis
+			} else {
+				d.log.Warn("offload_policy=enforce + allow_bypass: disable failed, continuing (diagnostic only)",
+					"detail", dis.Detail)
+				rep = dis
+			}
+		}
 		if rep.Active {
 			d.log.Warn("flow offloading detected: established flows bypass goshisen queue (enforcement gap)",
-				"detail", rep.Detail)
+				"state", rep.State.String(), "detail", rep.Detail)
 			if d.opts.OffloadPolicy == config.OffloadPolicyReadiness {
 				d.ready.Store(false)
 			}
@@ -175,6 +196,9 @@ type Daemon struct {
 	// configured (established flows would bypass the queue). Overridable
 	// in tests.
 	detectFlowOffload func() hook.FlowOffloadReport
+	// disableFlowOffload attempts to remove flow-offload state and
+	// returns the post-verification report. Overridable in tests.
+	disableFlowOffload func() hook.FlowOffloadReport
 	// offloadInterval is the flow-offload re-check period (10 s in
 	// production; shortened in tests).
 	offloadInterval time.Duration
@@ -201,8 +225,9 @@ func New(opts *config.Options) (*Daemon, error) {
 		openQueue: func(o packet.Options) (Queue, error) {
 			return packet.Open(o)
 		},
-		detectFlowOffload: hook.DetectFlowOffload,
-		offloadInterval:   10 * time.Second,
+		detectFlowOffload:  hook.DetectFlowOffload,
+		disableFlowOffload: hook.DisableFlowOffload,
+		offloadInterval:    10 * time.Second,
 	}, nil
 }
 
@@ -299,15 +324,46 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}
 	queueNum := d.opts.QueueNum
 
-	// Flow-offload pre-check: offload_policy=refuse means the daemon
-	// must not start enforcing when established flows would bypass the
-	// queue. Fail-closed by absence: return before installing the hook
-	// so the system is left exactly as it was.
+	// Flow-offload gate. offload_policy selects the response to a
+	// bypass-possible state (enabled) or an unprovable one (unknown):
+	//   warn      log + gauge, always run
+	//   refuse    fail at startup when enabled (fail-closed by absence)
+	//   readiness enforce but never become ready while enabled
+	//   enforce   actively disable; fail closed if the disable does not
+	//             take effect or detection is unknown (unless the
+	//             explicit allow_bypass escape hatch is set)
 	offload := d.detectFlowOffload()
-	if offload.Active && d.opts.OffloadPolicy == config.OffloadPolicyRefuse {
-		return fmt.Errorf("flow offloading is active but offload_policy=refuse: "+
-			"established flows bypass the queue (enforcement gap); "+
-			"disable flow offloading or set offload_policy=warn/readiness (%s)", offload.Detail)
+	switch d.opts.OffloadPolicy {
+	case config.OffloadPolicyEnforce:
+		if offload.State == hook.FlowOffloadUnknown {
+			if !d.opts.AllowBypass {
+				return fmt.Errorf("offload_policy=enforce: flow-offload state unknown (%s); "+
+					"cannot prove enforcement safety (set allow_bypass=true for diagnostics only)", offload.Detail)
+			}
+			d.log.Warn("offload_policy=enforce + allow_bypass: offload state unknown, continuing (diagnostic only)",
+				"detail", offload.Detail)
+		} else if offload.State == hook.FlowOffloadEnabled {
+			rep := d.disableFlowOffload()
+			d.metrics.RecordFlowOffloadDisable(rep.State == hook.FlowOffloadDisabled)
+			if rep.State == hook.FlowOffloadDisabled {
+				d.log.Info("offload_policy=enforce: flow offloading disabled (verified)", "detail", rep.Detail)
+				offload = rep
+			} else if d.opts.AllowBypass {
+				d.log.Warn("offload_policy=enforce + allow_bypass: disable failed, continuing (diagnostic only)",
+					"detail", rep.Detail)
+				offload = rep
+			} else {
+				return fmt.Errorf("offload_policy=enforce: flow offloading active and disable did not take effect (%s): "+
+					"established flows bypass the queue (enforcement gap); "+
+					"disable flow offloading on the firewall or set offload_policy=warn/readiness (%s)", rep.State, rep.Detail)
+			}
+		}
+	case config.OffloadPolicyRefuse:
+		if offload.State == hook.FlowOffloadEnabled {
+			return fmt.Errorf("flow offloading is active but offload_policy=refuse: "+
+				"established flows bypass the queue (enforcement gap); "+
+				"disable flow offloading or set offload_policy=warn/readiness (%s)", offload.Detail)
+		}
 	}
 
 	rs := hook.Ruleset{
@@ -322,13 +378,13 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 	// Flow-offload detection: if offloading is configured, established
 	// flows bypass NFQUEUE entirely. We never silently modify the
-	// user's firewall; we flag it loudly and expose a health metric.
+	// user's firewall (except under offload_policy=enforce, where the
+	// user explicitly opted in); we flag it loudly and expose a health
+	// metric.
+	d.metrics.SetFlowOffloadState(int(offload.State))
 	if offload.Active {
 		d.log.Warn("flow offloading detected: established flows bypass goshisen queue (enforcement gap)",
-			"detail", offload.Detail)
-		d.metrics.SetFlowOffloadActive(true)
-	} else {
-		d.metrics.SetFlowOffloadActive(false)
+			"state", offload.State.String(), "detail", offload.Detail)
 	}
 
 	be, err := d.openQueue(packet.Options{Queue: queueNum, Maxlen: d.opts.QueueMaxlen})
@@ -340,9 +396,10 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 	// The enforcement path is now fully up: hook installed and queue
 	// bound. Only now does readiness become true. With
-	// offload_policy=readiness, readiness stays false while flow
-	// offloading is active (enforcement gap present); the API keeps
-	// reporting 503 and the metric carries the gauge.
+	// offload_policy=readiness (or enforce that could not close the
+	// gap), readiness stays false while flow offloading is active
+	// (enforcement gap present); the API keeps reporting 503 and the
+	// metric carries the gauge.
 	if offload.Active && d.opts.OffloadPolicy == config.OffloadPolicyReadiness {
 		d.log.Error("offload_policy=readiness: flow offloading active, staying not-ready",
 			"detail", offload.Detail)

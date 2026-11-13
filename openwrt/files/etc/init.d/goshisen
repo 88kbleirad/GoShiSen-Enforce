@@ -58,7 +58,7 @@ validate_uci() {
 
 	config_get offload main offload_policy
 	case "$offload" in
-		""|warn|refuse|readiness) ;;
+		""|warn|refuse|readiness|enforce) ;;
 		*) echo "goshisen: unsupported offload_policy '$offload'" >&2; return 1 ;;
 	esac
 
@@ -95,6 +95,7 @@ render_config() {
 		echo "hook_scope: $(config_get main hook_scope)"
 		echo "log_level: $(config_get main log_level)"
 		echo "offload_policy: $(config_get main offload_policy)"
+		echo "allow_bypass: $(config_get main allow_bypass)"
 		echo "interface: $(config_get main interface)"
 		echo "api_port: $(config_get main api_port)"
 		echo "metrics_port: $(config_get main metrics_port)"
