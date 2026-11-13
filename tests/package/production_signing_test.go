@@ -174,6 +174,22 @@ func TestReleaseWorkflowIsTagOnlyAndUsesSecret(t *testing.T) {
 	if !strings.Contains(yml, "release-sign.sh") {
 		t.Fatal("release.yml must run the fail-closed signing wrapper")
 	}
+	// Per-artifact provenance (JSON + sig) must be uploaded so consumers can
+	// verify commit/tag/arch/checksum provenance against the downloaded assets.
+	for _, p := range []string{
+		"goshisen-linux-amd64.tar.gz.provenance.json",
+		"goshisen-linux-arm64.tar.gz.provenance.json",
+		"checksums.txt.provenance.json",
+		"sbom.spdx.json.provenance.json",
+		"goshisen-linux-amd64.tar.gz.provenance.json.sig",
+		"goshisen-linux-arm64.tar.gz.provenance.json.sig",
+		"checksums.txt.provenance.json.sig",
+		"sbom.spdx.json.provenance.json.sig",
+	} {
+		if !strings.Contains(yml, p) {
+			t.Fatalf("release.yml upload must include %s", p)
+		}
+	}
 }
 
 // TestVerifySingleArtifactRejectsUnsignedAndTampered covers the installer-side

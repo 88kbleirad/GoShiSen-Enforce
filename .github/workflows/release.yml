@@ -66,6 +66,14 @@ jobs:
               dist/goshisen-linux-arm64.tar.gz.sig \
               dist/checksums.txt.sig \
               dist/sbom.spdx.json.sig \
+              dist/goshisen-linux-amd64.tar.gz.provenance.json \
+              dist/goshisen-linux-arm64.tar.gz.provenance.json \
+              dist/checksums.txt.provenance.json \
+              dist/sbom.spdx.json.provenance.json \
+              dist/goshisen-linux-amd64.tar.gz.provenance.json.sig \
+              dist/goshisen-linux-arm64.tar.gz.provenance.json.sig \
+              dist/checksums.txt.provenance.json.sig \
+              dist/sbom.spdx.json.provenance.json.sig \
               dist/provenance-index.txt \
               dist/provenance-index.txt.sig \
               dist/public_key.pem \
@@ -84,6 +92,14 @@ jobs:
               dist/goshisen-linux-arm64.tar.gz.sig \
               dist/checksums.txt.sig \
               dist/sbom.spdx.json.sig \
+              dist/goshisen-linux-amd64.tar.gz.provenance.json \
+              dist/goshisen-linux-arm64.tar.gz.provenance.json \
+              dist/checksums.txt.provenance.json \
+              dist/sbom.spdx.json.provenance.json \
+              dist/goshisen-linux-amd64.tar.gz.provenance.json.sig \
+              dist/goshisen-linux-arm64.tar.gz.provenance.json.sig \
+              dist/checksums.txt.provenance.json.sig \
+              dist/sbom.spdx.json.provenance.json.sig \
               dist/provenance-index.txt \
               dist/provenance-index.txt.sig \
               dist/public_key.pem
