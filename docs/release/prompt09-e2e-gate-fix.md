@@ -57,7 +57,9 @@ Evidence: `/data/phase16-openwrt-compat-artifacts/e2e-gate-fix.txt`
 - `integration (real netns lab, privileged)` — pass
 - `openwrt e2e (QEMU lab, privileged)` — pass (confirmed on the PR head)
 
-Run IDs: 43433459371 / 43433469580 (both push + pull_request events).
+Run IDs (head `c92ea5e`): 43433459371 / 43433469580 (push + pull_request).
+Final docs-head `4a72717` (this report): 43434133060 / 43434143326 — both success,
+4/4 jobs, 0 skips.
 
 ## No release changes
 
