@@ -44,6 +44,14 @@ COMMANDS:
   hook cleanup  Delete the app-owned nftables table (inet goshisen) only.
                 Never touches any other nftables state. Requires root
                 (CAP_NET_ADMIN)
+  offload status
+                Report flow-offload state: disabled, ENABLED (enforcement
+                gap), failed, or unknown. Read-only, no changes
+  offload disable
+                Remove nftables flow-offload state (flowtables and
+                flow-offload rules only) and re-verify. Idempotent.
+                Never touches any other nftables state. Requires root
+                (CAP_NET_ADMIN)
 
 FLAGS:
   -h, --help               Show help and exit
@@ -86,8 +94,8 @@ EXAMPLES:
 // Options is the parsed CLI invocation.
 type Options struct {
 	ConfigFile string
-	Command    string // "" | "config" | "policy"
-	Subcommand string // "" | "show" | "check" | "validate" | "simulate" | "status" | "cleanup"
+	Command    string // "" | "config" | "policy" | "hook" | "offload"
+	Subcommand string // "" | "show" | "check" | "validate" | "simulate" | "status" | "cleanup" | "disable"
 	ShowHelp   bool
 	ShowVer    bool
 	Overrides  config.Overrides
@@ -156,7 +164,7 @@ func Parse(args []string, stderr io.Writer) (*Options, error) {
 	if len(rest) > 0 {
 		opts.Command = rest[0]
 	}
-	if opts.Command == "config" || opts.Command == "policy" || opts.Command == "hook" {
+	if opts.Command == "config" || opts.Command == "policy" || opts.Command == "hook" || opts.Command == "offload" {
 		if len(rest) > 1 {
 			opts.Subcommand = rest[1]
 		}
@@ -225,6 +233,11 @@ func (o *Options) ValidateCommand() error {
 	case "hook":
 		switch o.Subcommand {
 		case "", "status", "cleanup":
+			return nil
+		}
+	case "offload":
+		switch o.Subcommand {
+		case "", "status", "disable":
 			return nil
 		}
 	}

@@ -93,3 +93,25 @@ func TestRegistryQueueOverflow(t *testing.T) {
 		t.Errorf("zero increment changed output:\n%s", buf2.String())
 	}
 }
+
+func TestFlowOffloadStateMetrics(t *testing.T) {
+	r := New()
+	r.SetFlowOffloadState(1) // enabled
+	r.RecordFlowOffloadDisable(true)
+	r.RecordFlowOffloadDisable(false)
+	r.RecordFlowOffloadDisable(false)
+
+	var buf bytes.Buffer
+	r.WritePrometheus(&buf)
+	out := buf.String()
+
+	if !strings.Contains(out, "goshisen_flow_offload_state 1") {
+		t.Errorf("missing state gauge value:\n%s", out)
+	}
+	if !strings.Contains(out, `goshisen_flow_offload_disables_total{result="success"} 1`) {
+		t.Errorf("missing disable success counter:\n%s", out)
+	}
+	if !strings.Contains(out, `goshisen_flow_offload_disables_total{result="failed"} 2`) {
+		t.Errorf("missing disable failed counter:\n%s", out)
+	}
+}

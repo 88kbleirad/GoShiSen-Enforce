@@ -64,7 +64,8 @@ enable it and does not touch the firewall.
 | `api_port` | `0` | optional REST API (loopback only) |
 | `metrics_port` | `0` | optional Prometheus metrics (loopback only) |
 | `queue_maxlen` | `1024` | kernel queue length |
-| `offload_policy` | `warn` | flow-offload response: `warn` (log WARN + gauge), `refuse` (startup fails before hook install when offloading is detected), `readiness` (enforce but never become ready while offloading is active) |
+| `offload_policy` | `warn` | flow-offload response: `warn` (log WARN + gauge), `refuse` (startup fails before hook install when offloading is detected), `readiness` (enforce but never become ready while offloading is active), `enforce` (actively disable offloading and verify; fail closed if disable fails or state is unknown) |
+| `allow_bypass` | `0` | diagnostic/development escape hatch, **only** valid with `offload_policy=enforce`: `1` downgrades enforce to warn (loud warning). Never default, never silent |
 
 Enable and start:
 
@@ -105,7 +106,7 @@ by the late start order.
 | IPv6 forwarded TCP/UDP | queued (queue `101`; `inet` table). Requires the daemon's AF_INET6 bind, otherwise the kernel drops (fail-closed) |
 | Router-local traffic (SSH, LuCI, DNS, DHCP) | never queued: the hook is `forward` only |
 | Non-TCP/UDP | not queued; firewall4 decides |
-| Flow offloading | **detected and warned by default**: established flows bypass the queue. The daemon logs a WARN and exposes `goshisen_flow_offload_active 1`, re-checked every 10 s. `offload_policy` controls the response: `refuse` fails startup before the hook is installed (fail-closed by absence), `readiness` keeps enforcing but never becomes ready while offloading is active. Recommended: keep `flow_offloading` disabled on routers that rely on GoShiSen enforcement |
+| Flow offloading | **detected and warned by default**: established flows bypass the queue. The daemon logs a WARN and exposes `goshisen_flow_offload_state` (0 disabled, 1 enabled, 2 unknown), re-checked every 10 s. `offload_policy` controls the response: `refuse` fails startup before the hook is installed (fail-closed by absence), `readiness` keeps enforcing but never becomes ready while offloading is active, `enforce` actively disables the offload and verifies it, failing closed if the disable fails or state is unknown (unless the explicit `allow_bypass` diagnostic hatch is set). Recommended: keep `flow_offloading` disabled on routers that rely on GoShiSen enforcement |
 
 Stateful IPv6 note: on kernels whose `nfnetlink_queue` build does not
 deliver conntrack attributes for IPv6, IPv6 packets arrive as INVALID

@@ -83,10 +83,13 @@ Run in order. Every item must pass before tagging.
 - [x] IPv6: `inet` hook queues both families; stateless IPv6 allow/
   deny verified on the VM; stateful-v6 limit documented (CT-glue gap →
   INVALID → DROP).
-- [x] Flow offloading: daemon WARN + `goshisen_flow_offload_active`
-  metric, re-checked every 10 s; `offload_policy` (warn|refuse|
-  readiness) config/UCI plumbed with tests; documented UCI
-  recommendation.
+- [x] Flow offloading: daemon WARN + `goshisen_flow_offload_state`
+  metric (0 disabled/1 enabled/2 unknown), re-checked every 10 s;
+  `offload_policy` (warn|refuse|readiness|enforce) config/UCI plumbed
+  with tests; `enforce` disables and verifies (fail-closed if disable
+  fails or state unknown), `allow_bypass` diagnostic hatch; `offload
+  status/disable` CLI; documented UCI recommendation; live OpenWrt lab
+  evidence (`docs/release/prompt15-offload-lab-evidence.md`).
 - [x] Malformed packets: live parse-error path verified on the VM
   (`goshisen_backend_errors_total{kind="parse"}`), fuzz ≥ 60 s clean.
 - [x] Recovery path documented and tested: `goshisen hook cleanup`

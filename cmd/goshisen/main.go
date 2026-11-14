@@ -55,6 +55,12 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	case "offload":
+		if err := runOffload(opts); err != nil {
+			fmt.Fprintf(os.Stderr, "%s: %v\n", cli.Program, err)
+			os.Exit(1)
+		}
+		return
 	case "":
 		// default: run the daemon
 	default:
@@ -86,6 +92,40 @@ func runHook(opts *cli.Options) error {
 		return nil
 	}
 	return fmt.Errorf("internal: unhandled hook subcommand %q", opts.Subcommand)
+}
+
+// runOffload implements the `offload status` and `offload disable`
+// subcommands. status is read-only; disable removes nftables
+// flow-offload state (flowtables + flow-offload rules only) and
+// re-verifies. Nothing else is touched.
+func runOffload(opts *cli.Options) error {
+	switch opts.Subcommand {
+	case "", "status":
+		rep := hook.DetectFlowOffload()
+		switch rep.State {
+		case hook.FlowOffloadDisabled:
+			fmt.Println("offload: disabled (no flowtable / flow-offload rules)")
+		case hook.FlowOffloadEnabled:
+			fmt.Printf("offload: ENABLED (enforcement gap): %s\n", rep.Detail)
+		case hook.FlowOffloadFailed:
+			fmt.Printf("offload: FAILED (disable did not take effect): %s\n", rep.Detail)
+		default:
+			fmt.Printf("offload: UNKNOWN (cannot prove safety): %s\n", rep.Detail)
+		}
+		return nil
+	case "disable":
+		rep := hook.DisableFlowOffload()
+		switch rep.State {
+		case hook.FlowOffloadDisabled:
+			fmt.Println("offload: disabled (verified)")
+			return nil
+		case hook.FlowOffloadFailed:
+			return fmt.Errorf("offload: disable FAILED (still active): %s", rep.Detail)
+		default:
+			return fmt.Errorf("offload: disable failed: state=%s: %s", rep.State, rep.Detail)
+		}
+	}
+	return fmt.Errorf("internal: unhandled offload subcommand %q", opts.Subcommand)
 }
 
 // runPolicy implements the `policy validate`, `policy simulate`, and
