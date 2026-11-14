@@ -79,7 +79,14 @@ Run in order. Every item must pass before tagging.
   tables, `uci commit` causes no restart loop.
 - [x] apk install/upgrade/remove: no fail-open window; `apk del`
 - [x] APK signing test path (Prompt 35):
-- [x] APK production gate wiring (Prompt 36): `scripts/apk-release-gate.sh`
+- [x] APK production gate wiring (Prompt 36):
+- [x] APK staging verification (Prompt 37): production-gate fail-closed
+  verified at `94bd7df` (missing secret → BLOCKED exit 1); staging
+  runbook documented (secret provision → anchor commit+fingerprint →
+  gate → /etc/apk/keys/ install → clean-VM install without
+  `--allow-untrusted` → production-like negative controls). Verdict
+  stays BLOCKED: `GH_RELEASE_APK_SIGNING_KEY` not provisioned, APK
+  anchor absent, owner/rotation/rollback records not recorded. `scripts/apk-release-gate.sh`
   (secret-gated sign → `apk-verify.sh --sha256` → provenance manifest;
   fail-closed exit codes) + `.github/workflows/apk-sign.yml` (test mode
   end-to-end; production mode requires `GH_RELEASE_APK_SIGNING_KEY` +

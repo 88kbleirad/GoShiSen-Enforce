@@ -40,6 +40,8 @@ v0.2.1 build.
 
 | 35 | APK production gate wiring | `scripts/apk-release-gate.sh`, `.github/workflows/apk-sign.yml`, `Makefile` targets, `tests/package/apk_signing_test.go` (+3 gate tests), `docs/release/prompt36-apk-production-gate.md` (main `3250f9d`) | Gate e2e PASS (ephemeral key, real x86 r5 apk, SDK apk): sign→verify→provenance; negatives exit correctly (missing secret→1 BLOCKED, wrong fp→1, missing anchor→1, missing apk→2); Go `Apk` tests 7/7 PASS incl. roundtrip; clean-VM install without `--allow-untrusted` re-verified | Production APK signing remains BLOCKED until approved key/secret/anchor provisioned; workflow never publishes, never `--allow-untrusted`. No production key/secret touched; no feed/release publish |
 
+| 36 | APK staging verification (readiness checkpoint) | `docs/release/prompt37-apk-staging-verification.md` (main `94bd7df`) | Prerequisite audit: `GH_RELEASE_APK_SIGNING_KEY` NOT provisioned (only `GH_RELEASE_SIGNING_KEY` exists); no APK trust anchor; no owner/rotation/rollback record; main unprotected. Production gate fail-closed verified: missing secret → BLOCKED exit 1. Staging runbook documented (secret/anchor/gate/trust-store/clean-VM/negative controls) | Verdict: BLOCKED — readiness stays BLOCKED until the approved key/secret+ anchor + records are provisioned. No key/secret/anchor touched; no feed/release publish |
+
 ## 2. Release assets and checksums (verified 2026-11-13)
 
 Artifacts attached to `v0.2.1` (published `2026-11-13T12:43:29Z`, isDraft=false):
