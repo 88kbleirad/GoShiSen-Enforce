@@ -1,4 +1,6 @@
+# Never commit signing private keys (production key lives only in GH_RELEASE_SIGNING_KEY secret)
+goshisen-release-key.pem
+
+# Build artifacts (local builds / CI caches)
 bin/
-probe
 dist/
-sbom.spdx.json

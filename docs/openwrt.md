@@ -22,8 +22,19 @@ r2 leaves dangling `S12goshisen-boot`/`K10goshisen-boot` rc.d symlinks
 ```sh
 # from the package artifact (signature checks: see "Signing" below)
 wget -O /tmp/goshisen.apk https://example/goshisen-0.2.0-r1.apk
+wget -O /tmp/goshisen.apk.sig https://example/goshisen-0.2.0-r1.apk.sig
+wget -O /tmp/goshisen-release.pub.pem \
+  https://raw.githubusercontent.com/88kbleirad/GoShiSen-Enforce/main/keys/goshisen-release.pub.pem
+openssl pkeyutl -verify -rawin -pubin -inkey /tmp/goshisen-release.pub.pem \
+  -in /tmp/goshisen.apk -sigfile /tmp/goshisen.apk.sig
 apk add --allow-untrusted /tmp/goshisen.apk
 ```
+
+**Signature verification is mandatory** — the `apk add` above must only be run
+after `openssl ... -verify` prints `Signature Verified Successfully`. The
+`--allow-untrusted` flag is a **transition exception** (see "Signing" below)
+and is never a substitute for the Ed25519 check; it will be removed once native
+`usign` apk verification ships.
 
 The package installs:
 
@@ -53,7 +64,8 @@ enable it and does not touch the firewall.
 | `api_port` | `0` | optional REST API (loopback only) |
 | `metrics_port` | `0` | optional Prometheus metrics (loopback only) |
 | `queue_maxlen` | `1024` | kernel queue length |
-| `offload_policy` | `warn` | flow-offload response: `warn` (log WARN + gauge), `refuse` (startup fails before hook install when offloading is detected), `readiness` (enforce but never become ready while offloading is active) |
+| `offload_policy` | `warn` | flow-offload response: `warn` (log WARN + gauge), `refuse` (startup fails before hook install when offloading is detected), `readiness` (enforce but never become ready while offloading is active), `enforce` (actively disable offloading and verify; fail closed if disable fails or state is unknown) |
+| `allow_bypass` | `0` | diagnostic/development escape hatch, **only** valid with `offload_policy=enforce`: `1` downgrades enforce to warn (loud warning). Never default, never silent |
 
 Enable and start:
 
@@ -94,7 +106,7 @@ by the late start order.
 | IPv6 forwarded TCP/UDP | queued (queue `101`; `inet` table). Requires the daemon's AF_INET6 bind, otherwise the kernel drops (fail-closed) |
 | Router-local traffic (SSH, LuCI, DNS, DHCP) | never queued: the hook is `forward` only |
 | Non-TCP/UDP | not queued; firewall4 decides |
-| Flow offloading | **detected and warned by default**: established flows bypass the queue. The daemon logs a WARN and exposes `goshisen_flow_offload_active 1`, re-checked every 10 s. `offload_policy` controls the response: `refuse` fails startup before the hook is installed (fail-closed by absence), `readiness` keeps enforcing but never becomes ready while offloading is active. Recommended: keep `flow_offloading` disabled on routers that rely on GoShiSen enforcement |
+| Flow offloading | **detected and warned by default**: established flows bypass the queue. The daemon logs a WARN and exposes `goshisen_flow_offload_state` (0 disabled, 1 enabled, 2 unknown), re-checked every 10 s. `offload_policy` controls the response: `refuse` fails startup before the hook is installed (fail-closed by absence), `readiness` keeps enforcing but never becomes ready while offloading is active, `enforce` actively disables the offload and verifies it, failing closed if the disable fails or state is unknown (unless the explicit `allow_bypass` diagnostic hatch is set). Recommended: keep `flow_offloading` disabled on routers that rely on GoShiSen enforcement |
 
 Stateful IPv6 note: on kernels whose `nfnetlink_queue` build does not
 deliver conntrack attributes for IPv6, IPv6 packets arrive as INVALID
@@ -139,14 +151,31 @@ blocked by the forward hook, so these commands remain reachable.
 
 ## Signing
 
-Release `.apk` artifacts are built by the SDK and are **not signed with
-a key trusted by a stock OpenWrt** unless you add one. Two options:
+Release `.apk` artifacts are signed with the release Ed25519 key (same key as
+the release archives; signatures attach as `<artifact>.sig`, verified with the
+committed public key `keys/goshisen-release.pub.pem`). Native `usign` apk
+verification (key under `/etc/apk/keys/`) is a follow-up; until it ships, install
+the apk in two steps:
 
-1. Add the release public key to `/etc/apk/keys/` (recommended; then
-   `apk add` works without `--allow-untrusted`).
-2. Install with `--allow-untrusted`. This skips signature verification:
-   anyone who can serve the package can install arbitrary code. Only do
-   this with an artifact whose sha256 you verified out of band.
+1. **Verify the signature first** (mandatory, see Install above):
+
+   ```sh
+   openssl pkeyutl -verify -rawin -pubin -inkey goshisen-release.pub.pem \
+     -in goshisen.apk -sigfile goshisen.apk.sig
+   # must print: Signature Verified Successfully
+   ```
+
+2. `apk add --allow-untrusted goshisen.apk` — **transition exception**:
+   `--allow-untrusted` skips apk's *own* trust check, so the Ed25519
+   verification in step 1 is REQUIRED and MUST have succeeded first. The flag
+   stays only until native `usign` verification lands (backlog #1) and will be
+   removed then; there is no silent fallback — the install fails (human
+   interrupt) if step 1 fails. Do not install an artifact whose signature you
+   have not verified, even with this exception.
+
+The public key fingerprint (SHA-256 of DER SPKI) is
+`24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0`
+(key created 2026-11-13; verify it out-of-band).
 
 ## Verification commands
 

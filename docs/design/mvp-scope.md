@@ -206,3 +206,22 @@ See `docs/design/architecture.md` §8 for the full matrix. MVP pins:
 - architecture.md + this document accurate, README reflecting true status at every phase boundary,
 - tests for every acceptance criterion listed above are part of `go test ./...` or the lab script (no unverifiable acceptance),
 - no known TODOs in the committed code; all reserved features are documented as out-of-scope here.
+
+### Phase 17 — Offload detect + disable (backlog #2)
+- [x] Detect state machine: `disabled` / `enabled` / `failed` / `unknown` (ruleset parse + flowtables fallback; unknown = cannot prove safe).
+- [x] `offload_policy=enforce`: actively disables flow-offload state (flowtables + flow-offload rules, one nft transaction, verified by re-detection); fails closed at startup if disable fails or state is unknown.
+- [x] `allow_bypass` diagnostic/development escape hatch (enforce only; downgrades to warn with a loud warning; never default, never silent).
+- [x] CLI: `goshisen offload status` (read-only, exit 0) and `goshisen offload disable` (idempotent, verified, exit non-zero on failure).
+- [x] Watchdog: re-detects every 10 s; enforce re-attempts disable if an offload appears after startup.
+- [x] Metrics: `goshisen_flow_offload_state` (0/1/2) + `goshisen_flow_offload_disables_total{result=success|failed}`.
+- [x] OpenWrt package: UCI `offload_policy` accepts enforce; UCI `allow_bypass` option rendered; tests in `tests/package`.
+- [x] Docs: `docs/design/offload-disable-phase.md`, `docs/openwrt.md`, architecture §9.
+
+### Phase 18 — Flowtable bypass observability (backlog #3)
+- [x] Measurement contract: flowtable `counter` is the observable hit source; read-only parsing of `nft -a list ruleset` only.
+- [x] State model: absent / present_zero_hit / present_positive_hit / unknown; zero hits ≠ offload disabled (never inferred).
+- [x] `offload observe` CLI: timestamp, state, per-flowtable cumulative hits, confidence (high/limited/unknown) + reason.
+- [x] Metrics: `goshisen_flowtable_hits_packets` (gauge, -1 unavailable) + `goshisen_flowtable_hits_available`; watchdog/startup record them.
+- [x] Counter reset/wraparound handling (DeltaHits): after < before → report current value, no negative deltas.
+- [x] Tests: parser (with/bare/none/malformed counters), delta (positive/reset/zero), observe (absent/unknown/positive/limited), metrics.
+- [x] Docs: `docs/design/offload-observability-phase.md` (contract, state model, reset, platform limits, safety).
