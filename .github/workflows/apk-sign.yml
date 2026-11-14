@@ -31,6 +31,18 @@ on:
         description: "expected anchor fingerprint (SHA-256 of DER SPKI; production)"
         required: false
         default: ""
+      commit_sha:
+        description: "commit SHA to record in provenance (default: the dispatch ref's SHA)"
+        required: false
+        default: ""
+      expected_sha256:
+        description: "expected sha256 of the apk to sign (fail closed on mismatch)"
+        required: true
+        default: ""
+      apk_hint:
+        description: "source of the apk: 'artifact' (uploaded signed-apks? no: apk input path) or 'draft' (draft release asset name)"
+        required: false
+        default: path
 
 permissions:
   contents: read
@@ -73,6 +85,37 @@ jobs:
               *) echo "FAIL: production APK signing allowed only from main or v* tags (ref=${{ github.ref }})" >&2; exit 1 ;;
             esac
           fi
+          # Pre-sign integrity gate: the apk must exist and, when
+          # expected_sha256 is provided, must match exactly. Also extract
+          # the daemon binary sha256 from inside the apk for the approval
+          # summary. Fail closed before any signing.
+          expected="${{ inputs.expected_sha256 }}"
+          if [ "$mode" = "production" ] && [ -n "$expected" ]; then
+            [ -f "$apk_file" ] || { echo "FAIL: apk $apk_file missing (expected_sha256 provided)" >&2; exit 1; }
+            got=$(sha256sum "$apk_file" | awk '{print $1}')
+            if [ "$got" != "$expected" ]; then
+              echo "FAIL: apk sha256 mismatch (expected $expected, got $got)" >&2
+              exit 1
+            fi
+            echo "OK: apk sha256 verified $got"
+          fi
+          # Approval summary (shown on the environment approval screen)
+          if [ "$mode" = "production" ] && [ -f "$apk_file" ]; then
+            echo "== approval summary =="
+            sha256sum "$apk_file"
+            ls -l "$apk_file"
+            # daemon binary sha inside the apk
+            rm -rf /tmp/apk-x && mkdir -p /tmp/apk-x && cd /tmp/apk-x
+            "$APK_TOOL" extract --allow-untrusted "$GITHUB_WORKSPACE/$apk_file" >/dev/null 2>&1 || true
+            if [ -f usr/sbin/goshisen ]; then
+              sha256sum usr/sbin/goshisen
+              file usr/sbin/goshisen
+            else
+              echo "WARN: daemon binary not found in apk listing"
+            fi
+            cd "$GITHUB_WORKSPACE"
+            echo "== end summary =="
+          fi
           if [ "$mode" = "test" ]; then
             tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
             openssl ecparam -name prime256v1 -genkey -noout -out "$tmp/k.pem"
@@ -81,7 +124,7 @@ jobs:
             APK_SIGN_KEY="$(cat "$tmp/k.pem")" \
               bash scripts/apk-release-gate.sh \
                 --apk "$apk_file" --anchor "$tmp/k.pub.pem" --fingerprint "$fp" \
-                --commit "${{ github.sha }}" --tag "${GITHUB_REF_NAME:-dev}" \
+                --commit "${COMMIT_SHA:-${{ github.sha }}}" --tag "${GITHUB_REF_NAME:-dev}" \
                 --builder workflow/apk-sign-test --outdir dist-apk
           else
             anchor="${{ inputs.anchor }}"
@@ -96,7 +139,7 @@ jobs:
             fi
             bash scripts/apk-release-gate.sh \
               --apk "$apk_file" --anchor "$anchor" --fingerprint "$fp" \
-              --commit "${{ github.sha }}" --tag "${GITHUB_REF_NAME:-dev}" \
+              --commit "${COMMIT_SHA:-${{ github.sha }}}" --tag "${GITHUB_REF_NAME:-dev}" \
               --builder workflow/apk-sign-production --outdir dist-apk
           fi
 
