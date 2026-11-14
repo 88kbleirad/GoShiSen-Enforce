@@ -15,9 +15,9 @@ fresh install, default-disabled, enable/start, queues 100+101,
 DROP/ACCEPT controls, offload `enforce` disable (verified), lifecycle
 (stop/start/restart/reload), kill -9 fail-closed + respawn, reboot with
 boot guard, upgrade r4→r5 (config preserved), downgrade r5→r4 (no
-dangling guard links), uninstall cleanup — on x86_64 (aarch64 runtime
-environment-blocked, see report). See
-`docs/release/openwrt-v022-package-validation.md`.
+dangling guard links), uninstall cleanup — on x86_64 and aarch64
+(live armsr/armv8 QEMU, see `docs/release/prompt32-arm64-runtime-validation.md`).
+See `docs/release/openwrt-v022-package-validation.md`.
 
 Downgrade r5→r4 caveat: the r4 daemon (v0.2.1-era binary, pin
 `f5f211a`) does not understand the `allow_bypass` YAML field that the r5

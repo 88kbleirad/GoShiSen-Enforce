@@ -1,0 +1,439 @@
+=== [0] apk + env ===
+APK_SHA=ab3d8ca6fea2cec7a97069cd25623b56f44eb406ace7c34b2ef94f6ab2b8072d
+QEMU=QEMU emulator version 10.0.13 (Debian 1:10.0.13+ds-0+deb13u1)
+FIRMWARE=-bios /usr/share/qemu-efi-aarch64/QEMU_EFI.fd
+IMAGE_SHA=4c983a254d8d90c13750b575003ed7c35320070bd191edc929b835583133dc46
+=== [1] smoke ===
+uname -m; uname -r
+aarch64
+6.12.112
+root@OpenWrt:~# 
+__DRIVER_DONE__
+cat /etc/openwrt_release | grep -E 'VERSION|ARCH' | head -3
+DISTRIB_ARCH='aarch64_generic'
+root@OpenWrt:~# 
+__DRIVER_DONE__
+=== [2] network setup (armsr dual-tap: eth0 LAN, eth1 WAN) ===
+uci set network.@device[0].ports='eth0'
+root@OpenWrt:~# 
+__DRIVER_DONE__
+uci set network.lan.ifname='eth0'
+root@OpenWrt:~# 
+__DRIVER_DONE__
+uci set network.lan.ipaddr='10.0.3.1/24'
+root@OpenWrt:~# 
+__DRIVER_DONE__
+uci set network.wan=interface
+root@OpenWrt:~# 
+__DRIVER_DONE__
+uci set network.wan.device='eth1'
+root@OpenWrt:~# 
+__DRIVER_DONE__
+uci set network.wan.proto='static'
+root@OpenWrt:~# 
+__DRIVER_DONE__
+uci set network.wan.ipaddr='10.0.2.15/24'
+root@OpenWrt:~# 
+__DRIVER_DONE__
+uci set network.wan.gateway='10.0.2.2'
+root@OpenWrt:~# 
+__DRIVER_DONE__
+uci set network.wan6=interface
+root@OpenWrt:~# 
+__DRIVER_DONE__
+uci set network.wan6.device='eth1'
+root@OpenWrt:~# 
+__DRIVER_DONE__
+uci set network.wan6.proto='none'
+root@OpenWrt:~# 
+__DRIVER_DONE__
+uci commit network
+root@OpenWrt:~# 
+__DRIVER_DONE__
+/etc/init.d/network restart
+[  543.125145] br-lan: port 1(eth1) entered disabled state
+[  543.141093] virtio_net virtio1 eth1: left allmulticast mode
+[  543.142392] virtio_net virtio1 eth1: left promiscuous mode
+[  543.142686] br-lan: port 1(eth1) entered disabled state
+root@OpenWrt:~# 
+__DRIVER_DONE__
+ip -4 addr show br-lan | grep -c 10.0.3.1
+1
+root@OpenWrt:~# 
+__DRIVER_DONE__
+ip -4 addr show eth1 | grep -c 10.0.2.15
+1
+root@OpenWrt:~# 
+__DRIVER_DONE__
+ip route | grep -c default
+1
+root@OpenWrt:~# 
+__DRIVER_DONE__
+uci set firewall.@defaults[0].forward='ACCEPT'
+root@OpenWrt:~# 
+__DRIVER_DONE__
+uci commit firewall
+root@OpenWrt:~# 
+__DRIVER_DONE__
+/etc/init.d/firewall restart
+root@OpenWrt:~# 
+__DRIVER_DONE__
+echo 1 > /proc/sys/net/ipv4/ip_forward
+root@OpenWrt:~# 
+__DRIVER_DONE__
+=== [3] install kmods + apk (package manager) ===
+wget -q -O /tmp/kmod-nfnetlink-queue-6.12.112-r1.apk http://10.0
+.2.2:8090/kmod-nfnetlink-queue-6.12.112-r1.apk; ls -l /tmp/kmod-nfnetlink-queue-
+6.12.112-r1.apk
+-rw-r--r--    1 root     root         11717 Nov 14 14:18 [0;0m/tmp/kmod-nfnetlink-queue-6.12.112-r1.apk[m
+root@OpenWrt:~# 
+__DRIVER_DONE__
+wget -q -O /tmp/kmod-nft-queue-6.12.112-r1.apk http://10.0.2.2:8
+090/kmod-nft-queue-6.12.112-r1.apk; ls -l /tmp/kmod-nft-queue-6.12.112-r1.apk
+-rw-r--r--    1 root     root          3064 Nov 14 14:18 [0;0m/tmp/kmod-nft-queue-6.12.112-r1.apk[m
+root@OpenWrt:~# 
+__DRIVER_DONE__
+wget -q -O /tmp/kmod-nf-conntrack-netlink-6.12.112-r1.apk http:/
+/10.0.2.2:8090/kmod-nf-conntrack-netlink-6.12.112-r1.apk; ls -l /tmp/kmod-nf-con
+ntrack-netlink-6.12.112-r1.apk
+-rw-r--r--    1 root     root         17974 Nov 14 14:18 [0;0m/tmp/kmod-nf-conntrack-netlink-6.12.112-r1.apk[m
+root@OpenWrt:~# 
+__DRIVER_DONE__
+[  626.744229] kmodloader: done loading kernel modules from /etc/modules.d/*
+8[0K(2/3) Installing kmod-nfnetlink-queue (6.12.112-r1)
+7  7% ###                                         8[0K7 36% ################                            8[0K7 41% ##################                          8[0K  Executing kmod-nfnetlink-queue-6.12.112-r1.post-install
+7 41% ##################                          [  626.954148] kmodloader: loading kernel modules from /etc/modules.d/*
+[  627.007290] kmodloader: done loading kernel modules from /etc/modules.d/*
+8[0K(3/3) Installing kmod-nft-queue (6.12.112-r1)
+7 41% ##################                          8[0K7 70% ##############################              8[0K7 71% ###############################             8[0K  Executing kmod-nft-queue-6.12.112-r1.post-install
+7 71% ###############################             [  627.193463] kmodloader: loading kernel modules from /etc/modules.d/*
+[  627.228803] kmodloader: done loading kernel modules from /etc/modules.d/*
+8[0K7100% ############################################8[0K7[syncing disks...]8[0KOK: 14.6 MiB in 208 packages
+root@OpenWrt:~# 
+__DRIVER_DONE__
+ls /proc/net/netfilter/nfnetlink_queue
+[0;0m/proc/net/netfilter/nfnetlink_queue[m
+root@OpenWrt:~# 
+__DRIVER_DONE__
+wget -q -O /tmp/goshisen.apk http://10.0.2.2:8090/goshisen.apk; 
+sha256sum /tmp/goshisen.apk
+ab3d8ca6fea2cec7a97069cd25623b56f44eb406ace7c34b2ef94f6ab2b8072d  /tmp/goshisen.apk
+root@OpenWrt:~# 
+__DRIVER_DONE__
+####                           8[0K7 43% ###################                         8[0K7 47% ####################                        8[0K7 51% ######################                      8[0K7 56% ########################                    8[0K7 60% ##########################                  8[0K7 64% ############################                8[0K7 69% ##############################              8[0K7 73% ################################            8[0K7 77% ##################################          8[0K7 82% ####################################        8[0K7 86% ######################################      8[0K7 90% ########################################    8[0K7 95% #########################################   8[0K7 97% ########################################### 8[0K  Executing goshisen-0.2.0-r5.post-install
+7 97% ########################################### 8[0K  * goshisen: service is disabled (goshisen.main.enabled=0)
+7 97% ########################################### 8[0K7100% ############################################8[0K7[syncing disks...]8[0KOK: 21.5 MiB in 209 packages
+root@OpenWrt:~# 
+__DRIVER_DONE__
+apk list --installed 2>/dev/null | grep goshisen
+goshisen-0.2.0-r5 aarch64_generic {feeds/base/feeds/goshisen} () [installed]
+root@OpenWrt:~# 
+__DRIVER_DONE__
+file /usr/sbin/goshisen
+-ash: file: not found
+root@OpenWrt:~# 
+__DRIVER_DONE__
+sha256sum /usr/sbin/goshisen
+b8d19dfca6ed3ca192bdee0ef7ce37b21d5fe8d506a00c4810c792e57da4beba  /usr/sbin/goshisen
+root@OpenWrt:~# 
+__DRIVER_DONE__
+/usr/sbin/goshisen --version | head -1
+goshisen 0.2.0
+root@OpenWrt:~# 
+__DRIVER_DONE__
+=== [4] default-disabled ===
+/etc/init.d/goshisen start; echo RC=$?
+goshisen: service is disabled (goshisen.main.enabled=0)
+RC=0
+root@OpenWrt:~# 
+__DRIVER_DONE__
+ps | grep -c goshisen
+1
+root@OpenWrt:~# 
+__DRIVER_DONE__
+uci get goshisen.main.enabled
+0
+root@OpenWrt:~#
+__DRIVER_DONE__
+=== [5] enable/start/queues ===
+uci set goshisen.main.enabled='1'; uci commit goshisen; /etc/ini
+t.d/goshisen enable; /etc/init.d/goshisen start
+root@OpenWrt:~# 
+__DRIVER_DONE__
+ps | grep -c goshisen
+2
+root@OpenWrt:~# 
+__DRIVER_DONE__
+cat /proc/net/netfilter/nfnetlink_queue
+  100   7049     0 2 65531     0     0        0  1
+  101 2247617041     0 2 65531     0     0        0  1
+root@OpenWrt:~# 
+__DRIVER_DONE__
+nft list chain inet goshisen forward | grep -c 'queue to'
+2
+root@OpenWrt:~# 
+__DRIVER_DONE__
+cat /var/run/goshisen/config.yaml | grep -c allow_bypass
+1
+root@OpenWrt:~# 
+__DRIVER_DONE__
+=== [6] paired controls (LAN client -> guest -> WAN marker) ===
+wget -q -O /etc/goshisen/policy.yaml http://10.0.2.2:8090/policy
+-deny.yaml
+root@OpenWrt:~# 
+__DRIVER_DONE__
+kill -HUP $(cat /tmp/gpid 2>/dev/null || pgrep -f '^/usr/sbin/go
+shisen' | head -1)
+root@OpenWrt:~# 
+__DRIVER_DONE__
+curl: (28) Connection timed out after 6002 milliseconds
+DROP_CURL_EXIT=28
+wget -q -O- http://127.0.0.1:9090/metrics | grep -a '^goshisen_p
+ackets_total'
+goshisen_packets_total{action="drop",protocol="tcp"} 6
+root@OpenWrt:~# 
+__DRIVER_DONE__
+wget -q -O /etc/goshisen/policy.yaml http://10.0.2.2:8090/policy
+-allow.yaml
+root@OpenWrt:~# 
+__DRIVER_DONE__
+kill -HUP $(cat /tmp/gpid 2>/dev/null || pgrep -f '^/usr/sbin/go
+shisen' | head -1)
+root@OpenWrt:~# 
+__DRIVER_DONE__
+ACCEPT_HTTP=000
+logread | grep -aE 'policy (published|reloaded)' | tail -1
+Sat Nov 14 14:21:12 2026 daemon.err goshisen[7049]: time=2026-11-14T14:21:12.296Z level=INFO msg="policy published" version=2 source=sighup rules=2 default_action=DROP
+root@OpenWrt:~# 
+__DRIVER_DONE__
+wget -q -O- http://127.0.0.1:9090/metrics | grep -a '^goshisen_p
+ackets_by_state_total'
+goshisen_packets_by_state_total{state="new"} 12
+root@OpenWrt:~# 
+__DRIVER_DONE__
+=== [7] reload failure ===
+wget -q -O /etc/goshisen/policy.yaml http://10.0.2.2:8090/policy
+-bad.yaml
+root@OpenWrt:~# 
+__DRIVER_DONE__
+kill -HUP $(cat /tmp/gpid 2>/dev/null || pgrep -f '^/usr/sbin/go
+shisen' | head -1)
+root@OpenWrt:~# 
+__DRIVER_DONE__
+logread | grep -a 'rejected' | tail -1
+Sat Nov 14 14:21:29 2026 daemon.err goshisen[7049]: time=2026-11-14T14:21:29.008Z level=WARN msg="policy reload rejected; keeping previous policy" error="policy: default_action: action \"BOGUS\" must be ACCEPT or DROP"
+root@OpenWrt:~# 
+__DRIVER_DONE__
+wget -q -O- http://127.0.0.1:9090/metrics | grep -a 'policy_upda
+tes_total'
+# HELP goshisen_policy_updates_total Policy publish attempts, by bounded outcome.
+# TYPE goshisen_policy_updates_total counter
+goshisen_policy_updates_total{outcome="failure"} 1
+goshisen_policy_updates_total{outcome="success"} 2
+root@OpenWrt:~# 
+__DRIVER_DONE__
+=== [8] offload enforce ===
+uci set firewall.@defaults[0].flow_offloading='1'; uci commit fi
+rewall; /etc/init.d/firewall reload
+root@OpenWrt
+__DRIVER_DONE__
+nft list ruleset | grep -c flowtable
+1
+root@OpenWrt:~# 
+__DRIVER_DONE__
+uci set goshisen.main.offload_policy='enforce'; uci commit goshi
+sen; /etc/init.d/goshisen restart
+root@OpenWrt:~# 
+__DRIVER_DONE__
+logread | grep -a 'offload_policy=enforce' | tail -1
+root@OpenWrt:~# 
+__DRIVER_DONE__
+nft list ruleset | grep -c flowtable
+1
+root@OpenWrt:~# 
+__DRIVER_DONE__
+=== [9] lifecycle + fail-closed ===
+/etc/init.d/goshisen stop; sleep 3; ps | grep -c goshisen
+1
+root@OpenWrt
+__DRIVER_DONE__
+nft list chain inet goshisen forward | grep -c 'queue to'
+2
+root@OpenWrt:~# 
+__DRIVER_DONE__
+/etc/init.d/goshisen start; sleep 6; cat /proc/net/netfilter/nfn
+etlink_queue | grep -c '^ *100 '
+0
+root@OpenWrt:~# 
+__DRIVER_DONE__
+/etc/init.d/goshisen restart; sleep 6; ps | grep -c goshisen
+1
+root@OpenWrt:~
+__DRIVER_DONE__
+=== [10] uninstall cleanup ===
+/etc/init.d/goshisen disable
+root@OpenWrt:
+__DRIVER_DONE__
+https://downloads.openwrt.org/releases/25.12.6/packages/aarch64_generic/packages/packages.adb: No such file or directory
+WARNING: opening from cache https://downloads.openwrt.org/releases/25.12.6/packages/aarch64_generic/routing/packages.adb: No such file or directory
+WARNING: opening from cache https://downloads.openwrt.org/releases/25.12.6/packages/aarch64_generic/telephony/packages.adb: No such file or directory
+WARNING: opening from cache https://downloads.openwrt.org/releases/25.12.6/packages/aarch64_generic/video/packages.adb: No such file or directory
+(1/1) Purging goshisen (0.2.0-r5)
+7  0%                                             8[0K  Executing goshisen-0.2.0-r5.pre-deinstall
+7  0%                                             8[0K  * hook: table inet goshisen removed
+7  0%                                             8[0K  * Command failed: ubus call service delete { "name": "goshisen" } (Not found)
+7  0%                                             8[0K7 73% ################################            8[0K7100% ############################################8[0K7[syncing disks...]8[0KOK: 14.6 MiB in 208 packages
+root@OpenWrt:~# 
+__DRIVER_DONE__
+ls /usr/sbin/goshisen 2>/dev/null || echo BIN_GONE
+BIN_GONE
+root@OpenWrt:~# 
+__DRIVER_DONE__
+ls /etc/rc.d/ | grep -c goshisen
+0
+root@OpenWrt:~# 
+__DRIVER_DONE__
+nft list tables | grep -c goshisen
+0
+root@OpenWrt:~# 
+__DRIVER_DONE__
+=== ARM32 DONE ===
+===CONTROLS===
+=== [R0] reinstall r5 apk ===
+               8[0K7 64% ############################                8[0K7 69% ##############################              8[0K7 73% ################################            8[0K7 77% ##################################          8[0K7 82% ####################################        8[0K7 86% ######################################      8[0K7 90% ########################################    8[0K7 95% #########################################   8[0K7 97% ########################################### 8[0K  Installing file to etc/config/goshisen.apk-new
+7 97% ########################################### 8[0K  Installing file to etc/goshisen/policy.yaml.apk-new
+7 97% ########################################### 8[0K  Executing goshisen-0.2.0-r5.post-install
+7 97% ########################################### 8[0K7100% ############################################8[0K7[syncing disks...]8[0KOK: 21.5 MiB in 209 packages
+root@OpenWrt:~# 
+__DRIVER_DONE__
+apk list --installed 2>/dev/null | grep goshisen
+goshisen-0.2.0-r5 aarch64_generic {feeds/base/feeds/goshisen} () [installed]
+root@OpenWrt:~# 
+__DRIVER_DONE__
+file /usr/sbin/goshisen
+-ash: file: not found
+root@OpenWrt:~# 
+__DRIVER_DONE__
+sha256sum /usr/sbin/goshisen
+b8d19dfca6ed3ca192bdee0ef7ce37b21d5fe8d506a00c4810c792e57da4beba  /usr/sbin/goshisen
+root@OpenWrt:~# 
+__DRIVER_DONE__
+/usr/sbin/goshisen --version | head -1
+goshisen 0.2.0
+root@OpenWrt:~# 
+__DRIVER_DONE__
+=== [R1] enable/start ===
+uci set goshisen.main.enabled='1'; uci commit goshisen; /etc/ini
+t.d/goshisen enable; /etc/init.d/goshisen start
+root@OpenWrt:~# 
+__DRIVER_DONE__
+ps | grep -c goshisen
+1
+root@OpenWrt:~#
+__DRIVER_DONE__
+cat /proc/net/netfilter/nfnetlink_queue
+root@OpenWrt:~# 
+__DRIVER_DONE__
+nft list chain inet goshisen forward | grep -c 'queue to'
+0
+root@OpenWrt:~# 
+__DRIVER_DONE__
+=== [R2] DROP control ===
+wget -q -O /etc/goshisen/policy.yaml http://10.0.2.2:8090/policy
+-deny.yaml
+root@OpenWrt:~# 
+__DRIVER_DONE__
+kill -HUP $(cat /tmp/gpid 2>/dev/null || pgrep -f '^/usr/sbin/go
+shisen' | head -1)
+ash: you need to specify whom to kill
+root@OpenWrt:~# 
+__DRIVER_DONE__
+curl: (28) Connection timed out after 6002 milliseconds
+DROP_CURL_EXIT=28
+wget -q -O- http://127.0.0.1:9090/metrics | grep -a '^goshisen_p
+ackets_total'
+goshisen_packets_total{action="drop",protocol="tcp"} 4
+root@OpenWrt:~# 
+__DRIVER_DONE__
+=== [R3] ACCEPT control ===
+wget -q -O /etc/goshisen/policy.yaml http://10.0.2.2:8090/policy
+-allow.yaml
+root@OpenWrt:~# 
+__DRIVER_DONE__
+kill -HUP $(cat /tmp/gpid 2>/dev/null || pgrep -f '^/usr/sbin/go
+shisen' | head -1)
+root@OpenWrt:~# 
+__DRIVER_DONE__
+ACCEPT_HTTP=200
+logread | grep -aE 'policy (published|reloaded)' | tail -1
+Sat Nov 14 14:29:12 2026 daemon.err goshisen[9080]: time=2026-11-14T14:29:12.640Z level=INFO msg="policy published" version=3 source=sighup rules=2 default_action=DROP
+root@OpenWrt:~# 
+__DRIVER_DONE__
+wget -q -O- http://127.0.0.1:9090/metrics | grep -a '^goshisen_p
+ackets_by_state_total'
+goshisen_packets_by_state_total{state="new"} 5
+goshisen_packets_by_state_total{state="established"} 3092
+root@OpenWrt:~# 
+__DRIVER_DONE__
+=== [R4] offload enforce ===
+uci set firewall.@defaults[0].flow_offloading='1'; uci commit fi
+rewall; /etc/init.d/firewall reload
+root@OpenWrt
+__DRIVER_DONE__
+nft list ruleset | grep -c flowtable
+0
+root@OpenWrt:~# 
+__DRIVER_DONE__
+uci set goshisen.main.offload_policy='enforce'; uci commit goshi
+sen; /etc/init.d/goshisen restart
+root@OpenWrt:~# 
+__DRIVER_DONE__
+logread | grep -a 'offload_policy=enforce' | tail -1
+Sat Nov 14 14:29:31 2026 daemon.err goshisen[9080]: time=2026-11-14T14:29:31.693Z level=INFO msg="offload_policy=enforce: flow offloading disabled (verified)" detail="flow offload disabled"
+root@OpenWrt:~# 
+__DRIVER_DONE__
+nft list ruleset | grep -c flowtable
+0
+root@OpenWrt:~# 
+__DRIVER_DONE__
+=== [R5] stop/start fail-closed ===
+/etc/init.d/goshisen stop; sleep 3; ps | grep -c goshisen
+1
+root@OpenWrt:~# 
+__DRIVER_DONE__
+nft list chain inet goshisen forward | grep -c 'queue to'
+2
+root@OpenWrt:~# 
+__DRIVER_DONE__
+/etc/init.d/goshisen start; sleep 6; cat /proc/net/netfilter/nfn
+etlink_queue | grep -c '^ *100 '
+1
+root@OpenWrt:~# 
+__DRIVER_DONE__
+=== [R6] uninstall ===
+/etc/init.d/goshisen disable
+root@OpenWrt:~# 
+__DRIVER_DONE__
+kages/aarch64_generic/routing/packages.adb: No such file or directory
+WARNING: opening from cache https://downloads.openwrt.org/releases/25.12.6/packages/aarch64_generic/telephony/packages.adb: No such file or directory
+WARNING: opening from cache https://downloads.openwrt.org/releases/25.12.6/packages/aarch64_generic/video/packages.adb: No such file or directory
+(1/1) Purging goshisen (0.2.0-r5)
+7  0%                                             8[0K  Executing goshisen-0.2.0-r5.pre-deinstall
+7  0%                                             8[0K  * hook: table inet goshisen removed
+7  0%                                             8[0K  * Command failed: ubus call service delete { "name": "goshisen" } (Not found)
+7  0%                                             8[0K7 73% ################################            8[0K7100% ############################################8[0K7[syncing disks...]8[0KOK: 14.6 MiB in 208 packages
+root@OpenWrt:~# 
+__DRIVER_DONE__
+ls /usr/sbin/goshisen 2>/dev/null || echo BIN_GONE
+BIN_GONE
+root@OpenWrt:~# 
+__DRIVER_DONE__
+ls /etc/rc.d/ | grep -c goshisen
+0
+root@OpenWrt:~# 
+__DRIVER_DONE__
+nft list tables | grep -c goshisen
+0
+root@OpenWrt:~# 
+__DRIVER_DONE__
+=== CONTROLS DONE ===

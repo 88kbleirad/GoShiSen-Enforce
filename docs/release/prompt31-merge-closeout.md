@@ -36,8 +36,9 @@
 
 ## 4. Limits preserved (unchanged)
 
-- **aarch64 runtime: BLOCKED (environment)** — armsr QEMU UEFI serial
-  issue on the sandbox; build/APK-level aarch64 evidence only.
+- **aarch64 runtime: PASS** (resolve later in Prompt 32) — live armsr/armv8
+  QEMU TCG with `-bios QEMU_EFI.fd` + dual-tap topology; full matrix in
+  `docs/release/prompt32-arm64-runtime-validation.md`.
 - **Production APK signing: BLOCKED** — no production APK key in repo;
   lab used `--allow-untrusted` transition exception only.
 - No new release/tag/assets; no package-feed publish; no production
