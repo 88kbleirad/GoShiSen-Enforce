@@ -271,3 +271,26 @@ the branch was pushed (2026-11-14):
   integration gate, and privileged e2e are all covered by CI on the final
   head.
 - Working tree clean; local == remote at `87e9aa5`.
+
+## 11. Merge & post-merge verification (Prompt 24)
+
+**Merge (2026-11-14T02:42:58Z):**
+- PR #29 squash-merged into `main` (`--squash --delete-branch`); repo
+  history is single-parent (squash), `main` has no branch protection, and
+  all 8 required checks were SUCCESS + `mergeStateStatus=CLEAN` at merge.
+- Squash commit: `e94d60a` — "feat(e2e): reproducible privileged NFQUEUE
+  e2e — runner + env manifest + hardened lab cleanup (prompt 19) (#29)",
+  parent `81d99431` (previous main head), carries all 14 changed files
+  (runner/preflight, unit+integration tests, `internal/app` readiness fix,
+  CI workflow, Makefile, evidence docs).
+- PR #29 state: `MERGED`; feature branch `feat/e2e-reproducibility`
+  deleted on remote.
+
+**Post-merge CI:** push run 43547823103 on `main` at `e94d60a`
+(2026-11-14T02:43:00Z) — result recorded when complete. Local merge-tree
+validation at `e94d60a` PASS: preflight unit tests, hermetic-PATH package
+suite, `TestRunReadiness* -race -count=20`, tagged real-preflight
+integration.
+
+**Final state:** local `main` == origin `main` == `e94d60a`; working tree
+clean; no release/tag/signing-key changes.
