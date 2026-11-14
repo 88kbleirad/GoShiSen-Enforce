@@ -239,3 +239,13 @@ the branch was pushed (2026-11-14):
 - `openwrt-integration` job step "Real preflight gate (same PATH as the
   runner)" ran and passed before the runner step on the final head.
 - Working tree clean; local == remote at `b961c62`.
+
+**Final state after final docs push (head `a01aeec`, 2026-11-14):**
+- Push run 43544252146 + PR run 43544258606: **both completed, success**.
+- PR #29 check rollup at head `a01aeec`: 8/8 **SUCCESS**, MERGEABLE.
+- One transient infra flake observed earlier: PR run 43543591396 (head
+  `f8adc68`) failed in `TestOpenWrtE2E` with "daemon not ready (no
+  NFQUEUE bound)" — a QEMU TCG cold-boot timeout (daemon wait window
+  300s) on the CI host; the identical code passed on the neighboring run
+  (43543586726 push, 43543882131 PR) and on the final heads. No code
+  change was made for it; it did not recur.
