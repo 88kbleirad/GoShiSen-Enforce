@@ -417,6 +417,12 @@ func (d *Daemon) Run(ctx context.Context) error {
 	done := make(chan error, 1)
 	go func() { done <- be.Run(ctx) }()
 
+	// Readiness must be cleared on every exit path (including when the
+	// backend completes first and the select below takes the done branch
+	// instead of ctx.Done()). Otherwise a fast shutdown can leave ready
+	// true after Run returns.
+	defer d.ready.Store(false)
+
 	for {
 		select {
 		case err := <-done:
