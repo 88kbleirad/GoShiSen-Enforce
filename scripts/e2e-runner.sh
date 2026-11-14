@@ -372,8 +372,11 @@ fi
 cleanup() {
   local rc=$?
   say "cleanup (rc=$rc)"
-  # teardown the lab (kills qemu via pidfile, removes netns/tap/bridge)
-  (cd "$ROOT" && bash scripts/openwrt-lab.sh down >/dev/null 2>&1 || true)
+  # teardown the lab (kills qemu via pidfile, removes netns/tap/bridge).
+  # Use the same privilege escalation as `lab up`: the lab's resources
+  # are root-owned when the runner is invoked via sudo -E, and an
+  # unprivileged `down` would silently leave QEMU/netns behind.
+  (cd "$ROOT" && sudo -E bash scripts/openwrt-lab.sh down >/dev/null 2>&1 || true)
   # collect diagnostics on significant failure
   if [ "$rc" -ne 0 ]; then
     collect_artifacts
