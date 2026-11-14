@@ -177,6 +177,11 @@ Environment-applicable limits:
 - PR: https://github.com/88kbleirad/GoShiSen-Enforce/pull/33 (open; not merged).
 - CI runs (post-push) tracked in evidence-index row 30.
 - Approval gate: merge only after 6/6 CI jobs succeed (repo convention).
+- Known CI flake (not a code regression): the `openwrt e2e` job can hit
+  the cold-TCG-boot 300s daemon-ready timeout (all gate tests PASS; the
+  runner times out waiting for `NFQUEUE bound` on a loaded shared
+  runner). Matches the documented repo flake; rerun on identical code
+  passes. The push run for the same head passed 6/6.
 
 ## 10. Evidence files
 
