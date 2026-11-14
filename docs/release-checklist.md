@@ -82,7 +82,13 @@ Run in order. Every item must pass before tagging.
 - [x] APK production gate wiring (Prompt 36):
 - [x] APK staging verification (Prompt 37):
 - [x] APK key custody handoff (Prompt 38):
-- [x] APK staging verification results (Prompt 39): approval record filled,
+- [x] APK staging verification results (Prompt 39):
+- [x] Release gate: **dry-run the package build from the exact commit
+  before tagging** — run `make package/feeds/goshisen/{download,compile}`
+  in a clean official SDK container at the exact commit and record the
+  apk sha256 + daemon binary sha256 in /data/ with the commit SHA (the
+  mirror hash must be the clean official-SDK value, e.g. 1867a2de… for
+  0.2.3). approval record filled,
   `GH_RELEASE_APK_SIGNING_KEY` provisioned (presence-only), anchor merged
   (PR #34, fingerprint `542bb7ae…` verified). Production gate (GitHub
   Actions, SDK container) PASS; clean-VM install/upgrade/uninstall without

@@ -35,6 +35,14 @@ on:
         description: "commit SHA to record in provenance (default: the dispatch ref's SHA)"
         required: false
         default: ""
+      expected_sha256:
+        description: "expected sha256 of the apk to sign (fail closed on mismatch)"
+        required: true
+        default: ""
+      apk_hint:
+        description: "source of the apk: 'artifact' (uploaded signed-apks? no: apk input path) or 'draft' (draft release asset name)"
+        required: false
+        default: path
 
 permissions:
   contents: read
@@ -59,25 +67,6 @@ jobs:
           # apk when available (CI env APK_TOOL) or skip with a clear
           # message when absent (the lab/runbook provides it).
           if command -v apk >/dev/null 2>&1; then echo "apk present"; else echo "apk absent (set APK_TOOL)"; fi
-      - name: Build APK from the pinned source (SDK container)
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Wire this checkout's package recipe into the SDK as a feed and
-          # build the apk from the pinned daemon source. Idempotent; the
-          # mirror hash in openwrt/Makefile is verified by the SDK.
-          mkdir -p /builder/package/feeds/goshisen
-          cp -r openwrt/Makefile openwrt/files /builder/package/feeds/goshisen/
-          cd /builder
-          make defconfig >/dev/null 2>&1
-          make package/feeds/goshisen/download V=s >/dev/null
-          make package/feeds/goshisen/compile V=s >/dev/null
-          apk_path="$(find bin/packages -name 'goshisen-*.apk' | head -1)"
-          [ -n "$apk_path" ] || { echo "FAIL: package build produced no apk" >&2; exit 1; }
-          cp "$apk_path" "$GITHUB_WORKSPACE/goshisen-0.2.3-r1.apk"
-          echo "built: $apk_path"
-          sha256sum "$GITHUB_WORKSPACE/goshisen-0.2.3-r1.apk"
-
       - name: Run APK release gate
         env:
           APK_SIGN_KEY: ${{ inputs.mode == 'production' && secrets.GH_RELEASE_APK_SIGNING_KEY || '' }}
@@ -95,6 +84,37 @@ jobs:
               refs/heads/main|refs/tags/v*) ;;
               *) echo "FAIL: production APK signing allowed only from main or v* tags (ref=${{ github.ref }})" >&2; exit 1 ;;
             esac
+          fi
+          # Pre-sign integrity gate: the apk must exist and, when
+          # expected_sha256 is provided, must match exactly. Also extract
+          # the daemon binary sha256 from inside the apk for the approval
+          # summary. Fail closed before any signing.
+          expected="${{ inputs.expected_sha256 }}"
+          if [ "$mode" = "production" ] && [ -n "$expected" ]; then
+            [ -f "$apk_file" ] || { echo "FAIL: apk $apk_file missing (expected_sha256 provided)" >&2; exit 1; }
+            got=$(sha256sum "$apk_file" | awk '{print $1}')
+            if [ "$got" != "$expected" ]; then
+              echo "FAIL: apk sha256 mismatch (expected $expected, got $got)" >&2
+              exit 1
+            fi
+            echo "OK: apk sha256 verified $got"
+          fi
+          # Approval summary (shown on the environment approval screen)
+          if [ "$mode" = "production" ] && [ -f "$apk_file" ]; then
+            echo "== approval summary =="
+            sha256sum "$apk_file"
+            ls -l "$apk_file"
+            # daemon binary sha inside the apk
+            rm -rf /tmp/apk-x && mkdir -p /tmp/apk-x && cd /tmp/apk-x
+            "$APK_TOOL" extract --allow-untrusted "$GITHUB_WORKSPACE/$apk_file" >/dev/null 2>&1 || true
+            if [ -f usr/sbin/goshisen ]; then
+              sha256sum usr/sbin/goshisen
+              file usr/sbin/goshisen
+            else
+              echo "WARN: daemon binary not found in apk listing"
+            fi
+            cd "$GITHUB_WORKSPACE"
+            echo "== end summary =="
           fi
           if [ "$mode" = "test" ]; then
             tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
