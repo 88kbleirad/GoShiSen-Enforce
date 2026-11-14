@@ -90,8 +90,8 @@ die() { echo "[e2e-runner] ERROR: $*" >&2; exit "${2:-1}"; }
 #
 # Gates run in this fixed order so the result is deterministic and does
 # not depend on which tools happen to be installed on the test host.
-# Each gate is injectable via E2E_PREFLIGHT_FIXTURE (see below) for
-# hermetic tests; E2E_MOCK_CONFIG remains as a config-input stub.
+# All host observations are injectable via E2E_PREFLIGHT_FIXTURE (see
+# below) for hermetic tests; malformed input is exercised with real args.
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
@@ -332,10 +332,7 @@ preflight_resources() {
 }
 
 preflight() {
-  # 1. CONFIG gate
-  if [ -n "${E2E_MOCK_CONFIG:-}" ]; then
-    mock_state_out CONFIG_ERROR "invalid configuration (E2E_MOCK_CONFIG=${E2E_MOCK_CONFIG})"
-  fi
+  # 1. CONFIG gate (malformed args/input)
   [ -n "$DAEMON" ] || mock_state_out CONFIG_ERROR "--daemon path is required"
   [ -n "$IMAGE" ] || mock_state_out CONFIG_ERROR "--image path is required"
 

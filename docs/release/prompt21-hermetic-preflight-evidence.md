@@ -60,7 +60,7 @@ a qemu-less container with qemu/nft/iptables/sudo missing from PATH.
 | TestPreflightDiagnosticsStable | all present, nft absent | exactly one MISSING_DEPENDENCY naming nft + install remediation | 3 |
 | TestRunnerPreflightBlockedNoSudo | no sudo + qemu absent | BLOCKED (privilege before tool) | 3 |
 | TestPreflightMissingToolAfterPrivilege | qemu absent | MISSING_DEPENDENCY names qemu | 3 |
-| TestPreflightConfigError | E2E_MOCK_CONFIG=bad | CONFIG_ERROR | 3 |
+| TestPreflightConfigError | `--daemon ""` (malformed args) | CONFIG_ERROR | 3 |
 | TestPreflightStateMachineTable | 15 sub-cases | every state × exit code + multi-fault precedence (config > privilege > dependency > resource) | - |
 
 The table covers: ready, blocked, blocked-with-missing-tool, missing qemu,

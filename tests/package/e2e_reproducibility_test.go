@@ -60,12 +60,20 @@ func fixtureWith(t *testing.T, overrides map[string]string) string {
 	return path
 }
 
-func runRunnerPreflight(t *testing.T, fixture string, env ...string) (string, int) {
+func runRunnerPreflight(t *testing.T, fixture string, envAndArgs ...string) (string, int) {
 	t.Helper()
 	args := []string{
 		filepath.Join(repoRoot(t), "scripts", "e2e-runner.sh"),
 		"--artifacts", t.TempDir(),
 		"--fixture", fixture,
+	}
+	env := []string{}
+	for _, e := range envAndArgs {
+		if strings.Contains(e, "=") {
+			env = append(env, e)
+		} else {
+			args = append(args, e)
+		}
 	}
 	cmd := exec.Command("bash", args...)
 	cmd.Env = append(os.Environ(), env...)
@@ -185,7 +193,7 @@ func TestPreflightMissingToolAfterPrivilege(t *testing.T) {
 
 // CONFIG_ERROR: malformed configuration input.
 func TestPreflightConfigError(t *testing.T) {
-	out, rc := runRunnerPreflight(t, fixtureWith(t, nil), "E2E_MOCK_CONFIG=bad")
+	out, rc := runRunnerPreflight(t, fixtureWith(t, nil), "--daemon", "")
 	if rc != 3 {
 		t.Fatalf("rc = %d, want 3:\n%s", rc, out)
 	}
@@ -200,6 +208,7 @@ func TestPreflightStateMachineTable(t *testing.T) {
 		name     string
 		fixture  map[string]string
 		env      []string
+		args     []string
 		want     string
 		wantRC   int
 		wantName string
@@ -271,9 +280,9 @@ func TestPreflightStateMachineTable(t *testing.T) {
 			notWants: []string{"MISSING_DEPENDENCY", "READY"},
 		},
 		{
-			name:     "config_error_mock",
+			name:     "config_error_bad_args",
 			fixture:  map[string]string{},
-			env:      []string{"E2E_MOCK_CONFIG=bad"},
+			args:     []string{"--daemon", ""},
 			want:     "CONFIG_ERROR",
 			wantRC:   3,
 			notWants: []string{"BLOCKED", "MISSING_DEPENDENCY", "RESOURCE", "READY"},
@@ -285,7 +294,7 @@ func TestPreflightStateMachineTable(t *testing.T) {
 				"tool qemu-system-x86_64": "absent",
 				"port 5555":               "occupied",
 			},
-			env:      []string{"E2E_MOCK_CONFIG=bad"},
+			args:     []string{"--daemon", ""},
 			want:     "CONFIG_ERROR",
 			wantRC:   3,
 			notWants: []string{"BLOCKED", "MISSING_DEPENDENCY", "RESOURCE", "READY"},
@@ -347,7 +356,7 @@ func TestPreflightStateMachineTable(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			fixture := fixtureWith(t, tc.fixture)
-			out, rc := runRunnerPreflight(t, fixture, tc.env...)
+			out, rc := runRunnerPreflight(t, fixture, append(tc.env, tc.args...)...)
 			if rc != tc.wantRC {
 				t.Fatalf("rc = %d, want %d:\n%s", rc, tc.wantRC, out)
 			}
