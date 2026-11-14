@@ -174,6 +174,7 @@ Environment-applicable limits:
 ## 9. PR / CI
 
 - Branch: `feat/openwrt-pin-v0.2.2` (this PR).
+- PR: https://github.com/88kbleirad/GoShiSen-Enforce/pull/33 (open; not merged).
 - CI runs (post-push) tracked in evidence-index row 30.
 - Approval gate: merge only after 6/6 CI jobs succeed (repo convention).
 
