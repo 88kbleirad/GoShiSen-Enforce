@@ -175,3 +175,35 @@ prompt-20 commit `36dc861`:
 Until that completes, the CI evidence for the prompt-21 code is the local
 and sandbox verification in sections 5–7; it has **not** been produced by
 GitHub Actions yet.
+
+## 10. Prompt 23 — CI regression root cause + re-verification
+
+**Symptom:** PR #29's `build, vet, test` job fails at step "Test" on the
+remote head `36dc861` (`TestPreflightReady` → MISSING_DEPENDENCY qemu;
+`TestPreflightPortOccupied` → MISSING_DEPENDENCY qemu; `TestPreflightDiagnosticsStable`
+→ stops at qemu). Runner: Ubuntu 26.04 without QEMU.
+
+**Root cause (verified by direct comparison):**
+- CI/PR #29 head is `36dc861` (prompt-20 code). It contains the *old*
+  mock-based preflight (`E2E_MOCK_SUDO` / `E2E_MOCK_MISSING_TOOLS` /
+  `E2E_MOCK_PORT_OCCUPIED`), which scans the **real host PATH** for tools.
+- The prompt-21 hermetic fix is **local only**: commits `f953239`,
+  `fd5454a`, `cafe48c`, `8ffccc8` on `feat/e2e-reproducibility` were never
+  pushed (credentials were 401/invalid at push time).
+- Not a workflow-checkout bug, not a fixture-parse bug, not a regression in
+  the fix itself: the fix simply never reached the remote.
+
+**Local re-verification at HEAD `8ffccc8` (all PASS):**
+- `go test ./tests/package -run 'Preflight|Runner' -count=1`
+- `go test ./tests/package -count=1`
+- `go test -race ./...`
+- `make check`
+- `PATH=/usr/bin:/bin go test ./tests/package -count=1` (hermetic)
+- `docker run golang:1.25` (no qemu/nft/ip/sudo): unit tests PASS
+- `go test -tags preflight_integration -run '^TestPreflightReal$' ./tests/integration`
+  → BLOCKED (no privilege) with explicit reason — valid outcome, not a
+  unit-test failure.
+
+**Action taken:** device-flow auth initiated and authorized by the user;
+push is pending the access-token grant. See section 9 for the exact
+commands if the token is not obtainable.
