@@ -445,6 +445,25 @@ func TestLabScriptsCleanupSafety(t *testing.T) {
 	}
 }
 
+// TestE2ERunnerBootsProvisionedImage asserts the runner boots the image
+// it provisioned (--image / E2E_IMAGE), never the lab script's own
+// default. A mismatch silently runs the e2e against a stale image.
+func TestE2ERunnerBootsProvisionedImage(t *testing.T) {
+	b, err := os.ReadFile(e2eScript(t, "e2e-runner.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	for _, want := range []string{
+		`OPENWRT_IMAGE="$IMAGE"`,
+		"openwrt-lab.sh up",
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("e2e-runner.sh missing %q (boot must use the provisioned image)", want)
+		}
+	}
+}
+
 // TestLabScriptSyntax validates all three scripts parse cleanly.
 func TestLabScriptSyntax(t *testing.T) {
 	for _, name := range []string{"openwrt-lab.sh", "e2e-runner.sh", "e2e-env-manifest.sh"} {

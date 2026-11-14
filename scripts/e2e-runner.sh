@@ -419,8 +419,11 @@ if ! provision_image; then
 fi
 
 # --- boot lab ---
-say "booting lab"
-(cd "$ROOT" && sudo -E bash scripts/openwrt-lab.sh up) \
+# The lab must boot the image we provisioned, not its own default
+# (OPENWRT_IMAGE defaults to /tmp/owrt.img inside the lab script). Pass
+# the image explicitly so a custom --image path is honored.
+say "booting lab (image: $IMAGE)"
+(cd "$ROOT" && OPENWRT_IMAGE="$IMAGE" sudo -E bash scripts/openwrt-lab.sh up) \
   || die "lab up failed" 5
 
 # Wait for serial console.
