@@ -11,13 +11,14 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=goshisen
-PKG_VERSION:=0.2.0
-# Package version is independent of the CLI release. The package ships
-# the daemon source pinned by PKG_SOURCE_VERSION below (release v0.2.2,
-# tag object 92cc351b -> commit c5de6e8). PKG_RELEASE bumped to 5 for
-# this source-pin upgrade; any packaging-recipe change must bump it
-# again.
-PKG_RELEASE:=5
+PKG_VERSION:=0.2.3
+# Package version is independent of the CLI release, but for this release
+# it is aligned with the CLI tag (v0.2.3). The daemon source is pinned by
+# PKG_SOURCE_VERSION below (v0.2.2 source commit c5de6e8; the v0.2.3
+# release is packaging/signing-only — no runtime change). PKG_RELEASE=1
+# restarts the package release counter for the new PKG_VERSION
+# (0.2.3-r1 > 0.2.0-r5 under apk ordering).
+PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/88kbleirad/GoShiSen-Enforce.git
