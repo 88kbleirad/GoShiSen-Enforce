@@ -24,6 +24,8 @@ v0.2.1 build.
 | 09 | e2e reload-gate fix | PR #20 `8e007a5d` | push 43435999202 / PR 43436009943 (both success 4/4) | harness-only fix + 13 regression tests |
 | 10 | Review + merge #20, record | PR #20 `8e007a5d`; PR #21 `0d4dcd9f` | main post-merge 43437820844 (success 4/4, 0 skips) | release decision: keep v0.2.1 |
 | 11 | Evidence index + backlog | PR #22 `447298df` | push 43439564775 / PR 43439586070 (both success 4/4, 0 skips) | docs-only; tag/release untouched |
+| 19 | Privileged NFQUEUE e2e reproducibility | `feat/e2e-reproducibility` (this PR) | local make check + go test green; instabox privileged runner PASS; unprivileged BLOCKED exit 3; CI job uses the runner | `scripts/e2e-runner.sh` (preflight/manifest/pinned-provision/boot/e2e/trap-teardown/artifacts) + `scripts/e2e-env-manifest.sh` + hardened lab up/down; tests (manifest/missing-tool/BLOCKED/cleanup). Evidence: `docs/release/prompt19-e2e-reproducibility-evidence.md`, design `docs/design/e2e-reproducibility-phase.md` |
+| 20 | Typed preflight state machine | `feat/preflight-states` (this PR) | go test preflight + full suite + make check PASS; simulated CI runner (no qemu) BLOCKED/READY; instabox privileged e2e PASS (READY → DROP/ACCEPT) | preflight refactored: CONFIG_ERROR/BLOCKED/MISSING_DEPENDENCY/RESOURCE/READY typed states, deterministic gate order (privilege before tools), injectable mocks (E2E_MOCK_* + PREFLIGHT_ONLY); regression tests for precedence/ordering/ports/config/diagnostics. Evidence: `docs/release/prompt20-preflight-states-evidence.md`, design `docs/design/e2e-reproducibility-phase.md` §8 |
 
 ## 2. Release assets and checksums (verified 2026-11-13)
 
