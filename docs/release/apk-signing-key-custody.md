@@ -91,6 +91,31 @@ apk del goshisen                # uninstall
 #    tampered APK / checksum mismatch / provenance mismatch
 ```
 
+## 4b. Secret protection (Task 2, Proposal 39)
+
+- `GH_RELEASE_APK_SIGNING_KEY` is currently a **repository-level** secret
+  (no environments exist). Only `apk-sign.yml` references it; it resolves
+  `secrets.GH_RELEASE_APK_SIGNING_KEY` only when `mode=production`.
+- Proposed (implemented in PR for the repo-file part; settings are manual
+  owner actions): a GitHub **Environment `signing`** restricted to `main`
+  and `refs/tags/v*` with required reviewers; the job declares
+  `environment: signing` so the secret is resolved from that environment;
+  a production-ref guard in the workflow fails closed for any other ref;
+  `concurrency` prevents overlapping sign runs; workflow permissions stay
+  `contents: read`; third-party actions pinned by SHA (checkout already
+  pinned; any added action must be pinned).
+- **Settings the owner must apply by hand**:
+  1. Create Environment `signing`; protection rules: only `main` and
+     `refs/tags/v*`; required reviewers for the protected refs.
+  2. Move `GH_RELEASE_APK_SIGNING_KEY` from repository secrets to the
+     `signing` environment.
+  3. (Recommended) Repository Actions > General > Policy: change
+     `Allowed actions` to *Selected* and allowlist the pinned action
+     SHAs (current policy is `all`).
+  4. (Recommended) Branch protection on `main`: require PR review + the
+     required status checks for the release path.
+
+
 ## 5. Rotation and revocation
 
 - **Rotation** (on schedule or incident): generate a new keypair, add the

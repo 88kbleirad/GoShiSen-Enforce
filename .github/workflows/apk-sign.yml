@@ -38,6 +38,13 @@ permissions:
 jobs:
   sign:
     runs-on: ubuntu-24.04
+    # The production signing key is scoped to the `signing` environment
+    # (restricted to main / release tags with required reviewers). The
+    # secret is resolved only through that environment scope.
+    environment: signing
+    concurrency:
+      group: apk-sign-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install openssl + apk-tools (v3)
@@ -60,6 +67,12 @@ jobs:
             exit 0
           fi
           mode="${{ inputs.mode }}"
+          if [ "$mode" = "production" ]; then
+            case "${{ github.ref }}" in
+              refs/heads/main|refs/tags/v*) ;;
+              *) echo "FAIL: production APK signing allowed only from main or v* tags (ref=${{ github.ref }})" >&2; exit 1 ;;
+            esac
+          fi
           if [ "$mode" = "test" ]; then
             tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
             openssl ecparam -name prime256v1 -genkey -noout -out "$tmp/k.pem"
