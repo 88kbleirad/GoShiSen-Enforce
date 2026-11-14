@@ -40,7 +40,7 @@ the validation results below apply unchanged to the final tree.
 | Package reproducibility | two `make package VERSION=0.2.1-ready` builds → amd64 archive **byte-identical**, checksums identical |
 | `make verify-package` | PASS (arch/version/checksums/SBOM) |
 | Published release assets | re-downloaded, checksums verified OK (untouched by PR #29) |
-| Post-merge main CI | runs 43547823103 / 43548043021 / 43548389934 — all success 4/4; audit docs run **43549454924 @ `80edf70`** — **success 4/4** (build/vet/test, package, integration, openwrt e2e) |
+| Post-merge main CI | runs 43547823103 / 43548043021 / 43548389934 / 43549454924 — all success 4/4; run 43549945105 (`bb72f6d`, docs-only) failed only on `openwrt e2e` with the **known transient flake** (`daemon not ready (no NFQUEUE bound)` — cold QEMU TCG boot exceeding the 300s wait); the same docs-only code passed on adjacent runs. Not a code regression. |
 
 ## 4. Artifact / package / signature status
 
