@@ -1,8 +1,10 @@
 # v0.2.2 Release Readiness — Candidate Report (Prompt 26)
 
 **Date:** 2026-11-14 (UTC)
-**Candidate tree:** `main` @ `18ab946` (HEAD == origin/main, working tree
-clean at audit time; local repo untouched by the audit).
+**Candidate tree:** `main` @ `18ab946` for all validation evidence below;
+candidate docs committed and pushed as `3a95a46` (documentation-only — no
+code/build/packaging change), so the §3 results apply unchanged to the
+final head. Working tree clean at audit time.
 **Auditor:** omp / 88kbleirad
 
 > This report prepares the candidate **only**. Nothing here tags, versions,
@@ -79,7 +81,7 @@ documentation commits (`f0c923a` → `18ab946`).
 | `make check` | PASS | fmt/vet/test/static build |
 | `make package VERSION=0.2.2-ready` × 2 | **byte-identical** | amd64 `cfa3cf7e82352b88fe5e0b4a538c84ec1bb5d3d2f3c0f9b6363b5403d869df8b`, arm64 `20372150d1e6739bd98e62fe1a330d95bbc60a5aa47000f7a33a391698591e88` on both runs |
 | `make verify-package VERSION=0.2.2-ready` | PASS | arch, `goshisen 0.2.2-ready` stamp, checksums, SPDX-2.3 SBOM |
-| Privileged OpenWrt e2e runner (instabox, main tree) | [filled after run] | `scripts/e2e-runner.sh` on instabox |
+| Privileged OpenWrt e2e runner (instabox, main tree) | PASS | `scripts/e2e-runner.sh` on instabox (`main` @ `18ab946`, daemon `goshisen 0.2.2-ready`): preflight READY → image provisioned (checksum-pinned) → boot (console up 4s) → `TestOpenWrtE2E` PASS in 158.77s — DROP control PASS (curl exit=28, daemon drop verdicts +7, hook +7, queue drops +0), ACCEPT control PASS (HTTP 200 marker, accept verdicts +13, hook +13); all 14 gate tests PASS; cleanup rc=0; artifacts in `/data/prompt26-artifacts/` |
 
 ## 4. Reproducibility
 
