@@ -34,6 +34,8 @@ v0.2.1 build.
 
 | 32 | OpenWrt r5 aarch64 runtime validation | `docs/release/prompt32-arm64-runtime-validation.md`, `evidence/prompt32/arm64-runtime-log.txt` (main `3c728f2`) | Live armsr/armv8 QEMU 10.0.13 TCG, `-bios QEMU_EFI.fd`, dual-tap topology (LAN ns + WAN ns marker :8090); APK `ab3d8ca6…` installed via apk; results: fresh install, default-disabled, enable/start queues 100+101, DROP/ACCEPT paired controls (curl 28 / HTTP 200, verdicts + state counters), reload rejected (outcome=failure), offload enforce verified, stop/start fail-closed, uninstall cleanup | Resolves the earlier aarch64 runtime BLOCKED (firmware boot strategy + NIC mapping found). Limits kept: TCG emulation (no HW), production APK signing still BLOCKED (no key). No tag/release/feed publish |
 
+| 33 | Production APK signing readiness audit | `docs/release/prompt34-apk-signing-readiness.md`, corrected `docs/openwrt.md` §Signing (main `94dddac`) | Roles distinguished (release-artifact signer vs APK signer vs apk trust vs provenance); workflow facts: release.yml signs CLI artifacts only, no APK step; anchor fingerprint verified `24215e…`; negative controls (ephemeral test key) unsigned→3, tampered→4, wrong-key→4, provenance-mismatch→5, missing-provenance→8, valid→PASS; 16 signing unit tests PASS | Verdict: BLOCKED — missing production APK signing key + feed trust-store access; readiness prerequisites + exact post-key commands documented. No key created/rotated/exported; no secret read; no tag/release/feed publish |
+
 ## 2. Release assets and checksums (verified 2026-11-13)
 
 Artifacts attached to `v0.2.1` (published `2026-11-13T12:43:29Z`, isDraft=false):

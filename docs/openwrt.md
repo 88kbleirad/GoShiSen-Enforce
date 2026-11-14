@@ -59,21 +59,19 @@ four rc.d links (verified).
 ## Install
 
 ```sh
-# from the package artifact (signature checks: see "Signing" below)
-wget -O /tmp/goshisen.apk https://example/goshisen-0.2.0-r1.apk
-wget -O /tmp/goshisen.apk.sig https://example/goshisen-0.2.0-r1.apk.sig
-wget -O /tmp/goshisen-release.pub.pem \
-  https://raw.githubusercontent.com/88kbleirad/GoShiSen-Enforce/main/keys/goshisen-release.pub.pem
-openssl pkeyutl -verify -rawin -pubin -inkey /tmp/goshisen-release.pub.pem \
-  -in /tmp/goshisen.apk -sigfile /tmp/goshisen.apk.sig
+# transition install (no APK signature is published yet — see "Signing")
+wget -O /tmp/goshisen.apk https://example/goshisen-0.2.0-r5.apk
+sha256sum /tmp/goshisen.apk   # compare against the recorded build hash
 apk add --allow-untrusted /tmp/goshisen.apk
 ```
 
-**Signature verification is mandatory** — the `apk add` above must only be run
-after `openssl ... -verify` prints `Signature Verified Successfully`. The
-`--allow-untrusted` flag is a **transition exception** (see "Signing" below)
-and is never a substitute for the Ed25519 check; it will be removed once native
-`usign` apk verification ships.
+**APK package signing is not yet implemented** (see "Signing"). Until it
+ships, the package is verified by its published build hash
+(sha256) and installed with `--allow-untrusted` — a **transition
+exception** only, never a production trust mechanism. Do not treat this
+as signed-package evidence. Once APK signing + `usign` verification land,
+this flag is removed and the failure mode is a hard package-manager
+rejection (no silent fallback).
 
 The package installs:
 
@@ -190,11 +188,12 @@ blocked by the forward hook, so these commands remain reachable.
 
 ## Signing
 
-Release `.apk` artifacts are signed with the release Ed25519 key (same key as
-the release archives; signatures attach as `<artifact>.sig`, verified with the
-committed public key `keys/goshisen-release.pub.pem`). Native `usign` apk
-verification (key under `/etc/apk/keys/`) is a follow-up; until it ships, install
-the apk in two steps:
+**Status: APK package signing is not yet implemented** (backlog). The
+release workflow signs the CLI release archives (tarballs, checksums,
+SBOM) with the Ed25519 production key; it does **not** produce
+`.apk` signature artifacts. Native `usign` apk verification (key under
+`/etc/apk/keys/`) is the planned follow-up. Until it ships, the
+OpenWrt package is installed in two steps (transition exception):
 
 1. **Verify the signature first** (mandatory, see Install above):
 
