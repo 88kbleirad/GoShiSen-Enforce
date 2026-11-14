@@ -3,8 +3,8 @@
 **Date:** 2026-11-14 (UTC)
 **Candidate tree:** the candidate commit is **`main` @ `9147a0e`**
 (HEAD == origin/main; previous heads `18ab946`, docs `3a95a46`/
-`cc9c625`/`5a29232`, runner fixes `df6b0a0`/`9147a0e`). Two code fixes
-landed during the audit — see §3.1:
+`cc9c625`/`5a29232`/`39f94ee`/`dc1fb88`, runner fixes `df6b0a0`/
+`9147a0e`). Two code fixes landed during the audit — see §3.1:
 - `df6b0a0`: `e2e-runner.sh` booted the lab's default image instead of
   the one it provisioned; it now passes `OPENWRT_IMAGE=$IMAGE`.
 - `9147a0e`: teardown (`cleanup` → `openwrt-lab.sh down`) now runs with
@@ -22,10 +22,10 @@ Validation results below were re-run on `main` @ `9147a0e`.
 | Item | State |
 | --- | --- |
 | Source version | `internal/cli.Version` / `internal/app.Version` = `"dev"` (link-time stamped by `make`/`scripts/package.sh`) |
-| Makefile | `VERSION ?= $(shell git describe --tags --always --dirty)` → `v0.2.1-12-g18ab946` at candidate HEAD |
+| Makefile | `VERSION ?= $(shell git describe --tags --always --dirty)` → `v0.2.1-19-gdc1fb88` at final head |
 | Tag `v0.2.1` | exists; annotated tag object `6eb19f3` → commit `9ca71333`; SSH-signed (ED25519 `SHA256:0gqDKmaCx9LINggxwf3ERSvmT+GvFD3hMwZp+OQakWc`) — **untouched** |
 | Release `v0.2.1` | published `2026-11-13T12:43:29Z`; assets verified intact — **untouched** |
-| Candidate | `main` @ `18ab946` = tag + 12 commits (21 files, +2455/−62) |
+| Candidate | `main` @ `9147a0e` = tag + 15 commits (23 files, +2782/−62) + final docs head `dc1fb88` |
 | OpenWrt pkg | `openwrt/Makefile`: `PKG_VERSION=0.2.0`, `PKG_RELEASE=4` — **unchanged** (independent package versioning; see §6) |
 
 ## 2. Change inventory `v0.2.1..main` (classified)
