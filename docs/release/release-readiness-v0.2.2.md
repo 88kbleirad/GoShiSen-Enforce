@@ -161,30 +161,24 @@ Pre-approval (done):
 - [x] Reproducibility double-build byte-identical; `make verify-package` PASS.
 - [x] Artifact signing readiness: anchor fingerprint verified; scripts
   present; test-key pipeline PASS; tamper control PASS.
-- [ ] Privileged OpenWrt e2e runner evidence (CI job at candidate head) —
+- [x] Privileged OpenWrt e2e runner evidence (CI job at candidate head) —
   DONE in §3 (CI 43560836375).
-- [ ] Production-key signing run — only possible on tag push (DRAFT);
-  not executable pre-approval.
 
-Post-approval (NOT performed here):
-1. [ ] Create annotated, SSH-signed tag: `git tag -s v0.2.2 -m "GoShiSen-Enforce v0.2.2" c5de6e8ec52a55b84ed16bdb3c9e5cff654f4dc6` (same key as v0.2.1); verify signature/target; push tag.
-2. [ ] Tag push triggers `release.yml` (tag-only): builds archives, verifies, signs with production key, creates a **DRAFT** release with assets (never auto-publishes).
-3. [ ] Read the release workflow run: confirm the `Sign release artifacts with production key` step PASSed (production key verified by `check-key-match.sh` against anchor).
-4. [ ] Verify the draft release: `gh release view v0.2.2`; download assets; `sha256sum -c checksums.txt`; binary reports `goshisen v0.2.2`; SBOM valid.
-5. [ ] Verify signatures/provenance with the **production anchor**: `scripts/verify-signatures.sh --dist DIR --public-key keys/goshisen-release.pub.pem --commit c5de6e8ec52a55b84ed16bdb3c9e5cff654f4dc6 --require-sign` → must PASS (exit 0).
-6. [ ] Publish: `gh release edit v0.2.2 --draft=false`; confirm release page/notes.
-7. [ ] Post-release: re-download assets; checksums OK; signatures/provenance verified with production anchor; tag signature verified (`gh api .../git/tags/...` → verified=true); record in evidence index.
-8. [ ] Do NOT touch v0.2.1 tag/assets; do NOT change signing keys. If any verification FAILs, keep the DRAFT, do not publish (no unsigned fallback).
+Post-approval (EXECUTED 2026-11-14 — all PASS):
+1. [x] Annotated, SSH-signed tag created: `git tag -s v0.2.2 -m "GoShiSen-Enforce v0.2.2" c5de6e8ec52a55b84ed16bdb3c9e5cff654f4dc6`; target verified; pushed.
+2. [x] Tag push triggered `release.yml` (tag-only): built archives, verified, **signed with production key**, created DRAFT release with 19 assets (never auto-published).
+3. [x] Release workflow run 43563276440 success — `Sign release artifacts with production key` step PASSed (production key verified by `check-key-match.sh` against anchor).
+4. [x] DRAFT verified: downloaded all 19 assets; `sha256sum -c checksums.txt` OK; binaries report `goshisen v0.2.2` (amd64 static x86-64, arm64 static aarch64); SBOM SPDX-2.3 valid; released `public_key.pem` fingerprint == anchor `24215e01…`.
+5. [x] Signatures/provenance verified with the production anchor: `scripts/verify-signatures.sh --dist DIR --public-key keys/goshisen-release.pub.pem --commit c5de6e8ec52a55b84ed16bdb3c9e5cff654f4dc6 --require-sign` → VERIFY-PASS exit 0.
+6. [x] Published: `gh release edit v0.2.2 --draft=false` (2026-11-14T05:51:06Z); body = `v0.2.2-notes.md`.
+7. [x] Post-release: re-downloaded fresh; checksums OK; signatures/provenance verified with production anchor; tag signature verified via API (`verification.verified=true`, reason `valid`); recorded in evidence-index row 29.
+8. [x] v0.2.1 tag/assets untouched (published_at unchanged, same 4 assets); signing keys unchanged.
 
 ## 8. Verdict
 
-**Candidate `main` @ `c5de6e8` is ready to be released as v0.2.2**
-(approval required). Validation green at the exact candidate; CI 6/6 on
-the candidate head; signing tooling present with verified production
-anchor; the only gate that cannot be pre-run is the production-key signing
-step, which occurs inside the release workflow on tag push and must be
-verified on the DRAFT before publishing.
-
-### Remaining before publish
-- Human approval to tag + publish v0.2.2 from `c5de6e8`.
-- Execute the post-approval checklist (§7).
+**v0.2.2 RELEASED 2026-11-14** from candidate `c5de6e8`
+(`c5de6e8ec52a55b84ed16bdb3c9e5cff654f4dc6`): tag SSH-signed and
+verified, release workflow success with production-key signing, DRAFT
+fully verified with the production anchor before publishing, post-release
+re-verification PASS. First release with production-signed artifacts.
+OpenWrt package not bumped (independent versioning).
