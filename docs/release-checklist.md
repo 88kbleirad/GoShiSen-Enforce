@@ -78,7 +78,15 @@ Run in order. Every item must pass before tagging.
   after SIGKILL with traffic blocked during the gap and no duplicate
   tables, `uci commit` causes no restart loop.
 - [x] apk install/upgrade/remove: no fail-open window; `apk del`
-- [x] APK signing test path (Prompt 35): `scripts/apk-sign.sh` signs a
+- [x] APK signing test path (Prompt 35):
+- [x] APK production gate wiring (Prompt 36): `scripts/apk-release-gate.sh`
+  (secret-gated sign → `apk-verify.sh --sha256` → provenance manifest;
+  fail-closed exit codes) + `.github/workflows/apk-sign.yml` (test mode
+  end-to-end; production mode requires `GH_RELEASE_APK_SIGNING_KEY` +
+  approved anchor/fingerprint; negative-controls job). Production APK
+  signing stays BLOCKED until an approved key/anchor is provisioned;
+  never `--allow-untrusted` on the production path; no feed/release
+  publish from this workflow. `scripts/apk-sign.sh` signs a
   v3 apk with an ephemeral key; `scripts/apk-verify.sh` verifies against
   a trust dir with an optional `--sha256` full-file integrity gate.
   Verified on a clean OpenWrt VM: `apk add <signed>` succeeds WITHOUT

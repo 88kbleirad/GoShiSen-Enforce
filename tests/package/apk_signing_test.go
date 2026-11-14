@@ -155,3 +155,58 @@ func TestApkSignVerifyRoundtrip(t *testing.T) {
 		t.Fatalf("expected 'sha256 mismatch', got: %s", out)
 	}
 }
+
+// ---- Prompt 36: release-gate orchestrator (fail-closed) ----
+
+func runGate(t *testing.T, env []string, args ...string) (string, error) {
+	t.Helper()
+	cmd := exec.Command("bash", append([]string{filepath.Join(repoRoot(t), "scripts", "apk-release-gate.sh")}, args...)...)
+	cmd.Env = append(os.Environ(), env...)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+func TestApkReleaseGateMissingSecretFails(t *testing.T) {
+	dir := t.TempDir()
+	_, pub := writePEMECKey(t, dir)
+	apk := fixtureApk(t, dir)
+	// no APK_SIGN_KEY in env -> gate must fail with BLOCKED message.
+	out, err := runGate(t, nil,
+		"--apk", apk, "--anchor", pub, "--fingerprint", "00",
+		"--commit", "abc", "--outdir", filepath.Join(dir, "out"))
+	if err == nil {
+		t.Fatalf("expected failure with missing secret, got success: %s", out)
+	}
+	if !strings.Contains(out, "APK_SIGN_KEY") || !strings.Contains(out, "missing") {
+		t.Fatalf("expected missing-secret BLOCKED message, got: %s", out)
+	}
+}
+
+func TestApkReleaseGateFingerprintMismatchFails(t *testing.T) {
+	dir := t.TempDir()
+	_, pub := writePEMECKey(t, dir)
+	apk := fixtureApk(t, dir)
+	out, err := runGate(t, []string{"APK_SIGN_KEY=abc"},
+		"--apk", apk, "--anchor", pub, "--fingerprint", "0000000000000000000000000000000000000000000000000000000000000000",
+		"--commit", "abc", "--outdir", filepath.Join(dir, "out"))
+	if err == nil {
+		t.Fatalf("expected fingerprint mismatch failure, got success: %s", out)
+	}
+	if !strings.Contains(out, "fingerprint mismatch") {
+		t.Fatalf("expected fingerprint mismatch message, got: %s", out)
+	}
+}
+
+func TestApkReleaseGateMissingAnchorFails(t *testing.T) {
+	dir := t.TempDir()
+	apk := fixtureApk(t, dir)
+	out, err := runGate(t, []string{"APK_SIGN_KEY=abc"},
+		"--apk", apk, "--anchor", filepath.Join(dir, "nope.pub"), "--fingerprint", "00",
+		"--commit", "abc", "--outdir", filepath.Join(dir, "out"))
+	if err == nil {
+		t.Fatalf("expected missing-anchor failure, got success: %s", out)
+	}
+	if !strings.Contains(out, "missing") {
+		t.Fatalf("expected missing-anchor message, got: %s", out)
+	}
+}

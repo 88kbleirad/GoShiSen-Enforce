@@ -191,10 +191,13 @@ blocked by the forward hook, so these commands remain reachable.
 **Status: APK package signing — test path implemented; production BLOCKED.**
 The release workflow signs the CLI release archives (tarballs, checksums,
 SBOM) with the Ed25519 production key. The OpenWrt `.apk` is **not** yet
-production-signed (no approved APK signing key/secret). A test signing
-path is implemented and verified with an ephemeral key
-(`scripts/apk-sign.sh` sign, `scripts/apk-verify.sh` fail-closed verify
-against a trust dir; see `docs/release/prompt35-apk-signing-path.md`).
+production-signed (no approved APK signing key/secret). The package release gate
+is wired with an ephemeral test mode and fail-closed production mode
+(`scripts/apk-release-gate.sh`, `.github/workflows/apk-sign.yml`, see
+`docs/release/prompt36-apk-production-gate.md`). A test signing path is
+verified with an ephemeral key (`scripts/apk-sign.sh` sign,
+`scripts/apk-verify.sh` fail-closed verify against a trust dir; see
+`docs/release/prompt35-apk-signing-path.md`).
 Until an approved production key ships, the OpenWrt package is installed
 in two steps (transition exception):
 

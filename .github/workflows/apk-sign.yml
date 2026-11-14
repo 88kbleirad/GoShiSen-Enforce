@@ -1,0 +1,120 @@
+name: apk-sign
+
+# APK signing gate (Prompt 36).
+#
+# This workflow signs + verifies OpenWrt .apk packages for the package
+# release path. It NEVER publishes (no feed/release upload) and NEVER
+# falls back to --allow-untrusted.
+#
+# Modes:
+#   test        (default) end-to-end signing+verification with an
+#               ephemeral key against a Local apk (fixture/real build).
+#   production  requires the approved secret GH_RELEASE_APK_SIGNING_KEY
+#               and an approved anchor file (--anchor + --fingerprint).
+#               Fails closed (BLOCKED) when either is missing.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "test (ephemeral key) | production (approved secret + anchor)"
+        required: false
+        default: test
+      apk:
+        description: "path to the .apk to sign (workflow workspace)"
+        required: true
+        default: goshisen-0.2.0-r5.apk
+      anchor:
+        description: "approved public anchor path (production; default keys/goshisen-apk.pub.pem)"
+        required: false
+        default: keys/goshisen-apk.pub.pem
+      fingerprint:
+        description: "expected anchor fingerprint (SHA-256 of DER SPKI; production)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  sign:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install openssl + apk-tools (v3)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends openssl
+          # apk-tools v3 is not in ubuntu-24.04; use the OpenWrt SDK host
+          # apk when available (CI env APK_TOOL) or skip with a clear
+          # message when absent (the lab/runbook provides it).
+          if command -v apk >/dev/null 2>&1; then echo "apk present"; else echo "apk absent (set APK_TOOL)"; fi
+      - name: Run APK release gate
+        env:
+          APK_SIGN_KEY: ${{ inputs.mode == 'production' && secrets.GH_RELEASE_APK_SIGNING_KEY || '' }}
+          APK_TOOL: ${{ env.APK_TOOL }}
+        run: |
+          set -euo pipefail
+          apk_file="${{ inputs.apk }}"
+          if [ ! -f "$apk_file" ]; then
+            echo "SKIP: apk $apk_file not present in workspace (build it first); no signing attempted"
+            exit 0
+          fi
+          mode="${{ inputs.mode }}"
+          if [ "$mode" = "test" ]; then
+            tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+            openssl ecparam -name prime256v1 -genkey -noout -out "$tmp/k.pem"
+            openssl ec -in "$tmp/k.pem" -pubout -out "$tmp/k.pub.pem"
+            fp="$(openssl pkey -pubin -in "$tmp/k.pub.pem" -outform DER | sha256sum | cut -d' ' -f1)"
+            APK_SIGN_KEY="$(cat "$tmp/k.pem")" \
+              bash scripts/apk-release-gate.sh \
+                --apk "$apk_file" --anchor "$tmp/k.pub.pem" --fingerprint "$fp" \
+                --commit "${{ github.sha }}" --tag "${GITHUB_REF_NAME:-dev}" \
+                --builder workflow/apk-sign-test --outdir dist-apk
+          else
+            anchor="${{ inputs.anchor }}"
+            fp="${{ inputs.fingerprint }}"
+            if [ -z "${APK_SIGN_KEY:-}" ]; then
+              echo "FAIL: GH_RELEASE_APK_SIGNING_KEY missing; production APK signing BLOCKED" >&2
+              exit 1
+            fi
+            if [ -z "$fp" ] || [ ! -f "$anchor" ]; then
+              echo "FAIL: approved anchor/fingerprint missing for production APK signing" >&2
+              exit 1
+            fi
+            bash scripts/apk-release-gate.sh \
+              --apk "$apk_file" --anchor "$anchor" --fingerprint "$fp" \
+              --commit "${{ github.sha }}" --tag "${GITHUB_REF_NAME:-dev}" \
+              --builder workflow/apk-sign-production --outdir dist-apk
+          fi
+
+  negative-controls:
+    runs-on: ubuntu-24.04
+    needs: [sign]
+    if: always()
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Fail-closed gate cases (no apk binary required)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          openssl ecparam -name prime256v1 -genkey -noout -out "$tmp/k.pem"
+          openssl ec -in "$tmp/k.pem" -pubout -out "$tmp/k.pub.pem"
+          fp="$(openssl pkey -pubin -in "$tmp/k.pub.pem" -outform DER | sha256sum | cut -d' ' -f1)"
+          echo "fixture" > "$tmp/pkg.apk"
+          # a) missing secret -> exit 1
+          if bash scripts/apk-release-gate.sh --apk "$tmp/pkg.apk" --anchor "$tmp/k.pub.pem" --fingerprint "$fp" --commit abc --outdir "$tmp/o1" >/dev/null 2>&1; then
+            echo "FAIL: missing secret accepted"; exit 1
+          fi
+          # b) wrong fingerprint -> exit 1
+          if APK_SIGN_KEY=x bash scripts/apk-release-gate.sh --apk "$tmp/pkg.apk" --anchor "$tmp/k.pub.pem" --fingerprint 0000000000000000000000000000000000000000000000000000000000000000 --commit abc --outdir "$tmp/o2" >/dev/null 2>&1; then
+            echo "FAIL: wrong fingerprint accepted"; exit 1
+          fi
+          # c) missing anchor -> exit 1
+          if APK_SIGN_KEY=x bash scripts/apk-release-gate.sh --apk "$tmp/pkg.apk" --anchor "$tmp/nope.pub" --fingerprint "$fp" --commit abc --outdir "$tmp/o3" >/dev/null 2>&1; then
+            echo "FAIL: missing anchor accepted"; exit 1
+          fi
+          # d) missing apk file -> exit 2
+          if APK_SIGN_KEY=x bash scripts/apk-release-gate.sh --apk "$tmp/nope.apk" --anchor "$tmp/k.pub.pem" --fingerprint "$fp" --commit abc --outdir "$tmp/o4" >/dev/null 2>&1; then
+            echo "FAIL: missing apk accepted"; exit 1
+          fi
+          echo "NEGATIVE-CONTROLS-PASS"

@@ -114,6 +114,17 @@ verify-signatures: ## Verify dist/ with the committed production public key
 	@test -f keys/goshisen-release.pub.pem || { echo "no keys/goshisen-release.pub.pem"; exit 1; }
 	@bash scripts/verify-signatures.sh --dist dist --public-key keys/goshisen-release.pub.pem --require-sign
 
+apk-sign: ## Sign an APK with an ephemeral test key (test path; no production secret)
+	@test $# -ge 2 || { echo "usage: make apk-sign APK=file.apk"; exit 1; }
+	@tmp=$$(mktemp -d); 	openssl ecparam -name prime256v1 -genkey -noout -out $$tmp/k.pem 2>/dev/null; 	bash scripts/apk-sign.sh --apk $(APK) --key $$tmp/k.pem; 	rm -rf $$tmp
+
+apk-verify: ## Verify APKs against a trust dir (signature + optional sha256)
+	@bash scripts/apk-verify.sh $(VERIFY_ARGS)
+
+apk-release-gate-test: ## Run the APK release gate end-to-end with an ephemeral key
+	@test -n "$(APK)" || { echo "usage: make apk-release-gate-test APK=file.apk"; exit 1; }
+	@tmp=$$(mktemp -d); 	openssl ecparam -name prime256v1 -genkey -noout -out $$tmp/k.pem 2>/dev/null; 	openssl ec -in $$tmp/k.pem -pubout -out $$tmp/k.pub.pem 2>/dev/null; 	fp=$$(openssl pkey -pubin -in $$tmp/k.pub.pem -outform DER 2>/dev/null | sha256sum | cut -d' ' -f1); 	APK_SIGN_KEY="$$(cat $$tmp/k.pem)" 		bash scripts/apk-release-gate.sh --apk $(APK) 			--anchor $$tmp/k.pub.pem --fingerprint $$fp 			--commit $$(git rev-parse HEAD 2>/dev/null || echo unknown) 			--tag dev --builder local --outdir $$tmp/out; 	rm -rf $$tmp
+
 sbom: ## Generate an SPDX SBOM over the source tree
 	@syft scan -o spdx-json=sbom.spdx.json . 2>/dev/null || \
 		echo "ERROR: syft not installed (see scripts/package.sh)" >&2
