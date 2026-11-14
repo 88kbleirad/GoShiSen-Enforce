@@ -29,7 +29,7 @@ PKG_SOURCE_VERSION:=c5de6e8ec52a55b84ed16bdb3c9e5cff654f4dc6
 # sha256 of the source tarball the SDK produces from a git clone of the
 # pinned commit (PKG_SOURCE_PROTO=git); lets the SDK verify the download
 # (mirror hash). Value set from the SDK's own mismatch output for this pin.
-PKG_MIRROR_HASH:=c5017b88fe13f0c3b5295de1fbe75dfa09bdca47abdcba05e6790d89e38b6f34
+PKG_MIRROR_HASH:=1867a2dec7ac45393b2ea075f9016d3988a72d8961dedc1b75e9e766ec79f35c
 PKG_SOURCE_SUBDIR:=$(PKG_NAME)-$(PKG_VERSION)
 
 # Go binary architecture for the SDK target (amd64 for x86/64, arm64 for
