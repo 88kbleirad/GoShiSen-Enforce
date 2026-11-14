@@ -80,7 +80,13 @@ Run in order. Every item must pass before tagging.
 - [x] apk install/upgrade/remove: no fail-open window; `apk del`
 - [x] APK signing test path (Prompt 35):
 - [x] APK production gate wiring (Prompt 36):
-- [x] APK staging verification (Prompt 37): production-gate fail-closed
+- [x] APK staging verification (Prompt 37):
+- [x] APK key custody handoff (Prompt 38): `docs/release/apk-signing-key-custody.md`
+  — approval-record template, provisioning procedure (authorized personnel
+  only), staging verification checklist, rotation/revocation/recovery
+  procedures. Verdict BLOCKED: no approval record, `GH_RELEASE_APK_SIGNING_KEY`
+  absent, APK anchor absent; the agent does not create/read/export/rotate
+  keys or provision secrets. production-gate fail-closed
   verified at `94bd7df` (missing secret → BLOCKED exit 1); staging
   runbook documented (secret provision → anchor commit+fingerprint →
   gate → /etc/apk/keys/ install → clean-VM install without

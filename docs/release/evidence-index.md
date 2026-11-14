@@ -42,6 +42,8 @@ v0.2.1 build.
 
 | 36 | APK staging verification (readiness checkpoint) | `docs/release/prompt37-apk-staging-verification.md` (main `94bd7df`) | Prerequisite audit: `GH_RELEASE_APK_SIGNING_KEY` NOT provisioned (only `GH_RELEASE_SIGNING_KEY` exists); no APK trust anchor; no owner/rotation/rollback record; main unprotected. Production gate fail-closed verified: missing secret → BLOCKED exit 1. Staging runbook documented (secret/anchor/gate/trust-store/clean-VM/negative controls) | Verdict: BLOCKED — readiness stays BLOCKED until the approved key/secret+ anchor + records are provisioned. No key/secret/anchor touched; no feed/release publish |
 
+| 37 | APK key custody/approval handoff | `docs/release/apk-signing-key-custody.md` (main `8b90c7c`) | Governance handoff: approval-record template, authorized provisioning procedure, staging verification checklist, rotation/revocation/recovery, history. Verified current state: no approval record, `GH_RELEASE_APK_SIGNING_KEY` absent, no APK anchor, CLI-release key not reusable | Verdict: BLOCKED pending owner approval + authorized key/secret provisioning. Agent performed no key/secret operation; no feed/release publish |
+
 ## 2. Release assets and checksums (verified 2026-11-13)
 
 Artifacts attached to `v0.2.1` (published `2026-11-13T12:43:29Z`, isDraft=false):
