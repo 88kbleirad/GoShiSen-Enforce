@@ -1,7 +1,7 @@
 # v0.2.2 Release Readiness — Candidate Report (Prompt 26)
 
 **Date:** 2026-11-14 (UTC)
-**Candidate tree:** the candidate commit is **`main` @ `9147a0e`**
+**Candidate tree:** the candidate commit is **`main` @ `c5de6e8`**
 (HEAD == origin/main; previous heads `18ab946`, docs `3a95a46`/
 `cc9c625`/`5a29232`/`39f94ee`/`dc1fb88`, runner fixes `df6b0a0`/
 `9147a0e`). Two code fixes landed during the audit — see §3.1:
@@ -10,7 +10,13 @@
 - `9147a0e`: teardown (`cleanup` → `openwrt-lab.sh down`) now runs with
   the same `sudo -E` privilege as boot, so a non-root sudo host no
   longer keeps a live QEMU/netns after PASS.
-Validation results below were re-run on `main` @ `9147a0e`.
+Validation results below were re-run on `main` @ `9147a0e`; since then
+PRs #24/#25/#26/#27/#28 merged to main (`dcc8cb5`/`35f7aef`/`d09ecbc`/
+`4c91d83`/`c5de6e8`): artifact signing/provenance, offload enforce-mode
+disable, flowtable observability, arm64 runtime verification, downgrade
+cleanup. Local validation re-run PASS on merged head (`make check`,
+`go test -race`, `make package`+`verify-package`, sign+verify pipeline);
+CI on merged head green (see evidence-index row 27).
 **Auditor:** omp / 88kbleirad
 
 > This report prepares the candidate **only**. Nothing here tags, versions,
