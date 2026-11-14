@@ -249,3 +249,16 @@ the branch was pushed (2026-11-14):
   300s) on the CI host; the identical code passed on the neighboring run
   (43543586726 push, 43543882131 PR) and on the final heads. No code
   change was made for it; it did not recur.
+
+**Pre-existing app race fixed (commit `0fb278b`, 2026-11-14):**
+- The ubuntu-26.04 build runner surfaced a pre-existing race in
+  `internal/app` `Run`: readiness (`atomic.Bool`) was cleared only in the
+  `ctx.Done()` branch of the run loop. If the backend goroutine completed
+  first and the select took the `done` branch, `Run` returned with ready
+  still true → `TestRunReadinessGatedOnQueueBind` flaked as "ready = true
+  after shutdown". Root cause verified from source; not caused by the
+  preflight work.
+- Fix: `defer d.ready.Store(false)` at the start of the run loop so every
+  exit path clears readiness. Stress-verified locally
+  (`-race`, `-count=100` for the readiness tests; offload-readiness tests
+  unaffected). CI `build, vet, test` passed on ubuntu-26.04 with the fix.
