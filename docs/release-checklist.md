@@ -78,6 +78,14 @@ Run in order. Every item must pass before tagging.
   after SIGKILL with traffic blocked during the gap and no duplicate
   tables, `uci commit` causes no restart loop.
 - [x] apk install/upgrade/remove: no fail-open window; `apk del`
+- [x] APK signing test path (Prompt 35): `scripts/apk-sign.sh` signs a
+  v3 apk with an ephemeral key; `scripts/apk-verify.sh` verifies against
+  a trust dir with an optional `--sha256` full-file integrity gate.
+  Verified on a clean OpenWrt VM: `apk add <signed>` succeeds WITHOUT
+  `--allow-untrusted` (pubkey in `/etc/apk/keys/`); unsigned and tampered
+  apks are rejected by the package manager. Production APK signing
+  remains BLOCKED (no approved key/secret); do not use
+  `--allow-untrusted` on the production path.
   removes the app-owned `inet goshisen` table (no orphaned queue rule);
   user config survives as conffiles.
 - [x] IPv6: `inet` hook queues both families; stateless IPv6 allow/

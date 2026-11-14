@@ -188,12 +188,15 @@ blocked by the forward hook, so these commands remain reachable.
 
 ## Signing
 
-**Status: APK package signing is not yet implemented** (backlog). The
-release workflow signs the CLI release archives (tarballs, checksums,
-SBOM) with the Ed25519 production key; it does **not** produce
-`.apk` signature artifacts. Native `usign` apk verification (key under
-`/etc/apk/keys/`) is the planned follow-up. Until it ships, the
-OpenWrt package is installed in two steps (transition exception):
+**Status: APK package signing — test path implemented; production BLOCKED.**
+The release workflow signs the CLI release archives (tarballs, checksums,
+SBOM) with the Ed25519 production key. The OpenWrt `.apk` is **not** yet
+production-signed (no approved APK signing key/secret). A test signing
+path is implemented and verified with an ephemeral key
+(`scripts/apk-sign.sh` sign, `scripts/apk-verify.sh` fail-closed verify
+against a trust dir; see `docs/release/prompt35-apk-signing-path.md`).
+Until an approved production key ships, the OpenWrt package is installed
+in two steps (transition exception):
 
 1. **Verify the signature first** (mandatory, see Install above):
 
