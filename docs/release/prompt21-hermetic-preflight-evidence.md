@@ -262,3 +262,12 @@ the branch was pushed (2026-11-14):
   exit path clears readiness. Stress-verified locally
   (`-race`, `-count=100` for the readiness tests; offload-readiness tests
   unaffected). CI `build, vet, test` passed on ubuntu-26.04 with the fix.
+
+**Definitive final head (2026-11-14, PR #29 head `1f1df8e`):**
+- Push run 43545621539 + PR run 43545626956: **both completed, success**.
+- PR #29 check rollup at head `1f1df8e`: 8/8 **SUCCESS**, MERGEABLE.
+- The final head is docs-only versus `0fb278b` (which already had 8/8
+  green); the readiness fix, hermetic preflight tests, real preflight
+  integration gate, and privileged e2e are all covered by CI on the final
+  head.
+- Working tree clean; local == remote at `1f1df8e`.
