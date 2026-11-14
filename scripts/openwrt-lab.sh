@@ -47,10 +47,26 @@ run_root() {
 up() {
     local port=${1:-5555}
     [ -f "$IMAGE" ] || die "OpenWrt image not found: $IMAGE (set OPENWRT_IMAGE)"
-    if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
-        echo "OpenWrt lab already running (pid $(cat "$PIDFILE"))"
-        return 0
+    # Only short-circuit if the recorded pid is actually our lab QEMU
+    # (cmdline carries the lab TAP). A stale pidfile whose pid happens to
+    # be alive (unrelated process) must not block; it is cleaned.
+    if [ -f "$PIDFILE" ]; then
+        pid=$(cat "$PIDFILE" 2>/dev/null || true)
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && \
+           grep -q "gsh-owrt0" "/proc/$pid/cmdline" 2>/dev/null; then
+            echo "OpenWrt lab already running (pid $pid)"
+            return 0
+        fi
+        rm -f "$PIDFILE"
     fi
+    # Stale lab resources from a previous crashed run must not leak into
+    # this one; clean idempotently first.
+    run_root ip netns del "$NS" 2>/dev/null || true
+    run_root ip link del "$TAP" 2>/dev/null || true
+    run_root ip link del "$BR" 2>/dev/null || true
+    run_root ip link del "$VETH" 2>/dev/null || true
+    pkill -9 -f "qemu-system-[x]86_64.*gsh-owrt0" 2>/dev/null || true
+    pkill -9 -f "qemu-system-[x]86_64.*gsh-owrt-br" 2>/dev/null || true
 
     # LAN client namespace + TAP on a bridge.
     run_root ip netns add "$NS" 2>/dev/null || true
@@ -92,13 +108,19 @@ up() {
 }
 
 down() {
+    # Kill every lab QEMU (recorded pidfile + any gsh-owlrt lab instance),
+    # then remove lab network resources. Idempotent; only touches resources
+    # this lab owns (bracket pattern avoids matching our own cmdline).
     if [ -f "$PIDFILE" ]; then
         kill "$(cat "$PIDFILE")" 2>/dev/null || true
         rm -f "$PIDFILE"
     fi
+    pkill -9 -f "qemu-system-[x]86_64.*gsh-owrt0" 2>/dev/null || true
+    pkill -9 -f "qemu-system-[x]86_64.*gsh-owrt-br" 2>/dev/null || true
     run_root ip netns del "$NS" 2>/dev/null || true
     run_root ip link del "$TAP" 2>/dev/null || true
     run_root ip link del "$BR" 2>/dev/null || true
+    run_root ip link del "$VETH" 2>/dev/null || true
     run_root iptables -D FORWARD -i "$BR" -j ACCEPT 2>/dev/null || true
     run_root iptables -D FORWARD -o "$BR" -j ACCEPT 2>/dev/null || true
     echo "OpenWrt lab down"
