@@ -1,7 +1,10 @@
 # v0.2.1 Release Readiness Audit — Report (Prompt 25)
 
 **Date:** 2026-11-14 (UTC)
-**Audited tree:** `main` head `80edf70` (local == origin, working tree clean)
+**Audited tree:** `main` @ `bb72f6d` — local == origin, working tree clean at
+audit time. This report was first committed at that SHA; later edits to
+this file are documentation-only (no code, build, or packaging change), so
+the validation results below apply unchanged to the final tree.
 **Auditor:** omp / 88kbleirad
 
 ## 1. Version & tag state
@@ -9,9 +12,9 @@
 | Item | State |
 | --- | --- |
 | Source version | `internal/cli.Version` / `internal/app.Version` = `"dev"` (link-time stamped by `make`/`scripts/package.sh`) |
-| Makefile | `VERSION ?= $(shell git describe --tags --always --dirty)` → `v0.2.1-9-g80edf70` at audited HEAD |
+| Makefile | `VERSION ?= $(shell git describe --tags --always --dirty)` → `v0.2.1-10-gbb72f6d` at audited HEAD |
 | Tag `v0.2.1` | exists; annotated tag object `6eb19f3` → commit `9ca71333`; **SSH-verified** (`verification.verified=true`, reason=`valid`) |
-| Release `v0.2.1` | published `2026-11-13T12:43:29Z`, not draft; assets: checksums.txt (188 B), goshisen-linux-amd64.tar.gz (2,987,476), goshisen-linux-arm64.tar.gz (2,698,988), sbom.spdx.json (18,063) SQL Re-downloaded and `sha256sum -c checksums.txt` → both OK. |
+| Release `v0.2.1` | published `2026-11-13T12:43:29Z`, not draft; assets: checksums.txt (188 B), goshisen-linux-amd64.tar.gz (2,987,476), goshisen-linux-arm64.tar.gz (2,698,988), sbom.spdx.json (18,063). Re-downloaded and `sha256sum -c checksums.txt` → both OK. |
 | Tree vs tag | main = tag + 9 commits; **code** changes since tag: #20 (reload-gate harness), PR #29 (e2e runner/preflight harness + `internal/app` readiness fix) |
 | OpenWrt pkg | `openwrt/Makefile`: `PKG_VERSION=0.2.0`, `PKG_RELEASE=4` (unchanged; OpenWrt packaging explicit separate from CLI release) |
 
