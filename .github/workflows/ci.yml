@@ -133,6 +133,14 @@ jobs:
               -X github.com/88kbleirad/GoShiSen-Enforce/internal/app.Version=0.2.0-openwrt" \
             -o /tmp/goshisen-static ./cmd/goshisen
           file /tmp/goshisen-static | grep -q statically || { echo "not static"; exit 1; }
+      - name: Real preflight gate (same PATH as the runner)
+        run: |
+          # The real preflight must reach READY on this fully provisioned
+          # runner (same PATH the runner will use). This is the separate
+          # integration target: it never substitutes a fixture.
+          sudo -E env "PATH=$PATH" go test -tags preflight_integration \
+            ./tests/integration/ -run '^TestPreflightReal$' \
+            -v -count=1
       - name: Run the reproducible e2e runner (preflight + manifest + e2e + teardown)
         run: |
           E2E_ARTIFACT_DIR=/tmp/e2e-artifacts \
