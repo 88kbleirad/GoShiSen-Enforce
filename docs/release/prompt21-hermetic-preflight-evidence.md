@@ -204,6 +204,11 @@ remote head `36dc861` (`TestPreflightReady` → MISSING_DEPENDENCY qemu;
   → BLOCKED (no privilege) with explicit reason — valid outcome, not a
   unit-test failure.
 
-**Action taken:** device-flow auth initiated and authorized by the user;
-push is pending the access-token grant. See section 9 for the exact
-commands if the token is not obtainable.
+**Action taken:** device-flow auth initiated but never completed on the
+browser side; the user then supplied a fresh `GH_TOKEN` directly. With it,
+the branch was pushed (2026-11-14):
+- `git push origin feat/e2e-reproducibility` → `36dc861..7177f92`
+- PR #29 head is now `7177f92` (mergeable), URL:
+  https://github.com/88kbleirad/GoShiSen-Enforce/pull/29
+- CI runs for HEAD `7177f92`: push run 43542804700, PR run 43542808652
+  (result recorded below when complete).
