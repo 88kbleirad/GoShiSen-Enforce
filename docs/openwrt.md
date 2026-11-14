@@ -5,12 +5,33 @@ firewall4 on the forward path. It never replaces firewall4, never
 modifies fw4's tables, and never NATs.
 
 Status: validated on OpenWrt 25.12.6 (x86/64, kernel 6.12.112) in QEMU.
-Only x86_64 is verified; other architectures are untested.
+x86_64 runtime is fully verified; aarch64 (armsr/armv8) is built and
+APK-verified but its live QEMU runtime lab is environment-blocked (see
+`docs/release/openwrt-v022-package-validation.md` §6); other
+architectures are untested.
 
-Release r4 (0.2.0-r4, pin `f5f211a`) is verified end-to-end: upgrade
-from v0.2.0-r2, old-config compatibility, boot guard (S12) ordering,
-flow-offload policy modes (warn/refuse/readiness), stateful IPv6
-(allow/deny/established replies with real v6 peers), reload-failure
+Release **r5 (0.2.0-r5, pin `c5de6e8` = v0.2.2)** is verified end-to-end:
+fresh install, default-disabled, enable/start, queues 100+101,
+DROP/ACCEPT controls, offload `enforce` disable (verified), lifecycle
+(stop/start/restart/reload), kill -9 fail-closed + respawn, reboot with
+boot guard, upgrade r4→r5 (config preserved), downgrade r5→r4 (no
+dangling guard links), uninstall cleanup — on x86_64 (aarch64 runtime
+environment-blocked, see report). See
+`docs/release/openwrt-v022-package-validation.md`.
+
+Downgrade r5→r4 caveat: the r4 daemon (v0.2.1-era binary, pin
+`f5f211a`) does not understand the `allow_bypass` YAML field that the r5
+init script renders. After downgrading, **restart the service once**
+(`/etc/init.d/goshisen restart`) so the r4 init re-renders the runtime
+config; if a stale r5-rendered `/var/run/goshisen/config.yaml` is read
+first, the r4 daemon refuses to start (remove that file as a clean
+alternative). The downgrade path verified in the report uses this
+procedure.
+
+Release r4 (0.2.0-r4, pin `f5f211a`) was verified end-to-end earlier:
+upgrade from v0.2.0-r2, old-config compatibility, boot guard (S12)
+ordering, flow-offload policy modes (warn/refuse/readiness), stateful
+IPv6 (allow/deny/established replies with real v6 peers), reload-failure
 atomicity, crash/restart recovery, and rollback to r2. See
 `docs/release/phase16-openwrt-compat.md`. Note: rolling back from r4 to
 r2 leaves dangling `S12goshisen-boot`/`K10goshisen-boot` rc.d symlinks
