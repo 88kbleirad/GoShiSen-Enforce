@@ -211,4 +211,14 @@ the branch was pushed (2026-11-14):
 - PR #29 head is now `7177f92` (mergeable), URL:
   https://github.com/88kbleirad/GoShiSen-Enforce/pull/29
 - CI runs for HEAD `7177f92`: push run 43542804700, PR run 43542808652
-  (result recorded below when complete).
+  — both **completed, all jobs SUCCESS** (build/vet/test, package,
+  openwrt e2e, integration). PR #29 check rollup: 8/8 SUCCESS.
+  - The `openwrt-integration` job ran step "Real preflight gate (same
+    PATH as the runner)" (step 6) and it passed before step 7 (the
+    runner: provision → boot → e2e). Verified from the job step listing.
+  - Check-run links (run 43542804700 / 43542808652):
+    build/vet/test 132287001844 / 132287014286; integration
+    132287001773 / 132287014340; openwrt e2e 132287001586 /
+    132287014264; package 132287001737 / 132287014069.
+  - Note: the earlier pre-fix runs on `36dc861` (43484497691 /
+    43484486820) failed exactly at `build, vet, test` step "Test".
