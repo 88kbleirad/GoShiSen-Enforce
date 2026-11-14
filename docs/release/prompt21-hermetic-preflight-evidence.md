@@ -127,5 +127,51 @@ unit-test passes.
   reason and CI rejects skips; the unit tests never skip.
 - No assertion was weakened: MISSING_DEPENDENCY is never accepted where
   READY/RESOURCE is required.
-- Working tree clean after commit `f953239` on
+- Working tree clean after commits `f953239` → `fd5454a` → `cafe48c` on
   `feat/e2e-reproducibility` (PR #29, open).
+
+## 9. Push / CI evidence status (Prompt 22)
+
+The three prompt-21 commits are **local only**; PR #29's head is still the
+prompt-20 commit `36dc861`:
+
+| Item | Value |
+| --- | --- |
+| PR | https://github.com/88kbleirad/GoShiSen-Enforce/pull/29 (open, mergeable=true) |
+| PR head (remote) | `36dc861` (prompt 20; pre-fix) |
+| Local HEAD | `cafe48c` (3 commits ahead: f953239, fd5454a, cafe48c) |
+| Remote branch | `origin/feat/e2e-reproducibility` at `36dc861` |
+| Working tree | clean |
+
+**CI on the remote head `36dc861` (pre-fix, documented as baseline):**
+- Run 43484497691 (pull_request): `build, vet, test` **failure** at step 7
+  "Test"; `package`, `openwrt e2e`, `integration` all success.
+- Run 43484486820 (push, same SHA): identical — build/test fails.
+- This is exactly the prompt-21 defect: the unit tests hit the real host
+  PATH (no qemu on the ubuntu build runner). The failing step is the `go
+  test` suite, not the privileged jobs.
+
+**Push/PR completion is BLOCKED by credentials** (verified 2026-11-14T01:35Z):
+- `gh auth status` → 401 "Bad credentials" for the keyring token and the
+  `GH_TOKEN` env token.
+- `git credential fill` returns a `ghp_` token that also returns 401 on
+  `api.github.com/user` and on the git wire protocol.
+- `ssh -T git@github.com` → "Permission denied (publickey)"; no SSH key is
+  registered on the account and `ssh-add -l` shows no agent keys.
+- The instabox sandbox's `gh` token is likewise 401.
+
+**User action required (one of):**
+- Run `gh auth login` locally (browser/device flow) to restore the keyring
+  token, or export a fresh `GH_TOKEN`, then:
+  ```sh
+  cd ~/GoShiSen-Enforce
+  git push origin feat/e2e-reproducibility   # 3 commits
+  gh pr checks 29 --watch                     # confirm all checks green
+  ```
+- Or register an SSH key: `ssh-keygen` (if needed), add
+  `~/.ssh/id_ed25519.pub` at https://github.com/settings/keys, then push
+  over SSH.
+
+Until that completes, the CI evidence for the prompt-21 code is the local
+and sandbox verification in sections 5–7; it has **not** been produced by
+GitHub Actions yet.
