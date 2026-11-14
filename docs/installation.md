@@ -56,7 +56,22 @@ if missing:
    grep goshisen-linux-amd64.tar.gz checksums.txt | sha256sum -c -
    ```
 
-3. Extract and install:
+3. Verify the Ed25519 signature against the committed release public key:
+
+   ```bash
+   curl -LO https://raw.githubusercontent.com/88kbleirad/GoShiSen-Enforce/main/keys/goshisen-release.pub.pem
+   curl -LO https://github.com/88kbleirad/GoShiSen-Enforce/releases/download/v0.1.0/goshisen-linux-amd64.tar.gz.sig
+   openssl pkeyutl -verify -rawin -pubin -inkey goshisen-release.pub.pem \
+     -in goshisen-linux-amd64.tar.gz -sigfile goshisen-linux-amd64.tar.gz.sig
+   ```
+
+   The command must print `Signature Verified Successfully`. Compare the key
+   fingerprint independently: `openssl pkey -pubin -in goshisen-release.pub.pem
+   -outform DER | sha256sum` must equal
+   `24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0`
+   (SHA-256 of the DER SubjectPublicKeyInfo; key created 2026-11-13).
+
+4. Extract and install:
 
    ```bash
    tar xzf goshisen-linux-amd64.tar.gz
@@ -65,7 +80,7 @@ if missing:
    sudo install -m 0644 goshisen-linux-amd64/INSTALL.md /usr/share/doc/goshisen/
    ```
 
-4. Verify the installed binary:
+5. Verify the installed binary:
 
    ```bash
    goshisen --version     # must print goshisen v0.1.0

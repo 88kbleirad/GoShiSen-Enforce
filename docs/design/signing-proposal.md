@@ -1,6 +1,12 @@
 # Release Signing Proposal (v0.2.1+ / Issue #12)
 
-Status: proposal. No keys or secrets are stored in this repository. Nothing
+> **Status: superseded.** Option C (OpenSSL Ed25519 raw-sign, no external
+> tooling) was implemented; see `docs/release/signing-design.md` for the design
+> and migration plan. This file is kept for historical record. The release
+> workflow still attaches unsigned assets until the approved key bootstrap
+> (migration step 2) lands.
+
+No keys or secrets are stored in this repository. Nothing
 here is implemented yet; the release workflow continues to attach unsigned
 assets until the maintainers approve an option and a key policy.
 
