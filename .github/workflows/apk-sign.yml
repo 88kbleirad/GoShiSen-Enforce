@@ -100,6 +100,15 @@ jobs:
               --builder workflow/apk-sign-production --outdir dist-apk
           fi
 
+
+      - name: Upload signed APK artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.3
+        with:
+          name: signed-apks
+          path: dist-apk/**
+          if-no-files-found: warn
+
   negative-controls:
     runs-on: ubuntu-24.04
     needs: [sign]
