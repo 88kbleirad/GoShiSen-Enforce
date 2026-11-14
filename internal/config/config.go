@@ -38,11 +38,12 @@ const (
 	DefaultPolicyDir     = "policy_store"
 	DefaultQueueMaxlen   = 1024
 	DefaultOffloadPolicy = "warn"
-	// OffloadPolicyWarn, OffloadPolicyRefuse, OffloadPolicyReadiness are
-	// the accepted values for File.OffloadPolicy.
+	// OffloadPolicyWarn, OffloadPolicyRefuse, OffloadPolicyReadiness,
+	// OffloadPolicyEnforce are the accepted values for File.OffloadPolicy.
 	OffloadPolicyWarn      = "warn"
 	OffloadPolicyRefuse    = "refuse"
 	OffloadPolicyReadiness = "readiness"
+	OffloadPolicyEnforce   = "enforce"
 )
 
 // File is the YAML configuration file schema. Unknown keys are rejected.
@@ -100,7 +101,16 @@ type File struct {
 	//   refuse    exit at startup with an error (never install the hook).
 	//   readiness keep enforcing but never become ready (readiness stays
 	//             false while offloading is active).
+	//   enforce   actively disable the offload (verified); if the
+	//             disable does not take effect, or detection is unknown,
+	//             fail closed at startup (never install the hook).
 	OffloadPolicy string `yaml:"offload_policy"`
+
+	// AllowBypass is the explicit diagnostic/development escape hatch
+	// for offload_policy=enforce: when true it downgrades enforce to
+	// warn semantics (loud warning, cap stays open). Default false.
+	// Never a silent fallback: without it, enforce stays fail-closed.
+	AllowBypass bool `yaml:"allow_bypass"`
 
 	// Nat configures kernel-side NAT (nftables dstnat/srcnat chains).
 	Nat NatConfig `yaml:"nat"`
@@ -274,6 +284,10 @@ func (o *Options) loadFile(path string) error {
 	if f.OffloadPolicy != "" {
 		o.OffloadPolicy = f.OffloadPolicy
 		o.Sources["offload_policy"] = "file"
+	}
+	if f.AllowBypass {
+		o.AllowBypass = true
+		o.Sources["allow_bypass"] = "file"
 	}
 	if f.QueueNum != 0 {
 		o.QueueNum = f.QueueNum
@@ -472,9 +486,12 @@ func (o *Options) validate() error {
 		errs = append(errs, errors.New("nat is not supported with hook_scope openwrt (firewall4 owns NAT)"))
 	}
 	switch o.OffloadPolicy {
-	case OffloadPolicyWarn, OffloadPolicyRefuse, OffloadPolicyReadiness:
+	case OffloadPolicyWarn, OffloadPolicyRefuse, OffloadPolicyReadiness, OffloadPolicyEnforce:
 	default:
-		errs = append(errs, fmt.Errorf("offload_policy %q must be warn, refuse, or readiness", o.OffloadPolicy))
+		errs = append(errs, fmt.Errorf("offload_policy %q must be warn, refuse, readiness, or enforce", o.OffloadPolicy))
+	}
+	if o.OffloadPolicy != OffloadPolicyEnforce && o.AllowBypass {
+		errs = append(errs, errors.New("allow_bypass is only valid with offload_policy=enforce"))
 	}
 	if o.Nat.Enabled {
 		if o.Nat.Masquerade.Enabled {

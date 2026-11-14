@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -402,7 +403,7 @@ func TestRunOffloadPolicyRefuse(t *testing.T) {
 	hookCalled := false
 	queueCalled := false
 	d.detectFlowOffload = func() hook.FlowOffloadReport {
-		return hook.FlowOffloadReport{Active: true, Detail: "flow add @ft"}
+		return hook.FlowOffloadReport{State: hook.FlowOffloadEnabled, Active: true, Detail: "flow add @ft"}
 	}
 	d.installHook = func(rs hook.Ruleset) error { hookCalled = true; return nil }
 	d.openQueue = func(packet.Options) (Queue, error) { queueCalled = true; return newFakeQueue(), nil }
@@ -431,7 +432,7 @@ func TestRunOffloadPolicyReadiness(t *testing.T) {
 		t.Fatal(err)
 	}
 	d.detectFlowOffload = func() hook.FlowOffloadReport {
-		return hook.FlowOffloadReport{Active: true, Detail: "flowtable f"}
+		return hook.FlowOffloadReport{State: hook.FlowOffloadEnabled, Active: true, Detail: "flowtable f"}
 	}
 	hookCalled := false
 	d.installHook = func(rs hook.Ruleset) error { hookCalled = true; return nil }
@@ -485,7 +486,7 @@ func TestRunOffloadPolicyReadinessRecovers(t *testing.T) {
 	offload.Store(true)
 	d.detectFlowOffload = func() hook.FlowOffloadReport {
 		if offload.Load() {
-			return hook.FlowOffloadReport{Active: true, Detail: "flowtable f"}
+			return hook.FlowOffloadReport{State: hook.FlowOffloadEnabled, Active: true, Detail: "flowtable f"}
 		}
 		return hook.FlowOffloadReport{}
 	}
@@ -555,7 +556,7 @@ func TestWatchFlowOffloadReadinessRecovery(t *testing.T) {
 	offload.Store(true)
 	d.detectFlowOffload = func() hook.FlowOffloadReport {
 		if offload.Load() {
-			return hook.FlowOffloadReport{Active: true, Detail: "flow add @ft"}
+			return hook.FlowOffloadReport{State: hook.FlowOffloadEnabled, Active: true, Detail: "flow add @ft"}
 		}
 		return hook.FlowOffloadReport{}
 	}
@@ -599,7 +600,7 @@ func TestRunOffloadPolicyWarnDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	d.detectFlowOffload = func() hook.FlowOffloadReport {
-		return hook.FlowOffloadReport{Active: true, Detail: "flow add @ft"}
+		return hook.FlowOffloadReport{State: hook.FlowOffloadEnabled, Active: true, Detail: "flow add @ft"}
 	}
 	d.installHook = func(rs hook.Ruleset) error { return nil }
 	fq := newFakeQueue()
@@ -629,4 +630,217 @@ func TestRunOffloadPolicyWarnDefault(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("Run did not exit")
 	}
+}
+
+// TestRunOffloadPolicyEnforceDisables verifies that offload_policy=enforce
+// attempts the disable; when it verifies, the daemon runs and becomes ready.
+func TestRunOffloadPolicyEnforceDisables(t *testing.T) {
+	opts := testOptions(t)
+	opts.APIPort = 0
+	opts.OffloadPolicy = config.OffloadPolicyEnforce
+	d, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.detectFlowOffload = func() hook.FlowOffloadReport {
+		return hook.FlowOffloadReport{State: hook.FlowOffloadEnabled, Active: true, Detail: "flowtable f"}
+	}
+	disableCalled := false
+	d.disableFlowOffload = func() hook.FlowOffloadReport {
+		disableCalled = true
+		return hook.FlowOffloadReport{State: hook.FlowOffloadDisabled, Detail: "removed"}
+	}
+	hookCalled := false
+	d.installHook = func(rs hook.Ruleset) error { hookCalled = true; return nil }
+	fq := newFakeQueue()
+	d.openQueue = func(packet.Options) (Queue, error) { return fq, nil }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- d.Run(ctx) }()
+	select {
+	case <-fq.ran:
+	case <-time.After(3 * time.Second):
+		t.Fatal("queue never started")
+	}
+	if !disableCalled {
+		t.Fatal("enforce did not call disable")
+	}
+	if !hookCalled {
+		t.Fatal("hook not installed under enforce policy after successful disable")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for !d.Ready() && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !d.Ready() {
+		t.Fatal("ready = false after successful enforce disable")
+	}
+	cancel()
+	<-done
+}
+
+// TestRunOffloadPolicyEnforceFailsClosedOnDisableFailure verifies that
+// enforce fails closed (no hook, not ready) when the disable does not
+// take effect.
+func TestRunOffloadPolicyEnforceFailsClosedOnDisableFailure(t *testing.T) {
+	opts := testOptions(t)
+	opts.APIPort = 0
+	opts.OffloadPolicy = config.OffloadPolicyEnforce
+	d, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.detectFlowOffload = func() hook.FlowOffloadReport {
+		return hook.FlowOffloadReport{State: hook.FlowOffloadEnabled, Active: true, Detail: "flowtable f"}
+	}
+	d.disableFlowOffload = func() hook.FlowOffloadReport {
+		return hook.FlowOffloadReport{State: hook.FlowOffloadFailed, Active: true, Detail: "still present"}
+	}
+	hookCalled := false
+	d.installHook = func(rs hook.Ruleset) error { hookCalled = true; return nil }
+	d.openQueue = func(packet.Options) (Queue, error) { return newFakeQueue(), nil }
+
+	err = d.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "enforce") {
+		t.Fatalf("Run = %v, want enforce fail-closed error", err)
+	}
+	if hookCalled {
+		t.Fatal("hook installed despite enforce disable failure")
+	}
+	if d.Ready() {
+		t.Fatal("ready = true despite enforce disable failure")
+	}
+}
+
+// TestRunOffloadPolicyEnforceFailsClosedOnUnknown verifies that enforce
+// fails closed when detection is unknown (cannot prove safety).
+func TestRunOffloadPolicyEnforceFailsClosedOnUnknown(t *testing.T) {
+	opts := testOptions(t)
+	opts.APIPort = 0
+	opts.OffloadPolicy = config.OffloadPolicyEnforce
+	d, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.detectFlowOffload = func() hook.FlowOffloadReport {
+		return hook.FlowOffloadReport{State: hook.FlowOffloadUnknown, Detail: "nft missing"}
+	}
+	hookCalled := false
+	d.installHook = func(rs hook.Ruleset) error { hookCalled = true; return nil }
+	d.openQueue = func(packet.Options) (Queue, error) { return newFakeQueue(), nil }
+
+	err = d.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "unknown") {
+		t.Fatalf("Run = %v, want unknown fail-closed error", err)
+	}
+	if hookCalled {
+		t.Fatal("hook installed despite unknown offload state under enforce")
+	}
+}
+
+// TestRunOffloadPolicyEnforceAllowBypass verifies the explicit diagnostic
+// escape hatch: enforce + allow_bypass continues when disable fails, and
+// becomes ready (gap accepted, loudly warned).
+func TestRunOffloadPolicyEnforceAllowBypass(t *testing.T) {
+	opts := testOptions(t)
+	opts.APIPort = 0
+	opts.OffloadPolicy = config.OffloadPolicyEnforce
+	opts.AllowBypass = true
+	d, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.detectFlowOffload = func() hook.FlowOffloadReport {
+		return hook.FlowOffloadReport{State: hook.FlowOffloadEnabled, Active: true, Detail: "flowtable f"}
+	}
+	d.disableFlowOffload = func() hook.FlowOffloadReport {
+		return hook.FlowOffloadReport{State: hook.FlowOffloadFailed, Active: true, Detail: "still present"}
+	}
+	hookCalled := false
+	d.installHook = func(rs hook.Ruleset) error { hookCalled = true; return nil }
+	fq := newFakeQueue()
+	d.openQueue = func(packet.Options) (Queue, error) { return fq, nil }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- d.Run(ctx) }()
+	select {
+	case <-fq.ran:
+	case <-time.After(3 * time.Second):
+		t.Fatal("queue never started")
+	}
+	if !hookCalled {
+		t.Fatal("hook not installed under enforce+allow_bypass")
+	}
+	// enforce+allow_bypass is not readiness-gated, so it becomes ready.
+	deadline := time.Now().Add(2 * time.Second)
+	for !d.Ready() && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !d.Ready() {
+		t.Fatal("ready = false under enforce+allow_bypass")
+	}
+	cancel()
+	<-done
+}
+
+// TestWatchFlowOffloadEnforceReattemptsDisable verifies that an offload
+// appearing after startup is re-detected and the disable is re-attempted
+// by the watchdog under enforce policy.
+func TestWatchFlowOffloadEnforceReattemptsDisable(t *testing.T) {
+	opts := testOptions(t)
+	opts.APIPort = 0
+	opts.OffloadPolicy = config.OffloadPolicyEnforce
+	d, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.offloadInterval = 20 * time.Millisecond
+	var mu sync.Mutex
+	detections := 0
+	d.detectFlowOffload = func() hook.FlowOffloadReport {
+		mu.Lock()
+		defer mu.Unlock()
+		detections++
+		if detections == 1 {
+			return hook.FlowOffloadReport{State: hook.FlowOffloadDisabled}
+		}
+		return hook.FlowOffloadReport{State: hook.FlowOffloadEnabled, Active: true, Detail: "appeared"}
+	}
+	disables := 0
+	d.disableFlowOffload = func() hook.FlowOffloadReport {
+		mu.Lock()
+		defer mu.Unlock()
+		disables++
+		return hook.FlowOffloadReport{State: hook.FlowOffloadDisabled, Detail: "removed"}
+	}
+	d.installHook = func(rs hook.Ruleset) error { return nil }
+	fq := newFakeQueue()
+	d.openQueue = func(packet.Options) (Queue, error) { return fq, nil }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = d.Run(ctx) }()
+	select {
+	case <-fq.ran:
+	case <-time.After(3 * time.Second):
+		t.Fatal("queue never started")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		mu.Lock()
+		n := disables
+		mu.Unlock()
+		if n >= 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("watchdog did not re-attempt disable after offload appeared")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
 }

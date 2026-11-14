@@ -329,7 +329,7 @@ offload_policy: %s
 			t.Fatalf("Load accepted invalid offload_policy %q", bad)
 		}
 	}
-	for _, good := range []string{"warn", "refuse", "readiness"} {
+	for _, good := range []string{"warn", "refuse", "readiness", "enforce"} {
 		p := writeTemp(t, "goshisen.yaml", fmt.Sprintf(`
 policy_file: /etc/goshisen/policy.yaml
 offload_policy: %s
@@ -337,6 +337,23 @@ offload_policy: %s
 		if _, err := Load(p, envStub(nil), Overrides{}); err != nil {
 			t.Fatalf("Load rejected valid offload_policy %q: %v", good, err)
 		}
+	}
+	// allow_bypass is only valid with enforce.
+	p := writeTemp(t, "goshisen.yaml", `
+policy_file: /etc/goshisen/policy.yaml
+offload_policy: warn
+allow_bypass: true
+`)
+	if _, err := Load(p, envStub(nil), Overrides{}); err == nil {
+		t.Fatal("Load accepted allow_bypass with offload_policy=warn")
+	}
+	good := writeTemp(t, "goshisen.yaml", `
+policy_file: /etc/goshisen/policy.yaml
+offload_policy: enforce
+allow_bypass: true
+`)
+	if _, err := Load(good, envStub(nil), Overrides{}); err != nil {
+		t.Fatalf("Load rejected allow_bypass with offload_policy=enforce: %v", err)
 	}
 }
 

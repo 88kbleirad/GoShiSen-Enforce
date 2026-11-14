@@ -24,8 +24,8 @@ v0.2.1 build.
 | 09 | e2e reload-gate fix | PR #20 `8e007a5d` | push 43435999202 / PR 43436009943 (both success 4/4) | harness-only fix + 13 regression tests |
 | 10 | Review + merge #20, record | PR #20 `8e007a5d`; PR #21 `0d4dcd9f` | main post-merge 43437820844 (success 4/4, 0 skips) | release decision: keep v0.2.1 |
 | 11 | Evidence index + backlog | PR #22 `447298df` | push 43439564775 / PR 43439586070 (both success 4/4, 0 skips) | docs-only; tag/release untouched |
-| 18 | OpenWrt downgrade cleanup | `feat/pkg-downgrade-cleanup` (this PR) | local make check + go test green; live OpenWrt 25.12.6 QEMU (r2/r4 apks) | prerm unconditional rc.d link removal (uninstall verified); empirical apk finding (no old-prerm on downgrade) → pre-downgrade `goshisen-boot disable` verified + `unlink` rescue documented; tests (lifecycle + Makefile + docs). Evidence: `docs/release/prompt18-downgrade-cleanup-evidence.md`, design `docs/design/openwrt-downgrade-cleanup-phase.md` |
 | 17 | Arm64 runtime verification | `feat/arm64-verify` (this PR) | local make check + go test green; live OpenWrt 25.12.6 `armsr/armv8` aarch64 QEMU TCG; CI arm64 job | aarch64 runtime: start/version/help, NFQUEUE bind + readiness, DROP/ACCEPT verdicts, atomic reload (valid+invalid), restart/graceful shutdown, offload enforce/observe. Cross-build + static-ELF CI job/tests. Evidence: `docs/release/prompt17-arm64-runtime-evidence.md` |
+| 18 | OpenWrt downgrade cleanup | `feat/pkg-downgrade-cleanup` (this PR) | local make check + go test green; live OpenWrt 25.12.6 QEMU (r2/r4 apks) | prerm unconditional rc.d link removal (uninstall verified); empirical apk finding (no old-prerm on downgrade) → pre-downgrade `goshisen-boot disable` verified + `unlink` rescue documented; tests (lifecycle + Makefile + docs). Evidence: `docs/release/prompt18-downgrade-cleanup-evidence.md`, design `docs/design/openwrt-downgrade-cleanup-phase.md` |
 
 ## 2. Release assets and checksums (verified 2026-11-13)
 
@@ -88,9 +88,13 @@ QEMU TCG, dual-bridge lab. Two runs with the merged gate fix both PASS:
   tests fail there. The real gates are the CI privileged jobs (both reject skips).
 - Reproducing those suites locally uses a privileged Docker container (loop-device
  / rootfs-offset workaround documented in the managed skill).
-- Release `v0.2.1` was built from `9ca71333`; post-tag docs/PRs (#19/#20/#21)
-  do not alter the release assets or the tag. No binary/package behavior changed
-  after the tag.
+- Release `v0.2.1` was built from `9ca71333`; post-tag docs/PRs (#19/#20/#22/#23)
+  do not alter the release assets or the tag. **Exception:** PR #29
+  (squash `e94d60a`, post-tag) *does* change binary behavior — it fixes a
+  readiness race in `internal/app` (`defer d.ready.Store(false)`) and adds
+  the hermetic preflight/e2e harness. Those changes are **not** part of the
+  published `v0.2.1` build (tag `9ca71333` + assets remain untouched); they
+  would only ship in a future version.
 
 ## 7. Owner/handoff
 

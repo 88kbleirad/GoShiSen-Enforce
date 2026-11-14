@@ -19,12 +19,23 @@ LDFLAGS := -s -w \
 	-X $(PKG)/internal/app.Version=$(VERSION)
 
 .PHONY: all build build-static verify-static test vet fmt fmt-fix check clean run tidy help test-integration fuzz \
-	package package-dist verify-package sbom
+	package package-dist verify-package sbom integration preflight-integration
 
 .PHONY: integration
 integration: build ## Run the real netns integration suite (requires root)
 	@[ "$$(id -u)" = 0 ] || { echo "integration tests require root (CAP_NET_ADMIN)"; exit 1; }
 	$(GO) test ./tests/integration/ -v -count=1
+
+# preflight-integration runs the real preflight gate against this host
+# (tools, privileges, kernel modules, ports). It is the separate "real
+# environment" target that must not be confused with the hermetic unit
+# tests (which never observe the host). Requires root only so a fully
+# provisioned runner reaches READY; otherwise it reports the exact
+# missing dependency instead of skipping.
+.PHONY: preflight-integration
+preflight-integration: ## Run the real preflight against this host (clear diagnostics when tools are missing)
+	@[ "$$(id -u)" = 0 ] || { echo "preflight-integration requires root (privileged runner)"; exit 1; }
+	$(GO) test -tags preflight_integration ./tests/integration/ -run '^TestPreflightReal$$' -v -count=1
 
 fuzz: ## Fuzz the packet parser (30s)
 	$(GO) test ./internal/packet/ -run='^$$' -fuzz='^FuzzParse$$' -fuzztime=30s
@@ -86,6 +97,22 @@ package-dist: ## Build only the current GOARCH archive
 
 verify-package: package-dist ## Build and validate the archive (arch, version, checksums, SBOM)
 	@bash scripts/verify-package.sh
+
+sign-test: ## Sign dist/ with a throwaway test key (verification exercise)
+	@test -d dist || { echo "run 'make package' first"; exit 1; }
+	@tmp=$$(mktemp -d); \
+	openssl genpkey -algorithm ed25519 -out $$tmp/k.pem 2>/dev/null; \
+	openssl pkey -in $$tmp/k.pem -pubout -out $$tmp/k.pub.pem 2>/dev/null; \
+	bash scripts/sign-artifacts.sh --dist dist --key $$tmp/k.pem --public-key $$tmp/k.pub.pem \
+		--commit $$(git rev-parse HEAD 2>/dev/null || echo unknown) --tag dev \
+		--builder local --toolchain "$$(go version)" --sign; \
+	bash scripts/verify-signatures.sh --dist dist --public-key $$tmp/k.pub.pem \
+		--commit $$(git rev-parse HEAD 2>/dev/null || echo unknown) --require-sign; \
+	rm -rf $$tmp
+
+verify-signatures: ## Verify dist/ with the committed production public key
+	@test -f keys/goshisen-release.pub.pem || { echo "no keys/goshisen-release.pub.pem"; exit 1; }
+	@bash scripts/verify-signatures.sh --dist dist --public-key keys/goshisen-release.pub.pem --require-sign
 
 sbom: ## Generate an SPDX SBOM over the source tree
 	@syft scan -o spdx-json=sbom.spdx.json . 2>/dev/null || \
