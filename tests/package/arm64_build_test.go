@@ -16,13 +16,6 @@ import (
 	"testing"
 )
 
-func needCmd(t *testing.T, name string) {
-	t.Helper()
-	if _, err := exec.LookPath(name); err != nil {
-		t.Skipf("%s not available: %v", name, err)
-	}
-}
-
 func TestArm64CrossCompileStaticELF(t *testing.T) {
 	needCmd(t, "go")
 	buildDir := t.TempDir()
