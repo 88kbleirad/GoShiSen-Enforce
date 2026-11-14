@@ -2,9 +2,13 @@
 
 **Date:** 2026-11-14 (UTC)
 **Candidate tree:** `main` @ `18ab946` for all validation evidence below;
-candidate docs committed and pushed as `3a95a46` (documentation-only — no
-code/build/packaging change), so the §3 results apply unchanged to the
-final head. Working tree clean at audit time.
+candidate docs committed and pushed as `3a95a46` and `cc9c625`
+(documentation-only — no code/build/packaging change), so the §3 results
+apply unchanged to those heads. **One code fix landed during the audit:**
+`df6b0a0` — `e2e-runner.sh` booted the lab's default image instead of the
+one it provisioned; it now passes `OPENWRT_IMAGE=$IMAGE` (see §3.1).
+Validation below was re-run on `main` @ `df6b0a0`; the `18ab946` results
+remain valid for the `18ab946` tree.
 **Auditor:** omp / 88kbleirad
 
 > This report prepares the candidate **only**. Nothing here tags, versions,
@@ -81,7 +85,18 @@ documentation commits (`f0c923a` → `18ab946`).
 | `make check` | PASS | fmt/vet/test/static build |
 | `make package VERSION=0.2.2-ready` × 2 | **byte-identical** | amd64 `cfa3cf7e82352b88fe5e0b4a538c84ec1bb5d3d2f3c0f9b6363b5403d869df8b`, arm64 `20372150d1e6739bd98e62fe1a330d95bbc60a5aa47000f7a33a391698591e88` on both runs |
 | `make verify-package VERSION=0.2.2-ready` | PASS | arch, `goshisen 0.2.2-ready` stamp, checksums, SPDX-2.3 SBOM |
-| Privileged OpenWrt e2e runner (instabox, main tree) | PASS | `scripts/e2e-runner.sh` on instabox (`main` @ `18ab946`, daemon `goshisen 0.2.2-ready`): preflight READY → image provisioned (checksum-pinned) → boot (console up 4s) → `TestOpenWrtE2E` PASS in 158.77s — DROP control PASS (curl exit=28, daemon drop verdicts +7, hook +7, queue drops +0), ACCEPT control PASS (HTTP 200 marker, accept verdicts +13, hook +13); all 14 gate tests PASS; cleanup rc=0; artifacts in `/data/prompt26-artifacts/` |
+| Privileged OpenWrt e2e runner (instabox, main tree) | PASS | `scripts/e2e-runner.sh` on instabox (`main` @ `df6b0a0`, daemon `goshisen 0.2.2-ready`): preflight READY → image provisioned (checksum-pinned, `/data/owrt-p26.img`) → boot printed `booting lab (image: /data/owrt-p26.img)` and QEMU cmdline confirmed `-drive file=/data/owrt-p26.img` (console up 4s) → `TestOpenWrtE2E` PASS in 159.50s — DROP control PASS (curl exit=28, daemon drop verdicts +7, hook +7, queue drops +0), ACCEPT control PASS (HTTP 200 marker, accept verdicts +13, hook +13); all 14 gate tests PASS; cleanup rc=0; artifacts in `/data/prompt26-artifacts2/` |
+
+### 3.1 Found-and-fixed during the audit
+
+The first runner invocation (on `18ab946`) looked green but ran the e2e
+against a stale image: `e2e-runner.sh` provisioned `--image PATH` yet
+booted `scripts/openwrt-lab.sh` without `OPENWRT_IMAGE`, so the lab fell
+back to its own default `/tmp/owrt.img` (which contained
+`goshisen 0.2.1-audit` from an earlier audit). Fix `df6b0a0`: the runner
+now passes `OPENWRT_IMAGE="$IMAGE"` to `lab up`; regression test
+`TestE2ERunnerBootsProvisionedImage` added (PASS). The re-run above
+verified the provisioned image path was the one booted.
 
 ## 4. Reproducibility
 
