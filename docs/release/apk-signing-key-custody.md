@@ -29,15 +29,17 @@ provisioning step:
 
 ```
 APK SIGNING KEY APPROVAL
-  owner:                 <name + role>            (accountable for custody)
+  owner:                 Lê Thanh Phong (maintainer)
   scope:                 OpenWrt .apk package signing only (NOT CLI releases)
-  environments:          staging: yes   production: <yes|no>
-  key custody:           <secret manager name + access policy + who can read>
-  algorithm/format:      EC P-256 or RSA PEM (apk adbsign --sign-key)
-  rotation period:       <e.g. 12 months> / rotation owner: <name>
-  revocation contact:    <name + channel>
-  emergency recovery:    <who holds break-glass, procedure ref>
-  approved by:           <name> <date> <reference/ticket>
+  environments:          staging: yes   production: yes
+  key custody:           GitHub Actions secret GH_RELEASE_APK_SIGNING_KEY; offline backup held by the owner only
+  algorithm/format:      EC P-256 (prime256v1) PEM
+  rotation period:       12 months / rotation owner: Lê Thanh Phong
+  revocation contact:    thanhphong2k52203@gmail.com
+  emergency recovery:    offline backup held by the owner; if lost, treat as revocation + rotation
+  fingerprint (SHA-256 DER SPKI): 542bb7ae9058fee9b4d37ed30b0af44f234ea7cb8866daa1ffc71a7bc37c839d  -
+  approved by:           Lê Thanh Phong, 2026-11-14, <PR/ticket>
+  note: GH_RELEASE_SIGNING_KEY (CLI-release key) is NOT an approved APK signing key
 ```
 
 The record MUST also state explicitly that `GH_RELEASE_SIGNING_KEY`
