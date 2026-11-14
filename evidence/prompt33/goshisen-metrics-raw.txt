@@ -1,0 +1,47 @@
+# HELP goshisen_packets_total Packets decided, by action and protocol.
+# TYPE goshisen_packets_total counter
+goshisen_packets_total{action="drop",protocol="tcp"} 38
+goshisen_packets_total{action="accept",protocol="tcp"} 195
+# HELP goshisen_packets_by_state_total Packets decided, by state.
+# TYPE goshisen_packets_by_state_total counter
+goshisen_packets_by_state_total{state="new"} 60
+goshisen_packets_by_state_total{state="established"} 173
+# HELP goshisen_active_policy_version Active policy version (0 when none).
+# TYPE goshisen_active_policy_version gauge
+goshisen_active_policy_version 3
+# HELP goshisen_backend_errors_total Backend errors (receive/send/parse/panic).
+# TYPE goshisen_backend_errors_total counter
+# HELP goshisen_flow_offload_active 1 when flow offloading is configured in nftables (established flows bypass the queue; enforcement is not applied to them), 0 otherwise.
+# TYPE goshisen_flow_offload_active gauge
+goshisen_flow_offload_active 0
+# HELP goshisen_flow_offload_disables_total Flow-offload disable attempts and their outcome (bounded, by result).
+# TYPE goshisen_flow_offload_disables_total counter
+# HELP goshisen_flow_offload_state Flow-offload state: 0 disabled, 1 enabled (enforcement gap), 2 unknown (cannot prove safe).
+# TYPE goshisen_flow_offload_state gauge
+goshisen_flow_offload_state 0
+# HELP goshisen_flowtable_hits_available 1 when flowtable hit counters could be read (measurement supported), 0 otherwise.
+# TYPE goshisen_flowtable_hits_available gauge
+goshisen_flowtable_hits_available 0
+# HELP goshisen_flowtable_hits_packets Cumulative packets offloaded by the nftables flowtable (bypass evidence; monotonic). -1 when counters are unavailable.
+# TYPE goshisen_flowtable_hits_packets gauge
+goshisen_flowtable_hits_packets -1
+# HELP goshisen_policy_updates_total Policy publish attempts, by bounded outcome.
+# TYPE goshisen_policy_updates_total counter
+goshisen_policy_updates_total{outcome="failure"} 1
+goshisen_policy_updates_total{outcome="success"} 3
+# HELP goshisen_queue_overflow_total Packets dropped by the kernel before reaching the daemon, by cause. fail-closed by design.
+# TYPE goshisen_queue_overflow_total counter
+# HELP goshisen_packet_verdict_latency_seconds Per-packet processing latency.
+# TYPE goshisen_packet_verdict_latency_seconds histogram
+goshisen_packet_verdict_latency_seconds_bucket{le="0.0001"} 233
+goshisen_packet_verdict_latency_seconds_bucket{le="0.0005"} 466
+goshisen_packet_verdict_latency_seconds_bucket{le="0.001"} 699
+goshisen_packet_verdict_latency_seconds_bucket{le="0.005"} 932
+goshisen_packet_verdict_latency_seconds_bucket{le="0.01"} 1165
+goshisen_packet_verdict_latency_seconds_bucket{le="0.05"} 1398
+goshisen_packet_verdict_latency_seconds_bucket{le="0.1"} 1631
+goshisen_packet_verdict_latency_seconds_bucket{le="0.5"} 1864
+goshisen_packet_verdict_latency_seconds_bucket{le="1"} 2097
+goshisen_packet_verdict_latency_seconds_bucket{le="+Inf"} 233
+goshisen_packet_verdict_latency_seconds_sum 0.0005845489999999997
+goshisen_packet_verdict_latency_seconds_count 233

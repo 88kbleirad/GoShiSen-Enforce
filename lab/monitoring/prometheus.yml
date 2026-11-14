@@ -1,0 +1,39 @@
+# Prometheus scrape configuration for the GoShiSen-Enforce lab.
+#
+# LAB-ONLY: the daemon's /metrics endpoint binds to 127.0.0.1 (loopback)
+# inside the firewall netns (or router). This config scrapes it from a
+# Prometheus that runs in the SAME privileged context (e.g. inside the
+# lab container / netns). It is NOT for production routers — never
+# expose /metrics publicly.
+#
+# Target: goshisen metrics port (default 9090) on 127.0.0.1 of the
+# namespace where the daemon runs. The daemon binds metrics to loopback
+# only. When Prometheus runs in the same network namespace as the
+# daemon, scrape 127.0.0.1:9090. When Prometheus runs in a different
+# namespace (e.g. the lab container default netns), forward the loopback
+# port (e.g. socat inside the firewall netns listening on the fw veth
+# IP:9092 -> 127.0.0.1:9090) and scrape that address.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    lab: "goshisen-openwrt"
+
+scrape_configs:
+  - job_name: goshisen
+    metrics_path: /metrics
+    scheme: http
+    # Loopback only. In-lab variants:
+    #   - same netns: 127.0.0.1:9090
+    #   - default netns via socat forward from fw netns: 10.99.0.1:9092
+    static_configs:
+      - targets: ["10.99.0.1:9092"]
+        labels:
+          instance: "goshisen-lab"
+          daemon: "goshisen"
+    scrape_timeout: 10s
+    # No bearer token: /metrics is read-only and loopback-bound; admin
+    # API endpoints (which require the token) are never scraped.
+    # If a future daemon build adds metrics auth, set authorization:
+    #   authorization:
+    #     credentials: "<metrics-token>"

@@ -27,6 +27,31 @@ disabled by default.
 - Phase 1–5 unchanged: policy engine, NFQUEUE enforcement, stateful filtering, REST API, metrics, durable store, reload. Phase 15: atomic durable publishes (SIGHUP + API), `goshisen_policy_updates_total` outcome metrics, `policy dry-run`.
 - **Phase 16 (performance):** the per-packet hot path is now allocation-free — the stateful accepted-set key is a packed 5-tuple struct (no `fmt`/string), `Rule` uses a state bitmask + value ports, and packet metrics are recorded under one lock into fixed enum-indexed arrays. Measured (same machine, 3 runs, median): pipeline decision 1129→253 ns for a NEW accept (−78%), established reply 634→193 ns (−70%), latency p95 1.72→0.31 µs, **0 allocs/packet** (was 15–16). Benchmarks, profile, and env/variance evidence: `docs/design/performance-phase.md`. Semantics unchanged (`go test -race ./...`, `make check` green).
 
+## Metrics (Prometheus)
+
+The daemon exposes Prometheus metrics in text format 0.0.4:
+
+- On the REST API server: `GET /metrics` (default `127.0.0.1:8080`).
+- Or on a dedicated port with `--metrics-port` (default 9090, binds
+  `127.0.0.1` only; no auth on `/metrics`, read-only).
+
+12 metric families (bounded-cardinality enum labels only — never IPs,
+ports, or flow IDs): packet verdicts
+(`goshisen_packets_total{action,protocol}`, `goshisen_packets_by_state_total{state}`),
+verdict latency histogram
+(`goshisen_packet_verdict_latency_seconds`), backend errors
+(`goshisen_backend_errors_total{kind}`), queue overflow
+(`goshisen_queue_overflow_total{cause}`), policy publish outcomes
+(`goshisen_policy_updates_total{outcome}`), active policy version gauge,
+flow-offload state/disable metrics, flowtable hit gauges. There is no
+daemon `up` metric — use scrape `up{job=...}` + `active_policy_version`
++ `/healthz` `/readyz` for availability.
+
+Verified inventory + live validation + lab Prometheus/Grafana
+provisioning: `docs/release/prompt33-metrics-grafana-validation.md`.
+Lab-only monitoring files (never for production routers):
+`lab/monitoring/` (prometheus.yml, Grafana dashboard).
+
 ## Integration tests & privileges
 
 The lab needs root (CAP_NET_ADMIN). As a non-root user, `go test ./...` compiles the suite and skips it with the reason `integration tests require root for CAP_NET_ADMIN`. Run it with:
@@ -93,6 +118,7 @@ Boolean env values accept `true/false`, `1/0`, `yes/no`, `on/off`.
 | [MVP Scope](docs/design/mvp-scope.md) | Component inventory, scenarios S1–S12, per-phase acceptance criteria, non-goals |
 | [User Guide](docs/user-guide.md) | CLI, configuration, examples |
 | [Developer Guide](docs/developer-guide.md) | Build, test, CI, repository layout |
+| [Metrics + Grafana (Prompt 33)](docs/release/prompt33-metrics-grafana-validation.md) | Verified Prometheus metric inventory, lab validation, Prometheus/Grafana provisioning (lab-only) |
 
 ## Repository layout
 
@@ -108,6 +134,8 @@ configs/             sample configuration
 policies/default/    deny-all policy example
 policies/examples/   worked policy example
 scripts/lab.sh       isolated netns lab (up/down/status)
+lab/monitoring/      lab-only Prometheus scrape config + Grafana dashboard (Prompt 33)
+evidence/prompt33/   raw /metrics, Grafana export, PromQL query results
 tests/integration/   real-traffic integration suite + probe helper
 docs/                design and user/developer guides
 .github/workflows/   CI

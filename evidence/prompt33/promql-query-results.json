@@ -1,0 +1,34 @@
+{
+  "environment": {
+    "daemon": "v0.2.2 (main d2c2752)",
+    "package": "openwrt 0.2.0-r5",
+    "topology": "privileged docker netns: client(10.99.0.2) -- fw(10.99.0.1/10.99.1.1) -- server(10.99.1.2)",
+    "scrape": "Prometheus 3.16 in fw netns @127.0.0.1:9091 -> daemon /metrics @127.0.0.1:9090"
+  },
+  "queries": {
+    "accept_rate_5m": "sum(rate(goshisen_packets_total{action=\"accept\"}[5m]))",
+    "drop_rate_5m": "sum(rate(goshisen_packets_total{action=\"drop\"}[5m]))",
+    "established_rate_5m": "sum(rate(goshisen_packets_by_state_total{state=\"established\"}[5m]))",
+    "policy_failures_15m": "sum(increase(goshisen_policy_updates_total{outcome=\"failure\"}[15m]))",
+    "queue_overflow_15m": "sum(increase(goshisen_queue_overflow_total[15m]))",
+    "latency_p95": "histogram_quantile(0.95, sum(rate(goshisen_packet_verdict_latency_seconds_bucket[5m])) by (le))",
+    "active_policy_version": "goshisen_active_policy_version",
+    "offload_state": "goshisen_flow_offload_state"
+  },
+  "observed": {
+    "accept_rate_5m": 0.389,
+    "drop_rate_5m": 0.077,
+    "established_rate_5m": 0.347,
+    "policy_failures_15m": 0,
+    "queue_overflow_15m": 0,
+    "latency_p95": 0.775,
+    "active_policy_version": 3,
+    "offload_state": 0
+  },
+  "lifecycle": {
+    "reload_preserves_counters": true,
+    "reload_advances_version": true,
+    "restart_resets_inmemory_counters": true,
+    "restart_reloads_policy_version": true
+  }
+}
