@@ -4,3 +4,4 @@ goshisen-release-key.pem
 # Build artifacts (local builds / CI caches)
 bin/
 dist/
+.lab/
