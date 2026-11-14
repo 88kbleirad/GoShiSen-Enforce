@@ -185,3 +185,210 @@ func TestDisableFlowOffloadFailsWhenNftFails(t *testing.T) {
 		t.Fatal("DisableFlowOffload must remain active after failed disable")
 	}
 }
+
+func TestParseRulesetFlowTableCounters(t *testing.T) {
+	ruleset := `table inet fw4 {
+	flowtable ft {
+		hook ingress priority filter
+		devices = { "br-lan", "eth0" }
+		counter packets 42 bytes 1337
+	}
+	chain forward {
+		type filter hook forward priority filter; policy accept;
+		meta l4proto { tcp, udp } flow add @ft
+	}
+}
+`
+	rules, tables := parseRuleset(ruleset)
+	if len(rules) != 1 {
+		t.Fatalf("rules = %d, want 1", len(rules))
+	}
+	if len(tables) != 1 {
+		t.Fatalf("tables = %d, want 1", len(tables))
+	}
+	ft := tables[0]
+	if !ft.CounterAvailable {
+		t.Fatal("flowtable counter not marked available")
+	}
+	if ft.HitsPackets != 42 || ft.HitsBytes != 1337 {
+		t.Fatalf("hits = %d/%d, want 42/1337", ft.HitsPackets, ft.HitsBytes)
+	}
+	if ft.name != "ft" || ft.table != "fw4" || ft.family != "inet" {
+		t.Fatalf("flowtable identity = %s/%s/%s", ft.family, ft.table, ft.name)
+	}
+}
+
+func TestParseRulesetFlowTableBareCounter(t *testing.T) {
+	// A bare `counter` statement (no values) means the counter exists
+	// but has not recorded hits yet — available, zero values.
+	ruleset := `table inet fw4 {
+	flowtable ft {
+		counter
+	}
+}
+`
+	_, tables := parseRuleset(ruleset)
+	if len(tables) != 1 {
+		t.Fatalf("tables = %d, want 1", len(tables))
+	}
+	if !tables[0].CounterAvailable {
+		t.Fatal("bare counter must still mark availability")
+	}
+	if tables[0].HitsPackets != 0 || tables[0].HitsBytes != 0 {
+		t.Fatalf("bare counter hits = %d/%d, want 0/0", tables[0].HitsPackets, tables[0].HitsBytes)
+	}
+}
+
+func TestParseRulesetNoCounters(t *testing.T) {
+	ruleset := `table inet fw4 {
+	flowtable ft {
+		hook ingress priority filter
+		devices = { "eth0" }
+	}
+}
+`
+	_, tables := parseRuleset(ruleset)
+	if len(tables) != 1 {
+		t.Fatalf("tables = %d, want 1", len(tables))
+	}
+	if tables[0].CounterAvailable {
+		t.Fatal("flowtable without counter must not be marked available")
+	}
+}
+
+func TestParseRulesetMalformedCounter(t *testing.T) {
+	// Malformed counter lines must not panic and must not poison the
+	// flowtable record.
+	ruleset := `table inet fw4 {
+	flowtable ft {
+		counter packets notanumber bytes 12
+	}
+}
+`
+	_, tables := parseRuleset(ruleset)
+	if len(tables) != 1 {
+		t.Fatalf("tables = %d, want 1", len(tables))
+	}
+	if !tables[0].CounterAvailable {
+		t.Fatal("malformed counter line still marks availability")
+	}
+	if tables[0].HitsPackets != 0 {
+		t.Fatalf("malformed packets must stay 0, got %d", tables[0].HitsPackets)
+	}
+}
+
+func TestCounterDelta(t *testing.T) {
+	before := FlowOffloadSample{HitsPackets: 100, HitsBytes: 1000}
+	after := FlowOffloadSample{HitsPackets: 150, HitsBytes: 1500}
+	p, b := DeltaHits(after, before)
+	if p != 50 || b != 500 {
+		t.Fatalf("delta = %d/%d, want 50/500", p, b)
+	}
+
+	// Reset (new < old): report current value, not a huge negative.
+	afterReset := FlowOffloadSample{HitsPackets: 5, HitsBytes: 50}
+	p, b = DeltaHits(afterReset, before)
+	if p != 5 || b != 50 {
+		t.Fatalf("reset delta = %d/%d, want 5/50", p, b)
+	}
+
+	// No movement.
+	p, b = DeltaHits(before, before)
+	if p != 0 || b != 0 {
+		t.Fatalf("zero delta = %d/%d, want 0/0", p, b)
+	}
+}
+
+func TestObserveFlowOffloadDisabled(t *testing.T) {
+	ruleset := "table inet fw4 {\n\tchain forward {\n\t\tcounter\n\t}\n}\n"
+	dir := fakeNft(t, ruleset)
+	withPath(t, dir)
+
+	s := ObserveFlowOffload()
+	if s.State != FlowOffloadDisabled {
+		t.Fatalf("state = %s, want disabled", s.State)
+	}
+	if s.Confidence != "high" {
+		t.Fatalf("confidence = %s, want high", s.Confidence)
+	}
+	if len(s.Flowtables) != 0 {
+		t.Fatalf("flowtables = %d, want 0", len(s.Flowtables))
+	}
+}
+
+func TestObserveFlowOffloadUnknownWhenNftFails(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "nft")
+	content := "#!/bin/sh\n" +
+		"echo nft-missing >&2\n" +
+		"exit 127\n"
+	if err := os.WriteFile(script, []byte(content), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	withPath(t, dir)
+
+	s := ObserveFlowOffload()
+	if s.State != FlowOffloadUnknown {
+		t.Fatalf("state = %s, want unknown", s.State)
+	}
+	if s.Confidence != "unknown" {
+		t.Fatalf("confidence = %s, want unknown", s.Confidence)
+	}
+}
+
+func TestObserveFlowOffloadPositiveHits(t *testing.T) {
+	ruleset := `table inet fw4 {
+	flowtable ft {
+		counter packets 500 bytes 100000
+	}
+	chain forward {
+		meta l4proto { tcp, udp } flow add @ft
+	}
+}
+`
+	dir := fakeNft(t, ruleset)
+	withPath(t, dir)
+
+	s := ObserveFlowOffload()
+	if s.State != FlowOffloadEnabled {
+		t.Fatalf("state = %s, want enabled", s.State)
+	}
+	if !s.HitsAvailable {
+		t.Fatal("hits should be available")
+	}
+	if s.HitsPackets != 500 || s.HitsBytes != 100000 {
+		t.Fatalf("hits = %d/%d, want 500/100000", s.HitsPackets, s.HitsBytes)
+	}
+	if s.Confidence != "high" {
+		t.Fatalf("confidence = %s, want high", s.Confidence)
+	}
+	if len(s.Flowtables) != 1 {
+		t.Fatalf("flowtables = %d, want 1", len(s.Flowtables))
+	}
+}
+
+func TestObserveFlowOffloadLimitedWhenNoCounter(t *testing.T) {
+	ruleset := `table inet fw4 {
+	flowtable ft {
+		hook ingress priority filter
+		devices = { "eth0" }
+	}
+}
+`
+	dir := fakeNft(t, ruleset)
+	withPath(t, dir)
+
+	s := ObserveFlowOffload()
+	if s.State != FlowOffloadEnabled {
+		t.Fatalf("state = %s, want enabled", s.State)
+	}
+	if s.HitsAvailable {
+		t.Fatal("hits must NOT be available without a counter statement")
+	}
+	if s.Confidence != "limited" {
+		t.Fatalf("confidence = %s, want limited", s.Confidence)
+	}
+	if s.Reason == "" {
+		t.Fatal("limited confidence must have a reason")
+	}
+}

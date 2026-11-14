@@ -122,6 +122,7 @@ func (d *Daemon) watchFlowOffload(ctx context.Context, interval time.Duration) {
 		}
 		rep := d.detectFlowOffload()
 		d.metrics.SetFlowOffloadState(int(rep.State))
+		d.metrics.SetFlowTableHits(rep.HitsAvailable, rep.HitsPackets)
 		if rep.State == hook.FlowOffloadEnabled && d.opts.OffloadPolicy == config.OffloadPolicyEnforce {
 			dis := d.disableFlowOffload()
 			d.metrics.RecordFlowOffloadDisable(dis.State == hook.FlowOffloadDisabled)
@@ -382,6 +383,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// user explicitly opted in); we flag it loudly and expose a health
 	// metric.
 	d.metrics.SetFlowOffloadState(int(offload.State))
+	d.metrics.SetFlowTableHits(offload.HitsAvailable, offload.HitsPackets)
 	if offload.Active {
 		d.log.Warn("flow offloading detected: established flows bypass goshisen queue (enforcement gap)",
 			"state", offload.State.String(), "detail", offload.Detail)

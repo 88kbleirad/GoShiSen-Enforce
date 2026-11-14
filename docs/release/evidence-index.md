@@ -25,6 +25,7 @@ v0.2.1 build.
 | 10 | Review + merge #20, record | PR #20 `8e007a5d`; PR #21 `0d4dcd9f` | main post-merge 43437820844 (success 4/4, 0 skips) | release decision: keep v0.2.1 |
 | 11 | Evidence index + backlog | PR #22 `447298df` | push 43439564775 / PR 43439586070 (both success 4/4, 0 skips) | docs-only; tag/release untouched |
 | 15 | Offload detect + disable | `feat/offload-disable` (this PR) | local make check + go test green (11 pkgs); live OpenWrt 25.12.6 QEMU lab | state machine (disabled/enabled/failed/unknown) + `offload_policy=enforce` fail-closed verified disable + `offload status/disable` CLI + `allow_bypass` hatch + watchdog re-disable. Evidence: `docs/release/prompt15-offload-lab-evidence.md`, design `docs/design/offload-disable-phase.md` |
+| 16 | Flowtable bypass observability | `feat/offload-observability` (this PR) | local make check + go test green; live OpenWrt 25.12.6 QEMU TCG | `offload observe` (timestamp/state/per-flowtable hits/confidence) + `goshisen_flowtable_hits_packets`/`_available` metrics + absent/zero-hit/positive/unknown model + reset/wrap handling. TCG: zero-hit ≠ disabled (offloads 0 packets); positive-hit scoped to hardware. Evidence: `docs/release/prompt16-flowtable-observability.md`, design `docs/design/offload-observability-phase.md` |
 
 ## 2. Release assets and checksums (verified 2026-11-13)
 
