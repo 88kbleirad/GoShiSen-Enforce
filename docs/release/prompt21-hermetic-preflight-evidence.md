@@ -225,7 +225,9 @@ the branch was pushed (2026-11-14):
   - **Follow-up real-environment fix:** the original prompt-21 patch also
     hard-gated port 8088, which is *not* a lab port (lab binds 5555
     serial + 2222 SSH forward). On a shared host with an unrelated
-    process on 8088 the real preflight wrongly reported RESOURCE. Fixed:
-    port gate now checks only 5555/2222 (fixture keys and table case
-    updated), and `TestPreflightReal` accepts RESOURCE as a valid
-    environment-consistent outcome naming the occupied lab port.
+    process on 8088 the real preflight wrongly reported RESOURCE. Fixed
+    in commit `f8adc68`: the port gate checks only 5555/2222 (fixture
+    keys and table case updated), and `TestPreflightReal` accepts
+    RESOURCE as a valid environment-consistent outcome naming the
+    occupied lab port. Re-verified on instabox (foreign 8088 ignored →
+    READY; tagged integration PASS).
