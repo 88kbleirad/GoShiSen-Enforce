@@ -45,7 +45,7 @@ Prior candidate `9147a0e` superseded by the Phase 14.2 merges.
   validation.
 - Signing tooling is release-time infra, not daemon runtime.
 
-### OpenWrt package tree (source, not in the pinned .apk — see §5)
+### OpenWrt package recipe (repo tree; daemon binary inside .apk still from pin — see §5)
 - `openwrt/files/lib/goshisen-lifecycle.sh` + `openwrt/Makefile` prerm —
   unconditional rc.d link removal on uninstall (PR #28).
 - UCI `allow_bypass` YAML boolean rendering (`b2e35c2`).
@@ -124,11 +124,11 @@ CI (GitHub Actions, full head SHAs):
 
 - CLI: source version stays `dev`; tag `v0.2.2` stamps binaries at build
   time.
-- **OpenWrt package: `PKG_VERSION=0.2.0`, `PKG_RELEASE=4`, source pin
-  `f5f211a173dab2934a42e3aa8220ab2d54fa12da` — unchanged at the
-  candidate.** The `.apk` built from this pin ships the f5f211a daemon;
-  it does **NOT** contain the v0.2.2 signing, enforce-mode offload
-  disable, observability, or downgrade-cleanup package-tree changes.
+- **OpenWrt package: `PKG_VERSION=0.2.0`, `PKG_RELEASE=4`, daemon source
+  pin `f5f211a173dab2934a42e3aa8220ab2d54fa12da` — unchanged at the
+  candidate.** A package build from the candidate tree ships the updated
+  recipe (prerm/lifecycle/init) with the **daemon binary from the pin**
+  (f5f211a features only — no enforce-mode disable/observability/signing).
   Per project policy the package is versioned independently of the CLI
   release; this is a documented gap (package pin bump + SDK rebuild is a
   separate task) and not a release blocker for the CLI release.
