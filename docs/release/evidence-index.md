@@ -26,6 +26,7 @@ v0.2.1 build.
 | 11 | Evidence index + backlog | PR #22 `447298df` | push 43439564775 / PR 43439586070 (both success 4/4, 0 skips) | docs-only; tag/release untouched |
 | 19 | Privileged NFQUEUE e2e reproducibility | `feat/e2e-reproducibility` (this PR) | local make check + go test green; instabox privileged runner PASS; unprivileged BLOCKED exit 3; CI job uses the runner | `scripts/e2e-runner.sh` (preflight/manifest/pinned-provision/boot/e2e/trap-teardown/artifacts) + `scripts/e2e-env-manifest.sh` + hardened lab up/down; tests (manifest/missing-tool/BLOCKED/cleanup). Evidence: `docs/release/prompt19-e2e-reproducibility-evidence.md`, design `docs/design/e2e-reproducibility-phase.md` |
 | 20 | Typed preflight state machine | `feat/preflight-states` (this PR) | go test preflight + full suite + make check PASS; simulated CI runner (no qemu) BLOCKED/READY; instabox privileged e2e PASS (READY → DROP/ACCEPT) | preflight refactored: CONFIG_ERROR/BLOCKED/MISSING_DEPENDENCY/RESOURCE/READY typed states, deterministic gate order (privilege before tools), injectable mocks (E2E_MOCK_* + PREFLIGHT_ONLY); regression tests for precedence/ordering/ports/config/diagnostics. Evidence: `docs/release/prompt20-preflight-states-evidence.md`, design `docs/design/e2e-reproducibility-phase.md` §8 |
+| 21 | Hermetic preflight + real integration gate | PR #29 (squash `e94d60a` on main) | local + instabox + CI: hermetic unit tests (no qemu/nft/ip/sudo), real-preflight integration (`preflight_integration` tag) before provision in the openwrt job, privileged OpenWrt e2e PASS, package+verify PASS; post-merge main runs 43547823103 / 43548043021 / 43548389934 (all success 4/4) | preflight gates consume an injected environment view (real_env / fixture `E2E_PREFLIGHT_FIXTURE`); port gate only lab ports 5555/2222; `internal/app` readiness race fixed (`defer d.ready.Store(false)`). Evidence: `docs/release/prompt21-hermetic-preflight-evidence.md` §10–11 |
 
 ## 2. Release assets and checksums (verified 2026-11-13)
 
@@ -88,9 +89,13 @@ QEMU TCG, dual-bridge lab. Two runs with the merged gate fix both PASS:
   tests fail there. The real gates are the CI privileged jobs (both reject skips).
 - Reproducing those suites locally uses a privileged Docker container (loop-device
  / rootfs-offset workaround documented in the managed skill).
-- Release `v0.2.1` was built from `9ca71333`; post-tag docs/PRs (#19/#20/#21)
-  do not alter the release assets or the tag. No binary/package behavior changed
-  after the tag.
+- Release `v0.2.1` was built from `9ca71333`; post-tag docs/PRs (#19/#20/#22/#23)
+  do not alter the release assets or the tag. **Exception:** PR #29
+  (squash `e94d60a`, post-tag) *does* change binary behavior — it fixes a
+  readiness race in `internal/app` (`defer d.ready.Store(false)`) and adds
+  the hermetic preflight/e2e harness. Those changes are **not** part of the
+  published `v0.2.1` build (tag `9ca71333` + assets remain untouched); they
+  would only ship in a future version.
 
 ## 7. Owner/handoff
 
