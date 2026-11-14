@@ -50,7 +50,7 @@ PIDFILE=${OPENWRT_PIDFILE:-/tmp/owrt-qemu.pid}
 FIXTURE=${E2E_PREFLIGHT_FIXTURE:-}
 
 # Single source of truth for the fixture contract (see preflight section).
-REQUIRED_FIXTURE_KEYS="tool curl|tool wget|tool python3|tool qemu-system-x86_64|tool nft|tool iptables|tool ip|tool sudo|uid|module nf_conntrack|nfqueue_proc|port 5555|port 8088"
+REQUIRED_FIXTURE_KEYS="tool curl|tool wget|tool python3|tool qemu-system-x86_64|tool nft|tool iptables|tool ip|tool sudo|uid|module nf_conntrack|nfqueue_proc|port 5555|port 2222"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -324,7 +324,7 @@ preflight_resources() {
     say "note: host NFQUEUE absent (lab VM provides it via kmods)"
   fi
   local port
-  for port in 5555 8088; do
+  for port in 5555 2222; do
     if [ "$("$ENV_HANDLE" port "$port")" = "occupied" ]; then
       mock_state_out RESOURCE "port ${port} is already in use"
     fi

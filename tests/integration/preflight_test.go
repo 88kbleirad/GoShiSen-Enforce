@@ -106,7 +106,16 @@ func TestPreflightReal(t *testing.T) {
 	case "BLOCKED":
 		// Consistent with checkPrereqs: integration requires root/capability.
 		t.Skipf("environment blocked (no privilege); real preflight reported BLOCKED")
+	case "RESOURCE":
+		if rc != 3 {
+			t.Fatalf("RESOURCE must exit 3, got rc=%d:\n%s", rc, s)
+		}
+		// A real host may have a lab port occupied by an unrelated
+		// process; the preflight must name exactly the occupied lab port.
+		if !strings.Contains(s, "5555") && !strings.Contains(s, "2222") {
+			t.Fatalf("RESOURCE must name an occupied lab port (5555/2222):\n%s", s)
+		}
 	default:
-		t.Fatalf("real preflight reported %s; expected READY, MISSING_DEPENDENCY, or BLOCKED:\n%s", state, s)
+		t.Fatalf("real preflight reported %s; expected READY, MISSING_DEPENDENCY, BLOCKED, or RESOURCE:\n%s", state, s)
 	}
 }

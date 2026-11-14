@@ -222,3 +222,10 @@ the branch was pushed (2026-11-14):
     132287014264; package 132287001737 / 132287014069.
   - Note: the earlier pre-fix runs on `36dc861` (43484497691 /
     43484486820) failed exactly at `build, vet, test` step "Test".
+  - **Follow-up real-environment fix:** the original prompt-21 patch also
+    hard-gated port 8088, which is *not* a lab port (lab binds 5555
+    serial + 2222 SSH forward). On a shared host with an unrelated
+    process on 8088 the real preflight wrongly reported RESOURCE. Fixed:
+    port gate now checks only 5555/2222 (fixture keys and table case
+    updated), and `TestPreflightReal` accepts RESOURCE as a valid
+    environment-consistent outcome naming the occupied lab port.

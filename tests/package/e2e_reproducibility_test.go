@@ -36,7 +36,7 @@ sudo: yes
 module nf_conntrack: present
 nfqueue_proc: absent
 port 5555: free
-port 8088: free
+port 2222: free
 `
 }
 
@@ -272,11 +272,11 @@ func TestPreflightStateMachineTable(t *testing.T) {
 			notWants: []string{"CONFIG_ERROR", "BLOCKED", "MISSING_DEPENDENCY", "READY"},
 		},
 		{
-			name:     "resource_port_8088",
-			fixture:  map[string]string{"port 8088": "occupied"},
+			name:     "resource_port_2222",
+			fixture:  map[string]string{"port 2222": "occupied"},
 			want:     "RESOURCE",
 			wantRC:   3,
-			wantName: "8088",
+			wantName: "2222",
 			notWants: []string{"MISSING_DEPENDENCY", "READY"},
 		},
 		{
