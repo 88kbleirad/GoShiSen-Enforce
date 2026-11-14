@@ -286,11 +286,16 @@ the branch was pushed (2026-11-14):
 - PR #29 state: `MERGED`; feature branch `feat/e2e-reproducibility`
   deleted on remote.
 
-**Post-merge CI:** push run 43547823103 on `main` at `e94d60a`
-(2026-11-14T02:43:00Z) — result recorded when complete. Local merge-tree
-validation at `e94d60a` PASS: preflight unit tests, hermetic-PATH package
-suite, `TestRunReadiness* -race -count=20`, tagged real-preflight
-integration.
+**Post-merge CI:** 
+- Push run 43547823103 on `main` at `e94d60a` (2026-11-14T02:43:00Z):
+  **completed, success** (all 4 jobs: build/vet/test, package, integration,
+  openwrt e2e).
+- Post-merge docs commit `2c45721` (merge-record update) → push run
+  43548043021 on `main`: **completed, success** (all 4 jobs).
+- Local merge-tree validation at `e94d60a` PASS: preflight unit tests,
+  hermetic-PATH package suite, `TestRunReadiness* -race -count=20`,
+  tagged real-preflight integration.
 
-**Final state:** local `main` == origin `main` == `e94d60a`; working tree
-clean; no release/tag/signing-key changes.
+**Final state:** local `main` == origin `main` == `2c45721`; working tree
+clean; PR #29 `MERGED`; feature branch deleted; no release/tag/signing-key
+changes.
