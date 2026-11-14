@@ -231,3 +231,11 @@ the branch was pushed (2026-11-14):
     RESOURCE as a valid environment-consistent outcome naming the
     occupied lab port. Re-verified on instabox (foreign 8088 ignored →
     READY; tagged integration PASS).
+
+**Final state (2026-11-14, PR #29 head `b961c62`):**
+- Push run 43543876296 + PR run 43543882131: **both completed, success**.
+- Check rollup on the PR: 8/8 **SUCCESS** (build/vet/test ×2, package ×2,
+  openwrt e2e ×2, integration ×2), MERGEABLE.
+- `openwrt-integration` job step "Real preflight gate (same PATH as the
+  runner)" ran and passed before the runner step on the final head.
+- Working tree clean; local == remote at `b961c62`.
