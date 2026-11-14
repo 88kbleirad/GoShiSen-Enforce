@@ -115,10 +115,9 @@ CI (GitHub Actions, full head SHAs):
 - SBOM generated with pinned `syft` v1.30.0 (checksum-verified install).
 - Artifact signing: production anchor `keys/goshisen-release.pub.pem`
   full fingerprint **`24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0`** (key ID `f955ede984245d64`) — reads straight from the
-  candidate tree. Instabox ECDSA test key (`a8253141…`) and the
-  unregistered local keypair (`e9b4bf11…`) are rejected by the production
-  verifier path (exit 4) — negative controls executed and recorded in
-  evidence-index row 27; neither is a trust anchor.
+  candidate tree. The Instabox ECDSA test key (`a8253141…`) is rejected
+  by the production verifier path (exit 4) — negative control executed and
+  recorded in evidence-index row 27; it is not a trust anchor.
 
 ## 5. Versioning / package decision
 
