@@ -81,7 +81,15 @@ Run in order. Every item must pass before tagging.
 - [x] APK signing test path (Prompt 35):
 - [x] APK production gate wiring (Prompt 36):
 - [x] APK staging verification (Prompt 37):
-- [x] APK key custody handoff (Prompt 38): `docs/release/apk-signing-key-custody.md`
+- [x] APK key custody handoff (Prompt 38):
+- [x] APK staging verification results (Prompt 39): approval record filled,
+  `GH_RELEASE_APK_SIGNING_KEY` provisioned (presence-only), anchor merged
+  (PR #34, fingerprint `542bb7ae…` verified). Production gate (GitHub
+  Actions, SDK container) PASS; clean-VM install/upgrade/uninstall without
+  `--allow-untrusted` PASS; unsigned/wrong-key rejected; gate `--sha256`
+  rejects tampered/checksum/provenance mismatches; CLI key/anchor
+  rejected for APK. Readiness proposal: READY (staging) — feed/release
+  publish remains a separate approval. `docs/release/apk-signing-key-custody.md`
   — approval-record template, provisioning procedure (authorized personnel
   only), staging verification checklist, rotation/revocation/recovery
   procedures. Verdict BLOCKED: no approval record, `GH_RELEASE_APK_SIGNING_KEY`

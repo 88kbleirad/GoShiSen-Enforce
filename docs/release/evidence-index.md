@@ -44,6 +44,8 @@ v0.2.1 build.
 
 | 37 | APK key custody/approval handoff | `docs/release/apk-signing-key-custody.md` (main `8b90c7c`) | Governance handoff: approval-record template, authorized provisioning procedure, staging verification checklist, rotation/revocation/recovery, history. Verified current state: no approval record, `GH_RELEASE_APK_SIGNING_KEY` absent, no APK anchor, CLI-release key not reusable | Verdict: BLOCKED pending owner approval + authorized key/secret provisioning. Agent performed no key/secret operation; no feed/release publish |
 
+| 38 | APK staging verification (production key) | `docs/release/prompt39-apk-staging-verification-results.md`, workflow run 43619751612, artifact `signed-apks` (main `f46443a` + staging branch) | Approval record filled; `GH_RELEASE_APK_SIGNING_KEY` provisioned; anchor merged (PR #34, fingerprint `542bb7ae…` confirmed). Production gate PASS (signed `00c8376d…` + provenance). Clean-VM install/upgrade/uninstall without `--allow-untrusted` PASS; unsigned/wrong-key rejected; gate `--sha256` rejects append/byte-tamper, checksum mismatch, provenance mismatch; CLI key/anchor rejected for APK. Secret not leaked (log scan) | Readiness proposal: READY for the signing path (staging verified). Feed/release publish remains a separate approval; no production asset upload/router. No private key read/exported |
+
 ## 2. Release assets and checksums (verified 2026-11-13)
 
 Artifacts attached to `v0.2.1` (published `2026-11-13T12:43:29Z`, isDraft=false):
