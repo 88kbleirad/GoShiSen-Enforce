@@ -14,8 +14,26 @@ flow-offload policy modes (warn/refuse/readiness), stateful IPv6
 atomicity, crash/restart recovery, and rollback to r2. See
 `docs/release/phase16-openwrt-compat.md`. Note: rolling back from r4 to
 r2 leaves dangling `S12goshisen-boot`/`K10goshisen-boot` rc.d symlinks
-(r2 does not ship the guard); remove them with
-`/etc/init.d/goshisen-boot disable` before downgrading.
+(r2 does not ship the guard). **Before downgrading**, disable the guard
+so its rc.d links are removed while the script still exists:
+
+```sh
+/etc/init.d/goshisen-boot disable   # removes S12/K10goshisen-boot
+apk add --allow-untrusted goshisen-0.2.0-r2.apk
+```
+
+apk does not run the *old* package's pre-deinstall on a downgrade, so
+the cleanup cannot be automated from the r4 side; the pre-downgrade
+`disable` is the supported, verified path. If the downgrade was done
+without it, remove the two dangling links directly (fixed paths, no
+recursive deletion):
+
+```sh
+unlink /etc/rc.d/S12goshisen-boot /etc/rc.d/K10goshisen-boot
+```
+
+Uninstalling (`apk del goshisen`) is safe: the package prerm removes all
+four rc.d links (verified).
 
 ## Install
 
