@@ -248,8 +248,12 @@ config interface 'wan'
 EOF
 
 # 5. Autostart the daemon at boot (matches the lab's manual invocation).
+# The daemon validates `interface` at startup and exits if the interface
+# (br-lan) is not up yet; under slow TCG boots rc.local can run before
+# the network config assigns the address. Wait bounded for the interface
+# address before launching.
 if ! grep -q "goshisen" "$MNT/etc/rc.local" 2>/dev/null; then
-    sed -i '/^exit 0/i /usr/sbin/goshisen --config /etc/goshisen/config.yaml >/tmp/goshisen2.log 2>&1 &' \
+    sed -i '/^exit 0/i for i in $(seq 1 30); do ip -o addr show dev br-lan 2>/dev/null | grep -q "10.0.3.1" && break; sleep 2; done; /usr/sbin/goshisen --config /etc/goshisen/config.yaml >/tmp/goshisen2.log 2>&1 &' \
         "$MNT/etc/rc.local"
 fi
 
