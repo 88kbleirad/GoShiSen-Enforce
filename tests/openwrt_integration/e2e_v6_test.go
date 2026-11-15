@@ -53,6 +53,14 @@ func v6LabUp() string {
 }
 
 func TestOpenWrtE2EV6(t *testing.T) {
+	// This test belongs to the v6 lab mode only. In the slirp mode
+	// (default) it is a no-op: the runner's slirp job runs the whole
+	// package and must not see a SKIP (CI fails on SKIP). When the v6
+	// mode is requested (E2E_LAB_MODE=v6) the lab must be up, else the
+	// test skips with an explicit reason (the v6 CI job rejects skips).
+	if os.Getenv("E2E_LAB_MODE") != "v6" {
+		return
+	}
 	if reason := checkTools(); reason != "" {
 		t.Skip(reason)
 	}
