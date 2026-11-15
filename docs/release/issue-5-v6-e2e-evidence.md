@@ -38,6 +38,14 @@
 Full log: `/data/issue5-v6-e2e-log.txt` (sha256
 `2e8c76ffce4aaef2ea966f621d3faf7e8cc70895ab994a443559b13012edd9e1`).
 
+## CI run (PR #52, `openwrt-integration-v6` job)
+
+- Run: 43735801998, job 132878036620 — **PASS** (all 4 scenarios, same
+  counter evidence as the lab).
+- Runner kernel: **7.0.0-1017-azure** (GitHub ubuntu-24.04 runner).
+- Guest kernel: **6.12.112** (OpenWrt 25.12.6 x86/64, pinned kmods).
+- The job fails on SKIP and on "no tests to run" (runner guards).
+
 ## CI wiring
 
 - `scripts/openwrt-e2e-v6.sh` — scenario matrix (this evidence).
