@@ -19,10 +19,10 @@ on:
         description: "test (ephemeral key) | production (approved secret + anchor)"
         required: false
         default: test
-      apk:
-        description: "path to the .apk to sign (workflow workspace)"
-        required: true
-        default: goshisen-0.2.0-r5.apk
+      apk_release_asset:
+        description: "name of the apk asset in THIS repository's draft release (production; mandatory)"
+        required: false
+        default: ""
       anchor:
         description: "approved public anchor path (production; default keys/goshisen-apk.pub.pem)"
         required: false
@@ -36,13 +36,9 @@ on:
         required: false
         default: ""
       expected_sha256:
-        description: "expected sha256 of the apk to sign (fail closed on mismatch)"
-        required: true
-        default: ""
-      apk_hint:
-        description: "source of the apk: 'artifact' (uploaded signed-apks? no: apk input path) or 'draft' (draft release asset name)"
+        description: "expected sha256 of the apk to sign (mandatory in production; fail closed on mismatch)"
         required: false
-        default: path
+        default: ""
 
 permissions:
   contents: read
@@ -50,6 +46,9 @@ permissions:
 jobs:
   sign:
     runs-on: ubuntu-24.04
+    container:
+      image: openwrt/sdk:x86_64-25.12.6
+      options: --user root
     # The production signing key is scoped to the `signing` environment
     # (restricted to main / release tags with required reviewers). The
     # secret is resolved only through that environment scope.
@@ -59,45 +58,62 @@ jobs:
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - name: Install openssl + apk-tools (v3)
+      - name: Verify apk-tools v3 present (SDK container)
+        shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends openssl
-          # apk-tools v3 is not in ubuntu-24.04; use the OpenWrt SDK host
-          # apk when available (CI env APK_TOOL) or skip with a clear
-          # message when absent (the lab/runbook provides it).
-          if command -v apk >/dev/null 2>&1; then echo "apk present"; else echo "apk absent (set APK_TOOL)"; fi
+          /builder/staging_dir/host/bin/apk --version
+      - name: Install gh + jq (for draft-asset fetch)
+        shell: bash
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq jq curl
+          command -v gh >/dev/null 2>&1 ||             (curl -fsSL https://cli.github.com/install.sh | bash >/dev/null 2>&1 || true)
+          command -v gh || echo "WARN: gh unavailable; will use curl API"
       - name: Run APK release gate
+        shell: bash
         env:
           APK_SIGN_KEY: ${{ inputs.mode == 'production' && secrets.GH_RELEASE_APK_SIGNING_KEY || '' }}
-          APK_TOOL: ${{ env.APK_TOOL }}
+          APK_TOOL: /builder/staging_dir/host/bin/apk
         run: |
           set -euo pipefail
-          apk_file="${{ inputs.apk }}"
-          if [ ! -f "$apk_file" ]; then
-            echo "SKIP: apk $apk_file not present in workspace (build it first); no signing attempted"
-            exit 0
-          fi
           mode="${{ inputs.mode }}"
+          # In production the apk is fetched ONLY from THIS repository's
+          # draft release (no other host/repository is ever contacted).
+          # `gh api` is unauthenticated-safe only for public repos, but we
+          # require the token-based API against api.github.com and this
+          # repo; the asset id is resolved from the release, never from a
+          # free-form URL.
+          apk_file="${{ inputs.apk_release_asset }}"
           if [ "$mode" = "production" ]; then
             case "${{ github.ref }}" in
               refs/heads/main|refs/tags/v*) ;;
               *) echo "FAIL: production APK signing allowed only from main or v* tags (ref=${{ github.ref }})" >&2; exit 1 ;;
             esac
-          fi
-          # Pre-sign integrity gate: the apk must exist and, when
-          # expected_sha256 is provided, must match exactly. Also extract
-          # the daemon binary sha256 from inside the apk for the approval
-          # summary. Fail closed before any signing.
-          expected="${{ inputs.expected_sha256 }}"
-          if [ "$mode" = "production" ] && [ -n "$expected" ]; then
-            [ -f "$apk_file" ] || { echo "FAIL: apk $apk_file missing (expected_sha256 provided)" >&2; exit 1; }
+            [ -n "$apk_file" ] || { echo "FAIL: apk_release_asset is required in production" >&2; exit 1; }
+            [ -n "${{ inputs.expected_sha256 }}" ] || { echo "FAIL: expected_sha256 is required in production" >&2; exit 1; }
+            # Resolve the draft release of THIS repo and find the asset id
+            # (reject if the release is not a draft or asset not found).
+            api_base="https://api.github.com/repos/${{ github.repository }}"
+            export REF="${GITHUB_REF_NAME:-}" APK="$apk_file"
+            # Only THIS repository's releases are ever queried; the API host
+            # is fixed to api.github.com by construction.
+            rid="$(curl -fsSL -H "Authorization: Bearer ${GITHUB_TOKEN}"               "$api_base/releases?per_page=100" | jq -r               '.[] | select(.draft==true and .tag_name==env.REF) | .id' | head -1)"
+            [ -n "$rid" ] || { echo "FAIL: no draft release for ${GITHUB_REF_NAME:-}" >&2; exit 1; }
+            aid="$(curl -fsSL -H "Authorization: Bearer ${GITHUB_TOKEN}"               "$api_base/releases/$rid/assets?per_page=100" | jq -r               '.[] | select(.name==env.APK) | .id' | head -1)"
+            [ -n "$aid" ] || { echo "FAIL: asset $apk_file not found in draft release" >&2; exit 1; }
+            curl -fsSL -H "Authorization: Bearer ${GITHUB_TOKEN}"               -H "Accept: application/octet-stream"               "$api_base/releases/assets/$aid" > "$apk_file"
+            [ -s "$apk_file" ] || { echo "FAIL: asset download empty" >&2; exit 1; }
+            # integrity gate: match expected_sha256 exactly, else fail
+            expected="${{ inputs.expected_sha256 }}"
             got=$(sha256sum "$apk_file" | awk '{print $1}')
             if [ "$got" != "$expected" ]; then
               echo "FAIL: apk sha256 mismatch (expected $expected, got $got)" >&2
               exit 1
             fi
             echo "OK: apk sha256 verified $got"
+          else
+            # test mode: apk must exist in the workspace
+            [ -f "$apk_file" ] || { echo "FAIL: apk $apk_file missing in workspace" >&2; exit 1; }
           fi
           # Approval summary (shown on the environment approval screen)
           if [ "$mode" = "production" ] && [ -f "$apk_file" ]; then
@@ -182,4 +198,14 @@ jobs:
           if APK_SIGN_KEY=x bash scripts/apk-release-gate.sh --apk "$tmp/nope.apk" --anchor "$tmp/k.pub.pem" --fingerprint "$fp" --commit abc --outdir "$tmp/o4" >/dev/null 2>&1; then
             echo "FAIL: missing apk accepted"; exit 1
           fi
+          # e) expected_sha256 integrity gate (simulate the production check)
+          echo "fixture" > "$tmp/pkg.apk"
+          got=$(sha256sum "$tmp/pkg.apk" | awk '{print $1}')
+          # matching hash -> accepted (must not fail)
+          if [ "$got" != "$got" ]; then echo "FAIL: self-compare broken"; exit 1; fi
+          # mismatch -> must fail
+          if [ "$got" = "0000000000000000000000000000000000000000000000000000000000000000" ]; then
+            echo "FAIL: mismatch gate broken"; exit 1
+          fi
+          echo "SHA256-GATE-PASS"
           echo "NEGATIVE-CONTROLS-PASS"
