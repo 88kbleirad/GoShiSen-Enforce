@@ -55,8 +55,11 @@ enforcement model.
   IPv4 (queue 100) and IPv6 (queue 101) forwarded TCP/UDP separately;
   the parser and policy prefixes support IPv6. IPv6 no longer bypasses
   the daemon (previously a fail-open gap). Stateful IPv6 ACCEPT is
-  limited on kernels without IPv6 conntrack-attribute delivery
-  (packets are then INVALID → DROP; stateless IPv6 rules work).
+  verified on kernel 6.12.112 with the canonical bidirectional
+  `ESTABLISHED/RELATED` rule pattern (issue #5; PR #50); on kernels
+  without IPv6 conntrack-attribute delivery packets would be INVALID →
+  DROP (fail-closed; no such kernel observed, others untested).
+  Stateless IPv6 rules work.
 - **Flow-offload detection**: the daemon detects nftables flowtables /
   `flow add @ft` and warns loudly (WARN + `goshisen_flow_offload_active`
   gauge, re-checked every 10 s). It never modifies the firewall.

@@ -9,7 +9,9 @@
 The OpenWrt package (`openwrt/`, SDK-built `.apk`) adds GoShiSen-Enforce
 as a fail-closed enforcement layer after firewall4 on the forward path.
 Validated on OpenWrt 25.12.6 x86/64 (kernel 6.12.112); the service is
-disabled by default.
+disabled by default. Stateful IPv6 ACCEPT works with the canonical
+bidirectional `ESTABLISHED/RELATED` rule pattern (verified kernel
+6.12.112); see `docs/openwrt.md`.
 
 Latest release: `v0.2.3` — production-signed OpenWrt apk
 (`goshisen-0.2.3-r1.apk`, anchor `keys/goshisen-apk.pub.pem`,
@@ -21,7 +23,7 @@ binaries).
 - `docs/openwrt.md` — install, UCI options, procd usage, boot behavior,
   recovery, upgrade/removal.
 - `docs/release/v0.2.0-notes.md` — verified behavior and known
-  limitations (boot-time window, stateful IPv6, flow offloading,
+  limitations (boot-time window, flow offloading,
   architecture coverage, stop semantics).
 - `docs/release/phase11-openwrt-validation.md` — full evidence matrix,
   CI run IDs, reproducibility and package results.

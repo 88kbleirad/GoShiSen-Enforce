@@ -160,11 +160,22 @@ by the late start order.
 | Non-TCP/UDP | not queued; firewall4 decides |
 | Flow offloading | **detected and warned by default**: established flows bypass the queue. The daemon logs a WARN and exposes `goshisen_flow_offload_state` (0 disabled, 1 enabled, 2 unknown), re-checked every 10 s. `offload_policy` controls the response: `refuse` fails startup before the hook is installed (fail-closed by absence), `readiness` keeps enforcing but never becomes ready while offloading is active, `enforce` actively disables the offload and verifies it, failing closed if the disable fails or state is unknown (unless the explicit `allow_bypass` diagnostic hatch is set). Recommended: keep `flow_offloading` disabled on routers that rely on GoShiSen enforcement |
 
-Stateful IPv6 note: on kernels whose `nfnetlink_queue` build does not
-deliver conntrack attributes for IPv6, IPv6 packets arrive as INVALID
-and are dropped (fail-closed, never allowed). Stateless IPv6 rules
-(src/dst/proto/port without `state`) work. Verify with
-`goshisen_packets_by_state_total{state="invalid"}`.
+Stateful IPv6 note: stateful IPv6 ACCEPT requires the **canonical
+bidirectional rule pattern** — allow `NEW` per service in one direction,
+and a separate `state: [ESTABLISHED, RELATED]` ACCEPT rule with no
+src/dst that matches reply traffic in either direction. A
+direction-specific established rule (e.g. reply-only `src=... dst=...`)
+drops the client's original-direction established ACK/data and the
+handshake never completes — this is policy semantics, not an IPv6
+limitation. Verified on kernel 6.12.112 (OpenWrt 25.12.6 x86/64):
+stateful IPv6 completes end-to-end with the canonical pattern (see
+`docs/release/issue-5-investigation.md`). The packaged default policy
+(`openwrt/files/etc/goshisen/policy.yaml`) is `default_action: DROP`
+with no rules. On kernels whose `nfnetlink_queue` build genuinely does
+not deliver conntrack attributes for IPv6, IPv6 packets arrive as
+INVALID and are dropped (fail-closed, never allowed) — no kernel has
+been observed in this state; older/different kernels remain untested.
+Verify with `goshisen_packets_by_state_total{state="invalid"}`.
 
 ## Recovery (LAN→WAN blocked)
 

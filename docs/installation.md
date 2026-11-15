@@ -210,13 +210,15 @@ sudo goshisen hook cleanup
 - **IPv6 (queue 101):** forwarded IPv6 TCP/UDP is queued on queue
   `101` (`inet` table) and fails closed under a DROP policy — a
   non-zero peer portid in `/proc/net/netfilter/nfnetlink_queue` means
-  the AF_INET6 socket is bound. Stateful IPv6 ACCEPT depends on kernel
-  conntrack-attribute delivery for IPv6: on kernels whose
-  `nfnetlink_queue` build does not deliver CT attributes for IPv6,
-  replies arrive as INVALID and are dropped (fail-closed, never
-  allowed) — this is tracked in issue #5. Stateless IPv6 rules
-  (src/dst/proto/port, no `state`) are supported and verified; see
-  `docs/openwrt.md` for the daemon-side `inet` table layout.
+  the AF_INET6 socket is bound. Stateful IPv6 ACCEPT requires the
+  **canonical bidirectional rule pattern**: allow `NEW` per service in
+  one direction plus a `state: [ESTABLISHED, RELATED]` ACCEPT rule with
+  no src/dst (verified end-to-end on kernel 6.12.112; issue #5). A
+  direction-specific established rule drops the client's
+  original-direction ACK/data and the handshake stalls — that is policy
+  semantics, not an IPv6 gap. Stateless IPv6 rules (src/dst/proto/port,
+  no `state`) are supported and verified; see `docs/openwrt.md` for the
+  daemon-side `inet` table layout.
 - Binaries are built with `CGO_ENABLED=0`; no libc dependency for the
   daemon itself.
 - The `nft` userspace binary must match the target kernel's nftables

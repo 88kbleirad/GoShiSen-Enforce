@@ -124,8 +124,9 @@ Run in order. Every item must pass before tagging.
   removes the app-owned `inet goshisen` table (no orphaned queue rule);
   user config survives as conffiles.
 - [x] IPv6: `inet` hook queues both families; stateless IPv6 allow/
-  deny verified on the VM; stateful-v6 limit documented (CT-glue gap →
-  INVALID → DROP).
+  deny verified on the VM; stateful v6 verified on kernel 6.12.112 with
+  the canonical bidirectional `ESTABLISHED/RELATED` rule pattern
+  (issue #5; `docs/release/issue-5-investigation.md`; e2e v6 CI job).
 - [x] Flow offloading: daemon WARN + `goshisen_flow_offload_state`
   metric (0 disabled/1 enabled/2 unknown), re-checked every 10 s;
   `offload_policy` (warn|refuse|readiness|enforce) config/UCI plumbed
