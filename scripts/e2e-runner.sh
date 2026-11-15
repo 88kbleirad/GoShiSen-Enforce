@@ -48,6 +48,18 @@ ARTIFACTS=${E2E_ARTIFACT_DIR:-/tmp/goshisen-e2e-artifacts}
 LAB_LOG=${OPENWRT_LOG:-/tmp/owrt-console.log}
 PIDFILE=${OPENWRT_PIDFILE:-/tmp/owrt-qemu.pid}
 FIXTURE=${E2E_PREFLIGHT_FIXTURE:-}
+# E2E_LAB_MODE=v6 runs the IPv6 dual-tap lab + the stateful-v6 e2e
+# (issue #5). Any other value (default) runs the standard slirp lab.
+LAB_MODE=${E2E_LAB_MODE:-}
+[ "$LAB_MODE" = v6 ] || LAB_MODE=""
+LAB_SCRIPT="scripts/openwrt-lab.sh"
+TEST_PKG="./tests/openwrt_integration/"
+if [ "$LAB_MODE" = v6 ]; then
+  LAB_SCRIPT="scripts/openwrt-lab-v6.sh"
+  LAB_LOG=${OPENWRT_V6_LOG:-/tmp/owrt-v6-console.log}
+  PIDFILE=${OPENWRT_V6_PIDFILE:-/tmp/owrt-v6-qemu.pid}
+  TEST_PKG="./tests/openwrt_integration/ -run TestOpenWrtE2EV6"
+fi
 
 # Single source of truth for the fixture contract (see preflight section).
 REQUIRED_FIXTURE_KEYS="tool curl|tool wget|tool python3|tool qemu-system-x86_64|tool nft|tool iptables|tool ip|tool sudo|uid|module nf_conntrack|nfqueue_proc|port 5555|port 2222"
@@ -376,7 +388,7 @@ cleanup() {
   # Use the same privilege escalation as `lab up`: the lab's resources
   # are root-owned when the runner is invoked via sudo -E, and an
   # unprivileged `down` would silently leave QEMU/netns behind.
-  (cd "$ROOT" && sudo -E bash scripts/openwrt-lab.sh down >/dev/null 2>&1 || true)
+  (cd "$ROOT" && sudo -E bash "$LAB_SCRIPT" down >/dev/null 2>&1 || true)
   # collect diagnostics on significant failure
   if [ "$rc" -ne 0 ]; then
     collect_artifacts
@@ -425,8 +437,8 @@ fi
 # The lab must boot the image we provisioned, not its own default
 # (OPENWRT_IMAGE defaults to /tmp/owrt.img inside the lab script). Pass
 # the image explicitly so a custom --image path is honored.
-say "booting lab (image: $IMAGE)"
-(cd "$ROOT" && OPENWRT_IMAGE="$IMAGE" sudo -E bash scripts/openwrt-lab.sh up) \
+say "booting lab (image: $IMAGE, mode: ${LAB_MODE:-slirp})"
+(cd "$ROOT" && OPENWRT_IMAGE="$IMAGE" sudo -E bash "$LAB_SCRIPT" up) \
   || die "lab up failed" 5
 
 # Wait for serial console.
@@ -438,13 +450,19 @@ for i in $(seq 1 60); do
 done
 
 # --- run e2e (same command/path as CI) ---
-say "running openwrt e2e"
+say "running openwrt e2e (${LAB_MODE:-slirp})"
 set -o pipefail
-sudo -E env "PATH=$PATH" go test ./tests/openwrt_integration/ \
+# TEST_PKG may contain a -run filter; eval is avoided by splitting on
+# whitespace (script-controlled value, never user input).
+# shellcheck disable=SC2086
+sudo -E env "PATH=$PATH" go test $TEST_PKG \
   -v -count=1 -timeout 25m | tee "$ARTIFACTS/e2e.log"
 rc=${PIPESTATUS[0]}
 if grep -q -- '--- SKIP' "$ARTIFACTS/e2e.log"; then
   die "openwrt e2e SKIPPED; gate cannot pass (BLOCKED)" 3
+fi
+if grep -q -- '\[no tests to run\]' "$ARTIFACTS/e2e.log"; then
+  die "openwrt e2e ran NO tests (wrong -run filter?); gate cannot pass (BLOCKED)" 3
 fi
 if [ "$rc" -ne 0 ]; then
   die "openwrt e2e FAILED (rc=$rc)" 1

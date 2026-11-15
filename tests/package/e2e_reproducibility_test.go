@@ -445,6 +445,29 @@ func TestLabScriptsCleanupSafety(t *testing.T) {
 	}
 }
 
+// TestV6LabScriptsCleanupSafety asserts the v6 lab script implements the
+// same idempotent/safe cleanup contract as the slirp lab.
+func TestV6LabScriptsCleanupSafety(t *testing.T) {
+	b, err := os.ReadFile(e2eScript(t, "openwrt-lab-v6.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	for _, want := range []string{
+		"qemu-system-[x]86_64.*gsh-v6tap",
+		`grep -q "gsh-v6tap" "/proc/$pid/cmdline"`,
+		`ip netns del "$NS_LAN"`,
+		`ip netns del "$NS_WAN"`,
+		"for x in \"$TAP_LAN\" \"$TAP_WAN\"",
+		"ip link del \"$x\"",
+		"iptables -D FORWARD",
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("openwrt-lab-v6.sh missing cleanup element %q", want)
+		}
+	}
+}
+
 // TestE2ERunnerBootsProvisionedImage asserts the runner boots the image
 // it provisioned (--image / E2E_IMAGE), never the lab script's own
 // default. A mismatch silently runs the e2e against a stale image.
@@ -454,9 +477,14 @@ func TestE2ERunnerBootsProvisionedImage(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(b)
+	// The runner boots the provisioned image explicitly and always via a
+	// lab script: the slirp lab (fixed name) or the v6 dual-tap lab
+	// (selected through LAB_SCRIPT). Both must honor OPENWRT_IMAGE.
 	for _, want := range []string{
 		`OPENWRT_IMAGE="$IMAGE"`,
-		"openwrt-lab.sh up",
+		"LAB_SCRIPT",
+		"openwrt-lab.sh",
+		"openwrt-lab-v6.sh",
 	} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("e2e-runner.sh missing %q (boot must use the provisioned image)", want)
@@ -466,7 +494,7 @@ func TestE2ERunnerBootsProvisionedImage(t *testing.T) {
 
 // TestLabScriptSyntax validates all three scripts parse cleanly.
 func TestLabScriptSyntax(t *testing.T) {
-	for _, name := range []string{"openwrt-lab.sh", "e2e-runner.sh", "e2e-env-manifest.sh"} {
+	for _, name := range []string{"openwrt-lab.sh", "openwrt-lab-v6.sh", "e2e-runner.sh", "e2e-env-manifest.sh"} {
 		cmd := exec.Command("bash", "-n", e2eScript(t, name))
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("bash -n %s: %v: %s", name, err, out)
