@@ -39,6 +39,10 @@ on:
         description: "expected sha256 of the apk to sign (mandatory in production; fail closed on mismatch)"
         required: false
         default: ""
+      release_tag:
+        description: "draft release tag to fetch the apk asset from (production; mandatory)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -62,13 +66,20 @@ jobs:
         shell: bash
         run: |
           /builder/staging_dir/host/bin/apk --version
-      - name: Install gh + jq (for draft-asset fetch)
+      - name: Fetch draft-release apk asset
+        if: inputs.mode == 'production'
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          apt-get update -qq
-          apt-get install -y -qq jq curl
-          command -v gh >/dev/null 2>&1 ||             (curl -fsSL https://cli.github.com/install.sh | bash >/dev/null 2>&1 || true)
-          command -v gh || echo "WARN: gh unavailable; will use curl API"
+          set -euo pipefail
+          tag="${{ inputs.release_tag }}"
+          asset="${{ inputs.apk_release_asset }}"
+          [ -n "$tag" ] || { echo "FAIL: release_tag is required in production" >&2; exit 1; }
+          [ -n "$asset" ] || { echo "FAIL: apk_release_asset is required in production" >&2; exit 1; }
+          python3 scripts/fetch-release-asset.py "$tag" "$asset" "$asset"
+          [ -s "$asset" ] || { echo "FAIL: asset download empty" >&2; exit 1; }
+          echo "OK: downloaded $asset from draft $tag"
       - name: Run APK release gate
         shell: bash
         env:
@@ -91,19 +102,10 @@ jobs:
             esac
             [ -n "$apk_file" ] || { echo "FAIL: apk_release_asset is required in production" >&2; exit 1; }
             [ -n "${{ inputs.expected_sha256 }}" ] || { echo "FAIL: expected_sha256 is required in production" >&2; exit 1; }
-            # Resolve the draft release of THIS repo and find the asset id
-            # (reject if the release is not a draft or asset not found).
-            api_base="https://api.github.com/repos/${{ github.repository }}"
-            export REF="${GITHUB_REF_NAME:-}" APK="$apk_file"
-            # Only THIS repository's releases are ever queried; the API host
-            # is fixed to api.github.com by construction.
-            rid="$(curl -fsSL -H "Authorization: Bearer ${GITHUB_TOKEN}"               "$api_base/releases?per_page=100" | jq -r               '.[] | select(.draft==true and .tag_name==env.REF) | .id' | head -1)"
-            [ -n "$rid" ] || { echo "FAIL: no draft release for ${GITHUB_REF_NAME:-}" >&2; exit 1; }
-            aid="$(curl -fsSL -H "Authorization: Bearer ${GITHUB_TOKEN}"               "$api_base/releases/$rid/assets?per_page=100" | jq -r               '.[] | select(.name==env.APK) | .id' | head -1)"
-            [ -n "$aid" ] || { echo "FAIL: asset $apk_file not found in draft release" >&2; exit 1; }
-            curl -fsSL -H "Authorization: Bearer ${GITHUB_TOKEN}"               -H "Accept: application/octet-stream"               "$api_base/releases/assets/$aid" > "$apk_file"
-            [ -s "$apk_file" ] || { echo "FAIL: asset download empty" >&2; exit 1; }
-            # integrity gate: match expected_sha256 exactly, else fail
+            # The apk was fetched from THIS repository's draft release in the
+            # previous step (never from a free-form URL). Integrity gate:
+            # must match expected_sha256 exactly, else fail closed.
+            [ -f "$apk_file" ] || { echo "FAIL: apk $apk_file not present in workspace" >&2; exit 1; }
             expected="${{ inputs.expected_sha256 }}"
             got=$(sha256sum "$apk_file" | awk '{print $1}')
             if [ "$got" != "$expected" ]; then
