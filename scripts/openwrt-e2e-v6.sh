@@ -423,7 +423,10 @@ client wan true 2>/dev/null || denv "cannot execute in WAN namespace (root or pa
 
 # Daemon ready: queues bound. Primary check is the /proc queue bind
 # (authoritative — the daemon may have started before this run and its
-# log line rotated/overwritten); fall back to the log line.
+# log line rotated/overwritten); fall back to the log line. If the
+# rc.local autostart failed (slow/contended CI boot race), start the
+# daemon explicitly (busybox has setsid; a plain `&` child dies on
+# serial-session SIGHUP) and re-poll once before failing.
 daemon_ready=0
 deadline=$((SECONDS + 300))
 while [ $SECONDS -lt $deadline ]; do
@@ -440,6 +443,19 @@ while [ $SECONDS -lt $deadline ]; do
     fi
     sleep 3
 done
+if [ "$daemon_ready" -ne 1 ]; then
+    note "daemon not ready after 300s; starting it explicitly"
+    vm "setsid /usr/sbin/goshisen --config /etc/goshisen/config.yaml >/tmp/goshisen2.log 2>&1 < /dev/null & sleep 5" 30 >/dev/null
+    deadline2=$((SECONDS + 120))
+    while [ $SECONDS -lt $deadline2 ]; do
+        if vm "awk '\$1==$QUEUE4{print \$2} \$1==$QUEUE6{print \$2}' /proc/net/netfilter/nfnetlink_queue" \
+            | grep -a -E '^[1-9][0-9]*$' | wc -l | grep -qE '^2$'; then
+            daemon_ready=1
+            break
+        fi
+        sleep 3
+    done
+fi
 [ "$daemon_ready" -eq 1 ] || denv "daemon not ready (no NFQUEUE bound in /tmp/goshisen2.log)"
 
 guest_net
@@ -461,8 +477,9 @@ while { [ "$peer4" = "0" ] || [ "$peer6" = "0" ]; } && [ $SECONDS -lt $deadline 
 done
 if [ "$peer4" = "0" ] || [ "$peer6" = "0" ]; then
     note "queue 100/101 not bound after 120s; (re)starting daemon"
-    # busybox sh: background via a subshell (nohup is not present).
-    vm "( /usr/sbin/goshisen --config /etc/goshisen/config.yaml >/tmp/goshisen2.log 2>&1 & )" 30 >/dev/null
+    # busybox: setsid survives the serial session (a plain `&` child is
+    # killed on session SIGHUP; nohup is absent).
+    vm "setsid /usr/sbin/goshisen --config /etc/goshisen/config.yaml >/tmp/goshisen2.log 2>&1 < /dev/null & sleep 5" 30 >/dev/null
     sleep 10
     rm -f "$WORK/baseline.raw"
     snapshot baseline
