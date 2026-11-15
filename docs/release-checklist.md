@@ -137,3 +137,35 @@ Run in order. Every item must pass before tagging.
   (`goshisen_backend_errors_total{kind="parse"}`), fuzz ≥ 60 s clean.
 - [x] Recovery path documented and tested: `goshisen hook cleanup`
   restores forwarding after a stop.
+
+## Post-release verification (v0.2.3+)
+
+Run after each publish; every item must pass before the release is
+declared done.
+
+- [ ] Public re-verification (unauthenticated): `curl -fsSL
+  https://api.github.com/repos/88kbleirad/GoShiSen-Enforce/releases/tags/vX`
+  → `draft=false`, `prerelease=false`, expected asset count; download
+  each public `browser_download_url`; `sha256sum -c checksums.txt`;
+  verify the apk against its anchor (`keys/goshisen-apk.pub.pem`,
+  fingerprint `542bb7ae…`); verify CLI signatures with the release key
+  (`scripts/verify-signatures.sh --require-sign`).
+- [ ] Upgrade/negative VM tests: from the previously published unsigned
+  apk with an anchor installed and continuous probes (no fail-open),
+  then negatives — anchor removed / unsigned / tampered must all be
+  rejected (never `--allow-untrusted` on the production path).
+- [ ] Issue status sweep: close resolved follow-up issues (e.g. the
+  CI-flake tracker) with the fix commit/run reference; leave open only
+  items with a pending decision.
+- [ ] Immutable releases: confirm `GET
+  /repos/88kbleirad/GoShiSen-Enforce/immutable-releases` →
+  `enabled=true` (setting enabled 2026-11-15); no asset
+  overwrite/deletion after publish. Keep the workflow's `--clobber`
+  uploads to the pre-publish draft only — once published, a `--clobber`
+  upload fails under immutability, which is the desired guard.
+- [ ] CI flake policy: if a post-release main run fails on a
+  docs-only commit, prove the flake before touching code (`git diff
+  --name-only <tag-commit> main` must be docs-only; compare the same
+  e2e job across runs on an identical SHA) and rerun the failed job
+  (`gh api -X POST …/actions/runs/<id>/rerun-failed-jobs`) or apply
+  the documented readiness-wait fix; record the outcome in the issue.
