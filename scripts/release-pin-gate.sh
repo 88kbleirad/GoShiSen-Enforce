@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+# GoShiSen-Enforce — release pin/version agreement gate.
+#
+# Proves, for a release build, that the OpenWrt package's source pin and
+# version labels identify the release consistently. The package Makefile
+# lives in the same repo as the source, so the tag commit cannot contain
+# its own hash; this gate replaces fake equality with checkable claims:
+#
+#   1. PKG_VERSION (openwrt/Makefile) equals the release version.
+#   2. PKG_SOURCE_VERSION is an ancestor of (or equal to) the release
+#      tag commit.
+#   3. The source diff between the pin and the tag is EMPTY over the
+#      runtime tree (cmd internal pkg go.mod go.sum openwrt/files);
+#      otherwise the gate fails and prints the diff.
+#   4. The apk payload binary reports --version == PKG_VERSION.
+#   5. The apk filename version equals PKG_VERSION-r<PKG_RELEASE>.
+#
+# What this gate does NOT prove: that the pin is the tag commit itself
+# (impossible by construction — the tag cannot contain its own hash).
+# It proves source equivalence between what was pinned and what was
+# tagged, and label agreement, so the published artifact is traceable
+# to a single source tree.
+#
+# Usage:
+#   scripts/release-pin-gate.sh \
+#     --apk goshisen-0.2.4-r1.apk \
+#     --tag v0.2.4 \
+#     --payload /path/to/extracted/goshisen
+#
+# Exit codes:
+#   0  PASS
+#   1  FAIL (one of the checks failed; the failing check is named)
+#   2  usage
+#   3  ENV (git or apk-tools unavailable)
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# GATE_REPO overrides the repository the gate inspects (tests use a
+# scratch git repo). Defaults to the checkout containing this script.
+GATE_REPO="${GATE_REPO:-$ROOT}"
+PKG_MAKEFILE="$GATE_REPO/openwrt/Makefile"
+
+APK=""
+TAG=""
+PAYLOAD=""
+
+usage() {
+  echo "usage: $0 --apk FILE.apk --tag vX.Y.Z --payload PAYLOAD_BINARY" >&2
+  exit 2
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --apk) APK="$2"; shift 2 ;;
+    --tag) TAG="$2"; shift 2 ;;
+    --payload) PAYLOAD="$2"; shift 2 ;;
+    *) usage ;;
+  esac
+done
+
+[ -n "$APK" ] || { echo "ERROR: --apk required" >&2; usage; }
+[ -n "$TAG" ] || { echo "ERROR: --tag required" >&2; usage; }
+[ -n "$PAYLOAD" ] || { echo "ERROR: --payload required" >&2; usage; }
+
+command -v git >/dev/null 2>&1 || { echo "ENV: git required" >&2; exit 3; }
+
+# ---------------------------------------------------------------------------
+# Extract package metadata from the Makefile.
+# ---------------------------------------------------------------------------
+pkg_var() { # pkg_var <name>
+  sed -nE "s/^PKG_$1[[:space:]]*:=?[[:space:]]*(.*)/\1/p" "$PKG_MAKEFILE" | head -n1
+}
+
+PKG_VERSION="$(pkg_var VERSION)"
+PKG_RELEASE="$(pkg_var RELEASE)"
+PKG_SOURCE_VERSION="$(pkg_var SOURCE_VERSION)"
+PKG_MIRROR_HASH="$(pkg_var MIRROR_HASH)"
+
+fail() { echo "FAIL: $*" >&2; exit 1; }
+ok() { echo "OK: $*"; }
+
+[ -n "$PKG_VERSION" ] || fail "PKG_VERSION empty in $PKG_MAKEFILE"
+[ -n "$PKG_RELEASE" ] || fail "PKG_RELEASE empty in $PKG_MAKEFILE"
+[ -n "$PKG_SOURCE_VERSION" ] || fail "PKG_SOURCE_VERSION empty in $PKG_MAKEFILE"
+
+# ---------------------------------------------------------------------------
+# 1. PKG_VERSION equals the release version.
+# ---------------------------------------------------------------------------
+TAG_VERSION="${TAG#v}"
+[ "$PKG_VERSION" = "$TAG_VERSION" ] || \
+  fail "PKG_VERSION=$PKG_VERSION does not match tag version $TAG_VERSION (tag $TAG)"
+ok "PKG_VERSION=$PKG_VERSION matches tag version"
+
+# ---------------------------------------------------------------------------
+# 2. PKG_SOURCE_VERSION is an ancestor of (or equal to) the tag commit.
+# ---------------------------------------------------------------------------
+TAG_COMMIT="$(git -C "$GATE_REPO" rev-parse --verify --quiet "$TAG^{commit}")" || \
+  fail "tag $TAG not found in this repository"
+PIN_COMMIT="$(git -C "$GATE_REPO" rev-parse --verify --quiet "$PKG_SOURCE_VERSION^{commit}")" || \
+  fail "pin $PKG_SOURCE_VERSION not found in this repository"
+
+if [ "$PIN_COMMIT" = "$TAG_COMMIT" ]; then
+  :
+elif git -C "$GATE_REPO" merge-base --is-ancestor "$PIN_COMMIT" "$TAG_COMMIT" 2>/dev/null; then
+  :
+else
+  fail "pin $PKG_SOURCE_VERSION is not an ancestor of tag $TAG ($TAG_COMMIT)"
+fi
+ok "pin $PKG_SOURCE_VERSION is ancestor/equal of tag $TAG ($TAG_COMMIT)"
+
+# ---------------------------------------------------------------------------
+# 3. Source equivalence: git diff pin..tag over the runtime tree is empty.
+# ---------------------------------------------------------------------------
+if DIFF="$(git -C "$GATE_REPO" diff --stat "$PIN_COMMIT" "$TAG_COMMIT" -- \
+    cmd internal pkg go.mod go.sum openwrt/files)"; then
+  :
+else
+  fail "git diff between pin and tag failed"
+fi
+if [ -n "$DIFF" ]; then
+  fail "source diff between pin and tag is NOT empty over cmd internal pkg go.mod go.sum openwrt/files:
+$DIFF"
+fi
+ok "source tree identical between pin ($PIN_COMMIT) and tag ($TAG_COMMIT)"
+
+# ---------------------------------------------------------------------------
+# 4. Payload binary --version equals PKG_VERSION.
+# ---------------------------------------------------------------------------
+[ -f "$PAYLOAD" ] || fail "payload binary not found: $PAYLOAD"
+PAYLOAD_VERSION="$("$PAYLOAD" --version 2>&1 | head -n1)"
+case "$PAYLOAD_VERSION" in
+  "goshisen $PKG_VERSION") ;;
+  *) fail "payload --version '$PAYLOAD_VERSION' != 'goshisen $PKG_VERSION'" ;;
+esac
+ok "payload --version matches PKG_VERSION ($PKG_VERSION)"
+
+# ---------------------------------------------------------------------------
+# 5. Apk filename version equals PKG_VERSION-r<PKG_RELEASE>.
+# ---------------------------------------------------------------------------
+APK_BASENAME="$(basename "$APK")"
+EXPECTED_APK="goshisen-$PKG_VERSION-r$PKG_RELEASE.apk"
+[ "$APK_BASENAME" = "$EXPECTED_APK" ] || \
+  fail "apk filename '$APK_BASENAME' != expected '$EXPECTED_APK'"
+ok "apk filename matches PKG_VERSION-rPKG_RELEASE ($EXPECTED_APK)"
+
+echo "PASS: release pin/version agreement gate passed (tag $TAG)"
