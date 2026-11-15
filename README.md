@@ -2,7 +2,7 @@
 
 **A Linux lab firewall: Go policy engine over NFQUEUE, kernel conntrack, nftables hooks.**
 
-> **Status: released v0.1.0; v0.2.0 drafted (OpenWrt package, IPv6 enforcement, flow-offload awareness); flow-offload policy (Phase 14) landed; atomic policy publish (Phase 15) landed; performance (Phase 16) landed.** The daemon (policy engine, NFQUEUE enforcement, stateful filtering, management API/metrics, NAT, overflow monitoring, crash/restart hardening) is released as v0.1.0 with the privileged integration suite at 21/21 PASS and zero mandatory skips on GitHub-hosted runners. v0.2.0 adds reproducible Linux release binaries (amd64 + arm64), checksums, SBOM, packaging automation, and installation/upgrade documentation. Phase 15 makes policy publishes (SIGHUP and API) atomic and durable: validation → durable store → live ruleset under one lock, with outcome metrics and a `policy dry-run` preview. See `docs/installation.md`.
+> **Status: released v0.1.0; v0.2.0 released; v0.2.3 released (packaging/signing: production-signed OpenWrt apk, CLI-signed archives).** The daemon (policy engine, NFQUEUE enforcement, stateful filtering, management API/metrics, NAT, overflow monitoring, crash/restart hardening) is released as v0.1.0 with the privileged integration suite at 21/21 PASS and zero mandatory skips on GitHub-hosted runners. v0.2.0 adds reproducible Linux release binaries (amd64 + arm64), checksums, SBOM, packaging automation, and installation/upgrade documentation. Phase 15 makes policy publishes (SIGHUP and API) atomic and durable: validation → durable store → live ruleset under one lock, with outcome metrics and a `policy dry-run` preview. See `docs/installation.md`.
 
 ## OpenWrt
 
@@ -10,6 +10,13 @@ The OpenWrt package (`openwrt/`, SDK-built `.apk`) adds GoShiSen-Enforce
 as a fail-closed enforcement layer after firewall4 on the forward path.
 Validated on OpenWrt 25.12.6 x86/64 (kernel 6.12.112); the service is
 disabled by default.
+
+Latest release: `v0.2.3` — production-signed OpenWrt apk
+(`goshisen-0.2.3-r1.apk`, anchor `keys/goshisen-apk.pub.pem`,
+fingerprint `542bb7ae…`) and signed CLI archives (Ed25519
+`public_key.pem`, fingerprint `24215e01…`). Install instructions:
+`docs/openwrt.md` (OpenWrt package) and `docs/installation.md` (CLI
+binaries).
 
 - `docs/openwrt.md` — install, UCI options, procd usage, boot behavior,
   recovery, upgrade/removal.
