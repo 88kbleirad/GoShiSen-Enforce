@@ -53,6 +53,12 @@ jobs:
     container:
       image: openwrt/sdk:x86_64-25.12.6
       options: --user root
+    # Reading a DRAFT release (and its assets) requires a token with write
+    # access; a read-only GITHUB_TOKEN does not see drafts at all. The job
+    # performs no repository write: it only downloads the apk asset, signs
+    # it, and uploads a workflow artifact (never a release).
+    permissions:
+      contents: write
     # The production signing key is scoped to the `signing` environment
     # (restricted to main / release tags with required reviewers). The
     # secret is resolved only through that environment scope.
