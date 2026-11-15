@@ -87,10 +87,10 @@ Run in order. Every item must pass before tagging.
   before tagging** — run `make package/feeds/goshisen/{download,compile}`
   in a clean official SDK container at the exact commit and record the
   apk sha256 + daemon binary sha256 in /data/ with the commit SHA (the
-  mirror hash must be the clean official-SDK value, e.g. 1867a2de… for
+  mirror hash must be the clean official-SDK value, e.g. 1867a2de... for
   0.2.3). approval record filled,
   `GH_RELEASE_APK_SIGNING_KEY` provisioned (presence-only), anchor merged
-  (PR #34, fingerprint `542bb7ae…` verified). Production gate (GitHub
+  (PR #34, fingerprint `542bb7ae...` verified). Production gate (GitHub
   Actions, SDK container) PASS; clean-VM install/upgrade/uninstall without
   `--allow-untrusted` PASS; unsigned/wrong-key rejected; gate `--sha256`
   rejects tampered/checksum/provenance mismatches; CLI key/anchor
@@ -137,6 +137,15 @@ Run in order. Every item must pass before tagging.
   (`goshisen_backend_errors_total{kind="parse"}`), fuzz ≥ 60 s clean.
 - [x] Recovery path documented and tested: `goshisen hook cleanup`
   restores forwarding after a stop.
+- [ ] **Pin/version agreement gate (v0.2.4+, issue #49):** after
+  tagging, commit the Makefile-only follow-up (pin = the tag commit SHA,
+  `PKG_VERSION` = tag version) and run
+  `scripts/release-pin-gate.sh --apk goshisen-<ver>-r<rel>.apk
+  --tag v<ver> --payload <extracted binary>`; it must PASS
+  (PKG_VERSION == tag version, pin ancestor of tag, empty runtime diff
+  over cmd/internal/pkg/go.mod/go.sum/openwrt/files, payload `--version`
+  == PKG_VERSION, apk filename == PKG_VERSION-r<PKG_RELEASE>). See
+  `docs/release/release-pin-gate.md` for design and procedure.
 
 ## Post-release verification (v0.2.3+)
 
