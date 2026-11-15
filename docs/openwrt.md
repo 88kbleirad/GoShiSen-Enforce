@@ -56,22 +56,37 @@ unlink /etc/rc.d/S12goshisen-boot /etc/rc.d/K10goshisen-boot
 Uninstalling (`apk del goshisen`) is safe: the package prerm removes all
 four rc.d links (verified).
 
-## Install
+## Install (signed package, v0.2.3+)
+
+Since v0.2.3 the OpenWrt package (`goshisen-0.2.3-r1.apk`) is
+**production-signed** (apk v3). Install the public anchor and the
+package without `--allow-untrusted`:
 
 ```sh
-# transition install (no APK signature is published yet — see "Signing")
-wget -O /tmp/goshisen.apk https://example/goshisen-0.2.0-r5.apk
-sha256sum /tmp/goshisen.apk   # compare against the recorded build hash
-apk add --allow-untrusted /tmp/goshisen.apk
+# on the router/VM (as root)
+mkdir -p /etc/apk/keys
+wget -O /etc/apk/keys/goshisen-apk.pub.pem \
+  https://raw.githubusercontent.com/88kbleirad/GoShiSen-Enforce/v0.2.3/keys/goshisen-apk.pub.pem
+openssl pkey -pubin -in /etc/apk/keys/goshisen-apk.pub.pem -outform DER | sha256sum
+# must print: 542bb7ae9058fee9b4d37ed30b0af44f234ea7cb8866daa1ffc71a7bc37c839d
+wget -O /tmp/goshisen.apk \
+  https://github.com/88kbleirad/GoShiSen-Enforce/releases/download/v0.2.3/goshisen-0.2.3-r1.apk
+sha256sum /tmp/goshisen.apk    # 948e2e1de454c159bed81bfe845bad160dcf9454238b532b2a87f2e335b0cc6a
+apk add /tmp/goshisen.apk       # signature verified by apk; no --allow-untrusted
 ```
 
-**APK package signing is not yet implemented** (see "Signing"). Until it
-ships, the package is verified by its published build hash
-(sha256) and installed with `--allow-untrusted` — a **transition
-exception** only, never a production trust mechanism. Do not treat this
-as signed-package evidence. Once APK signing + `usign` verification land,
-this flag is removed and the failure mode is a hard package-manager
-rejection (no silent fallback).
+The APK anchor is an EC P-256 public key
+(`keys/goshisen-apk.pub.pem`, fingerprint `542bb7ae…`) and is **not**
+the CLI release key (the `public_key.pem` release asset, Ed25519,
+fingerprint `24215e01…`, verifies the tarballs/checksums/SBOM only).
+Package installs disabled by default; enable with `uci set
+goshisen.main.enabled=1; uci commit goshisen; /etc/init.d/goshisen
+enable && start`.
+
+APK signature verification is enforced by the package manager: without
+the anchor, `apk add` of the signed package fails closed (UNTRUSTED).
+The old `--allow-untrusted` transition path was removed with the
+signing release (v0.2.3).
 
 The package installs:
 
@@ -188,38 +203,16 @@ blocked by the forward hook, so these commands remain reachable.
 
 ## Signing
 
-**Status: APK package signing — test path implemented; production BLOCKED.**
+**Status: APK package signing — production-signed since v0.2.3.**
 The release workflow signs the CLI release archives (tarballs, checksums,
-SBOM) with the Ed25519 production key. The OpenWrt `.apk` is **not** yet
-production-signed (no approved APK signing key/secret). The package release gate
-is wired with an ephemeral test mode and fail-closed production mode
-(`scripts/apk-release-gate.sh`, `.github/workflows/apk-sign.yml`, see
-`docs/release/prompt36-apk-production-gate.md`). A test signing path is
-verified with an ephemeral key (`scripts/apk-sign.sh` sign,
-`scripts/apk-verify.sh` fail-closed verify against a trust dir; see
-`docs/release/prompt35-apk-signing-path.md`).
-Until an approved production key ships, the OpenWrt package is installed
-in two steps (transition exception):
-
-1. **Verify the signature first** (mandatory, see Install above):
-
-   ```sh
-   openssl pkeyutl -verify -rawin -pubin -inkey goshisen-release.pub.pem \
-     -in goshisen.apk -sigfile goshisen.apk.sig
-   # must print: Signature Verified Successfully
-   ```
-
-2. `apk add --allow-untrusted goshisen.apk` — **transition exception**:
-   `--allow-untrusted` skips apk's *own* trust check, so the Ed25519
-   verification in step 1 is REQUIRED and MUST have succeeded first. The flag
-   stays only until native `usign` verification lands (backlog #1) and will be
-   removed then; there is no silent fallback — the install fails (human
-   interrupt) if step 1 fails. Do not install an artifact whose signature you
-   have not verified, even with this exception.
-
-The public key fingerprint (SHA-256 of DER SPKI) is
-`24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0`
-(key created 2026-11-13; verify it out-of-band).
+SBOM) with the Ed25519 production key (fingerprint
+`24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0`).
+The OpenWrt `.apk` is production-signed (apk v3) with the APK key whose
+public anchor is `keys/goshisen-apk.pub.pem` (EC P-256, fingerprint
+`542bb7ae9058fee9b4d37ed30b0af44f234ea7cb8866daa1ffc71a7bc37c839d`).
+The two keys are distinct and never interchanged. Install per the
+signed-package steps in the Install section; `--allow-untrusted` is no
+longer needed and the package-manager trust check is enforced.
 
 ## Verification commands
 

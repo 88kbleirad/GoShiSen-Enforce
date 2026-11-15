@@ -134,3 +134,4 @@ apk del goshisen                # uninstall
 | Date | Event | Fingerprint | Reference |
 | --- | --- | --- | --- |
 | 2026-11-14 | handoff created; no key provisioned | — | this document |
+| 2026-11-15 | **first production use** — v0.2.3 release: production signing run `43680663126` (sign + negative-controls SUCCESS), signed `goshisen-0.2.3-r1.apk` (sha256 `948e2e1d…`) published | `542bb7ae9058fee9b4d37ed30b0af44f234ea7cb8866daa1ffc71a7bc37c839d` | `docs/release/prompt40-v023-release-evidence.md`, `docs/release/v0.2.3-notes.md` |
