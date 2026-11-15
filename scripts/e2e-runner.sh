@@ -58,7 +58,7 @@ if [ "$LAB_MODE" = v6 ]; then
   LAB_SCRIPT="scripts/openwrt-lab-v6.sh"
   LAB_LOG=${OPENWRT_V6_LOG:-/tmp/owrt-v6-console.log}
   PIDFILE=${OPENWRT_V6_PIDFILE:-/tmp/owrt-v6-qemu.pid}
-  TEST_PKG="./tests/openwrt_integration/ -run 'TestOpenWrtE2EV6'"
+  TEST_PKG="./tests/openwrt_integration/ -run TestOpenWrtE2EV6"
 fi
 
 # Single source of truth for the fixture contract (see preflight section).
@@ -460,6 +460,9 @@ sudo -E env "PATH=$PATH" go test $TEST_PKG \
 rc=${PIPESTATUS[0]}
 if grep -q -- '--- SKIP' "$ARTIFACTS/e2e.log"; then
   die "openwrt e2e SKIPPED; gate cannot pass (BLOCKED)" 3
+fi
+if grep -q -- '\[no tests to run\]' "$ARTIFACTS/e2e.log"; then
+  die "openwrt e2e ran NO tests (wrong -run filter?); gate cannot pass (BLOCKED)" 3
 fi
 if [ "$rc" -ne 0 ]; then
   die "openwrt e2e FAILED (rc=$rc)" 1
