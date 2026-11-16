@@ -148,7 +148,19 @@ stop_probes() {
         kill "$(cat "$f")" 2>/dev/null || true
     done
 }
-trap 'stop_serve; stop_probes; stop_server; rm -rf "$WORK"' EXIT
+# On any exit (incl. FAIL) report the probe stats when a probe loop ran:
+# the fail-open question (did a deny probe pass during the upgrade) is
+# answered even when a later assertion fails.
+report_probes() {
+    if [ -f "$WORK/upgrade.probes" ]; then
+        local t p b
+        t=$(wc -l < "$WORK/upgrade.probes" 2>/dev/null || echo 0)
+        p=$(awk -F'\t' '$3=="PASS"{n++} END{print n+0}' "$WORK/upgrade.probes" 2>/dev/null || echo 0)
+        b=$(awk -F'\t' '$3=="BLOCKED"{n++} END{print n+0}' "$WORK/upgrade.probes" 2>/dev/null || echo 0)
+        echo "[upgrade-e2e] upgrade probe stats (recorded even on FAIL): $t total, $p passed, $b blocked" >&2
+    fi
+}
+trap 'report_probes; stop_serve; stop_probes; stop_server; rm -rf "$WORK"' EXIT
 
 # ---------------------------------------------------------------------------
 # VM state helpers
