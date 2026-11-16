@@ -94,6 +94,11 @@ done
 
 OLD_VER=$(basename "$OLD_APK" | sed -nE 's/^goshisen-([^/]+)\.apk$/\1/p')
 NEW_VER=$(basename "$NEW_APK" | sed -nE 's/^goshisen-([^/]+)\.apk$/\1/p')
+# The apk version ("0.2.4-r1") carries a package-release suffix that the
+# daemon's --version output (PKG_VERSION, "0.2.4") never prints; the
+# e2e asserts the daemon reports the *run* version, so compare against
+# the PKG_VERSION part only.
+NEW_VERSION_BARE=${NEW_VER%-*}
 [ -n "$OLD_VER" ] || fail "cannot parse version from old apk filename: $OLD_APK"
 [ -n "$NEW_VER" ] || fail "cannot parse version from new apk filename: $NEW_APK"
 OLD_APK_SHA=$(sha256sum "$OLD_APK" | awk '{print $1}')
@@ -371,8 +376,8 @@ note "new pid $NEW_PID exe $NEW_EXE link $NEW_LINK; disk /usr/sbin/goshisen $NEW
 [ "$NEW_LINK" != *deleted* ] || fail "running exe target is a deleted inode"
 [ "$NEW_EXE" = "$NEW_DISK" ] || fail "running exe sha != on-disk sha (running old deleted inode?)"
 [ "$NEW_EXE" != "$OLD_EXE" ] || fail "running binary sha still the old binary's"
-vm "/usr/sbin/goshisen --version" | grep -a -q "$NEW_VER" \
-    || fail "/usr/sbin/goshisen --version does not report $NEW_VER"
+vm "/usr/sbin/goshisen --version" | grep -a -q "$NEW_VERSION_BARE" \
+    || fail "/usr/sbin/goshisen --version does not report $NEW_VERSION_BARE"
 
 # The new apk's payload daemon hash (host-side, SDK apk extract).
 NEW_APK_DAEMON=$( (cd "$WORK" && rm -rf apk-x && mkdir apk-x && cd apk-x \
