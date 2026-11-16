@@ -31,8 +31,20 @@ service_enabled() {
 
 start() {
 	service_enabled || return 0
-	nft add table inet goshisen 2>/dev/null
-	nft 'add chain inet goshisen forward { type filter hook forward priority filter; policy drop; }'
+	# The guard must never disturb an existing app-owned table/chain:
+	# the daemon (or a previous guard run) may have installed the
+	# forward chain with a different declaration (e.g. `priority filter
+	# + 1; policy accept` with queue rules). Re-adding it then fails
+	# with "Chain already exists ... with different declaration", and
+	# deleting/replacing it while the daemon runs would open the
+	# fail-open window. Only create when absent; an existing chain is
+	# already fail-closed (queued, and kernel-drops while no listener).
+	if ! nft list table inet goshisen >/dev/null 2>&1; then
+		nft add table inet goshisen 2>/dev/null || true
+	fi
+	if ! nft list chain inet goshisen forward >/dev/null 2>&1; then
+		nft 'add chain inet goshisen forward { type filter hook forward priority filter; policy drop; }'
+	fi
 }
 
 stop() {
