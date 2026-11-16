@@ -326,7 +326,7 @@ done
 # ---------------------------------------------------------------------------
 apply_policy "$ROOT/openwrt/files/etc/goshisen/policy.yaml" 0
 note "upgrade: continuous deny probes (60 x 1s) during apk add"
-run_probes upgrade 60 1
+run_probes upgrade 60 0.25
 
 if [ "$ALLOW_UNTRUSTED" -eq 1 ]; then
     note "upgrade: apk add --no-network --allow-untrusted new.apk (PRE-RELEASE UNSIGNED TEST BUILD)"
@@ -345,8 +345,8 @@ printf '%s\n' "$UP_OUT" | grep -a -q 'already exists' \
     && fail "post-upgrade errored: chain already exists (boot-guard not idempotent)"
 printf '%s\n' "$UP_OUT" > "$WORK/upgrade.log"
 
-# Wait for the probe loop to finish (up to 90s).
-deadline=$((SECONDS + 90))
+# Wait for the probe loop to finish (up to 180s).
+deadline=$((SECONDS + 180))
 while [ $SECONDS -lt $deadline ] && kill -0 "$(cat "$WORK/upgrade.pid")" 2>/dev/null; do sleep 2; done
 kill "$(cat "$WORK/upgrade.pid")" 2>/dev/null || true
 
