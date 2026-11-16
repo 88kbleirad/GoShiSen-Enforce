@@ -9,6 +9,11 @@
 #   - the NFQUEUE kernel modules the daemon needs
 #   - an rc.local autostart of the daemon (log at /tmp/goshisen2.log)
 #
+# With --no-daemon the daemon binary/config/autostart are skipped: the
+# base image is provisioned for apk-managed daemon lifecycle tests
+# (scripts/openwrt-upgrade-e2e.sh), where the goshisen apk installs the
+# daemon and procd manages it. The kmods and network are still baked in.
+#
 # The base is the official OpenWrt release ext4-combined raw image; its
 # sha256 is verified against the release manifest before any
 # modification. Provisioning writes into the rootfs partition via a
@@ -97,6 +102,7 @@ BASE=""
 DAEMON=""
 OUT=""
 DOWNLOAD=0
+NO_DAEMON=0
 LO=""
 MNT=""
 
@@ -128,6 +134,7 @@ while [ $# -gt 0 ]; do
         --daemon) DAEMON=$2; shift 2 ;;
         --output) OUT=$2; shift 2 ;;
         --download) DOWNLOAD=1; shift ;;
+        --no-daemon) NO_DAEMON=1; shift ;;
         *) die "unknown argument: $1" ;;
     esac
 done
@@ -154,8 +161,10 @@ fi
 
 [ -n "$BASE" ] || die "--base is required (or use --download)"
 [ -f "$BASE" ] || die "base image not found: $BASE"
-[ -n "$DAEMON" ] || die "--daemon binary path is required"
-[ -f "$DAEMON" ] || die "daemon binary not found: $DAEMON"
+if [ "$NO_DAEMON" -ne 1 ]; then
+    [ -n "$DAEMON" ] || die "--daemon binary path is required"
+    [ -f "$DAEMON" ] || die "daemon binary not found: $DAEMON"
+fi
 [ "$(id -u)" = 0 ] || die "must run as root (loop mounts)"
 
 # Build the flat raw image.
@@ -175,12 +184,14 @@ mount "$ROOT_DEV" "$MNT" || die "mount $ROOT_DEV failed"
 
 note "provisioning rootfs at $MNT"
 
-# 1. Daemon binary.
-install -m 0755 "$DAEMON" "$MNT/usr/sbin/goshisen"
+# 1. Daemon binary (skipped with --no-daemon: the apk-managed lifecycle
+# tests install the daemon package instead of baking the binary).
+if [ "$NO_DAEMON" -ne 1 ]; then
+    install -m 0755 "$DAEMON" "$MNT/usr/sbin/goshisen"
 
-# 2. Daemon config (rendered form of openwrt/files/etc/config/goshisen).
-mkdir -p "$MNT/etc/goshisen"
-cat > "$MNT/etc/goshisen/config.yaml" <<EOF
+    # 2. Daemon config (rendered form of openwrt/files/etc/config/goshisen).
+    mkdir -p "$MNT/etc/goshisen"
+    cat > "$MNT/etc/goshisen/config.yaml" <<EOF
 policy_file: /etc/goshisen/policy.yaml
 queue_num: 100
 queue_maxlen: 1024
@@ -191,9 +202,10 @@ api_port: 0
 metrics_port: 0
 EOF
 
-# 3. Packaged fail-closed policy.
-install -m 0644 "$(dirname "${BASH_SOURCE[0]}")/../openwrt/files/etc/goshisen/policy.yaml" \
-    "$MNT/etc/goshisen/policy.yaml"
+    # 3. Packaged fail-closed policy.
+    install -m 0644 "$(dirname "${BASH_SOURCE[0]}")/../openwrt/files/etc/goshisen/policy.yaml" \
+        "$MNT/etc/goshisen/policy.yaml"
+fi
 
 # 3b. Kernel modules. The stock image ships no NFQUEUE/queue/conntrack
 # modules, so the daemon's hook and its stateful ACCEPT path cannot work
@@ -251,10 +263,13 @@ EOF
 # The daemon validates `interface` at startup and exits if the interface
 # (br-lan) is not up yet; under slow TCG boots rc.local can run before
 # the network config assigns the address. Wait bounded for the interface
-# address before launching.
-if ! grep -q "goshisen" "$MNT/etc/rc.local" 2>/dev/null; then
-    sed -i '/^exit 0/i for i in $(seq 1 30); do ip -o addr show dev br-lan 2>/dev/null | grep -q "10.0.3.1" && break; sleep 2; done; /usr/sbin/goshisen --config /etc/goshisen/config.yaml >/tmp/goshisen2.log 2>&1 &' \
-        "$MNT/etc/rc.local"
+# address before launching. Skipped with --no-daemon (apk-managed
+# lifecycle: the package's procd init scripts own the daemon).
+if [ "$NO_DAEMON" -ne 1 ]; then
+    if ! grep -q "goshisen" "$MNT/etc/rc.local" 2>/dev/null; then
+        sed -i '/^exit 0/i for i in $(seq 1 30); do ip -o addr show dev br-lan 2>/dev/null | grep -q "10.0.3.1" && break; sleep 2; done; /usr/sbin/goshisen --config /etc/goshisen/config.yaml >/tmp/goshisen2.log 2>&1 &' \
+            "$MNT/etc/rc.local"
+    fi
 fi
 
 umount "$MNT" || die "umount $MNT failed"
@@ -263,4 +278,4 @@ MNT=""
 losetup -d "$LO" || die "losetup -d $LO failed"
 LO=""
 
-note "done: $OUT (daemon $(stat -c%s "$DAEMON") bytes, $(stat -c%s "$OUT") bytes image)"
+note "done: $OUT (daemon $([ "$NO_DAEMON" -eq 1 ] && echo skipped || stat -c%s "$DAEMON") bytes, $(stat -c%s "$OUT") bytes image)"

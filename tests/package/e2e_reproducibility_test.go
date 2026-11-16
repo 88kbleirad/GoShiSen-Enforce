@@ -494,7 +494,7 @@ func TestE2ERunnerBootsProvisionedImage(t *testing.T) {
 
 // TestLabScriptSyntax validates all three scripts parse cleanly.
 func TestLabScriptSyntax(t *testing.T) {
-	for _, name := range []string{"openwrt-lab.sh", "openwrt-lab-v6.sh", "e2e-runner.sh", "e2e-env-manifest.sh"} {
+	for _, name := range []string{"openwrt-lab.sh", "openwrt-lab-v6.sh", "openwrt-upgrade-e2e.sh", "e2e-runner.sh", "e2e-env-manifest.sh"} {
 		cmd := exec.Command("bash", "-n", e2eScript(t, name))
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("bash -n %s: %v: %s", name, err, out)
