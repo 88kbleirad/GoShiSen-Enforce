@@ -8,11 +8,12 @@
 // manual restart (see the script header).
 //
 // Required environment in upgrade mode:
-//   E2E_LAB_MODE=upgrade
-//   E2E_UPGRADE_OLD_APK=<public signed old apk>
-//   E2E_UPGRADE_NEW_APK=<new apk (unsigned pre-release test build)>
-//   E2E_UPGRADE_ANCHOR=<public anchor pem>
-//   E2E_UPGRADE_ALLOW_UNTRUSTED=1  (unsigned test build only)
+//
+//	E2E_LAB_MODE=upgrade
+//	E2E_UPGRADE_OLD_APK=<public signed old apk>
+//	E2E_UPGRADE_NEW_APK=<new apk (unsigned pre-release test build)>
+//	E2E_UPGRADE_ANCHOR=<public anchor pem>
+//	E2E_UPGRADE_ALLOW_UNTRUSTED=1  (unsigned test build only)
 //
 // The test requires:
 //   - the lab to be up (scripts/openwrt-lab.sh up), daemon NOT yet
