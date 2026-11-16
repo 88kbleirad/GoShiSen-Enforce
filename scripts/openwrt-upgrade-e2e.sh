@@ -111,7 +111,8 @@ timeout 5 bash -c "echo > /dev/tcp/127.0.0.1/$CONSOLE_PORT" 2>/dev/null \
 client true 2>/dev/null || denv "cannot execute in namespace $NS (root or passwordless sudo required)"
 
 # ---------------------------------------------------------------------------
-# Serve the apk/anchor/policies to the VM over the LAN client ns.
+# Serve the apk/anchor/policies to the VM over the WAN slirp path
+# (10.0.2.2 == host loopback).
 # ---------------------------------------------------------------------------
 mkdir -p "$WORK/www"
 cp "$OLD_APK" "$WORK/www/old.apk"
@@ -120,22 +121,34 @@ cp "$ANCHOR" "$WORK/www/anchor.pem"
 cp "$ROOT/tests/openwrt_integration/policies/allow-lab-http.yaml" "$WORK/www/allow.yaml"
 cp "$ROOT/tests/openwrt_integration/policies/deny-lab-http.yaml" "$WORK/www/deny.yaml"
 printf '%s\n' "$MARKER" > "$WORK/www/proof.txt"
-( cd "$WORK/www" && nohup python3 -m http.server "$SERVE_PORT" --bind 10.0.3.2 \
+# Serve the apk/anchor/policies to the VM over the WAN slirp path
+# (10.0.2.2 == host loopback), exactly like the proof server on
+# $SRV_PORT — no netns needed for the VM to fetch files.
+if [ "$(id -u)" = 0 ]; then pkill -f "http.server $SERVE_PORT" 2>/dev/null || true
+else sudo -n pkill -f "http.server $SERVE_PORT" 2>/dev/null || true; fi
+sleep 0.5
+( cd "$WORK/www" && nohup python3 -m http.server "$SERVE_PORT" --bind 127.0.0.1 \
     --directory "$WORK/www" > "$WORK/serve.log" 2>&1 & echo $! > "$WORK/serve.pid" )
 sleep 1
 kill -0 "$(cat "$WORK/serve.pid")" 2>/dev/null || fail "file server did not start"
-# VM must fetch files from the client ns before we rely on them.
+# VM must fetch files from the host before we rely on them.
 vm "mkdir -p /etc/apk/keys; \
-    wget -q -O /tmp/old.apk http://10.0.3.2:$SERVE_PORT/old.apk; \
-    wget -q -O /tmp/new.apk http://10.0.3.2:$SERVE_PORT/new.apk; \
-    wget -q -O /tmp/anchor.pem http://10.0.3.2:$SERVE_PORT/anchor.pem; \
-    wget -q -O /tmp/allow.yaml http://10.0.3.2:$SERVE_PORT/allow.yaml; \
-    wget -q -O /tmp/deny.yaml http://10.0.3.2:$SERVE_PORT/deny.yaml; \
+    wget -q -O /tmp/old.apk http://10.0.2.2:$SERVE_PORT/old.apk; \
+    wget -q -O /tmp/new.apk http://10.0.2.2:$SERVE_PORT/new.apk; \
+    wget -q -O /tmp/anchor.pem http://10.0.2.2:$SERVE_PORT/anchor.pem; \
+    wget -q -O /tmp/allow.yaml http://10.0.2.2:$SERVE_PORT/allow.yaml; \
+    wget -q -O /tmp/deny.yaml http://10.0.2.2:$SERVE_PORT/deny.yaml; \
     wc -c /tmp/old.apk /tmp/new.apk /tmp/anchor.pem" \
-    | grep -aE '/tmp/(old|new)\.apk' >/dev/null || fail "VM cannot fetch files from client ns"
+    | grep -aE '/tmp/(old|new)\.apk' >/dev/null || fail "VM cannot fetch files from host"
 
 stop_serve() { [ -f "$WORK/serve.pid" ] && kill "$(cat "$WORK/serve.pid")" 2>/dev/null || true; }
-trap 'stop_serve; rm -rf "$WORK"' EXIT
+stop_probes() {
+    for f in "$WORK"/*.pid; do
+        [ -e "$f" ] || continue
+        kill "$(cat "$f")" 2>/dev/null || true
+    done
+}
+trap 'stop_serve; stop_probes; stop_server; rm -rf "$WORK"' EXIT
 
 # ---------------------------------------------------------------------------
 # VM state helpers
@@ -235,8 +248,8 @@ note "setup: anchor + old apk (goshisen-$OLD_VER)"
 vm "cp /tmp/anchor.pem /etc/apk/keys/goshisen-apk.pub.pem; ls -l /etc/apk/keys/goshisen-apk.pub.pem" \
     | grep -q 'goshisen-apk.pub.pem' || fail "anchor install failed"
 vm "apk verify /tmp/old.apk" | grep -a -q 'OK' || fail "old apk signature verify failed (anchor?)"
-vm "apk add --no-network /tmp/old.apk" | grep -a -q "goshisen-$OLD_VER" \
-    || fail "old apk install failed"
+vm "apk add --no-network /tmp/old.apk > /tmp/install-old.txt 2>&1; echo APKRC=\$?" \
+    | grep -a -q 'APKRC=0' || fail "old apk install failed"
 vm "apk list --installed | grep goshisen" | grep -a -q "$OLD_VER" \
     || fail "installed version is not $OLD_VER"
 
@@ -263,8 +276,28 @@ OLD_LINK=$(exe_link "$OLD_PID")
 note "old daemon pid $OLD_PID exe $OLD_EXE link $OLD_LINK"
 
 # ---------------------------------------------------------------------------
+# Marker server (host loopback, aliased at 10.0.2.2 in the VM) — same
+# pattern as the main e2e: a probe that reaches the server through the
+# forward path proves ACCEPT; a blocked probe proves DROP.
+# ---------------------------------------------------------------------------
+start_server() {
+    if [ "$(id -u)" = 0 ]; then pkill -f "http.server $SRV_PORT" 2>/dev/null || true
+    else sudo -n pkill -f "http.server $SRV_PORT" 2>/dev/null || true; fi
+    sleep 0.5
+    printf '%s\n' "$MARKER" > "$WORK/proof.txt"
+    ( cd "$WORK" && nohup python3 -m http.server "$SRV_PORT" --bind "$SRV_HOST" \
+        --directory "$WORK" > "$WORK/server.log" 2>&1 & echo $! > "$WORK/server.pid" )
+    sleep 1
+    kill -0 "$(cat "$WORK/server.pid")" 2>/dev/null || fail "marker server did not start"
+    vm "wget -q -O- http://$SRV_IP:$SRV_PORT/proof.txt" | grep -q "$MARKER" \
+        || fail "marker server not reachable from the VM (checked $SRV_IP:$SRV_PORT)"
+}
+stop_server() { [ -f "$WORK/server.pid" ] && kill "$(cat "$WORK/server.pid")" 2>/dev/null || true; }
+
+# ---------------------------------------------------------------------------
 # 3. Baseline: deny blocks, allow passes (both directions)
 # ---------------------------------------------------------------------------
+start_server
 note "baseline: deny policy blocks"
 apply_policy "$ROOT/openwrt/files/etc/goshisen/policy.yaml" 0
 for i in 1 2 3; do
