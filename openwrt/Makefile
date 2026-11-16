@@ -88,9 +88,24 @@ endef
 # is enabled (UCI goshisen.main.enabled=1), so a disabled install never
 # blocks forwarding.
 define Package/goshisen/postinst
+	# On upgrade (PKG_UPGRADE=1) apk runs this body after
+	# `default_postinst`. That loop calls `start` on each init script,
+	# but procd's `start` is a no-op for an already-running instance —
+	# so without this the OLD daemon binary keeps running the deleted
+	# inode until a manual restart (issue #57). Restart here instead:
+	# rc.common `restart` = `stop` + `start`. During the gap the
+	# kernel NFQUEUE rule persists with no listener and kernel-drops
+	# (fail-closed); the daemon's start reinstalls the hook atomically
+	# (delete+add, one transaction) before/at bind. Never stop without
+	# immediately starting; a failed restart is loud but must not
+	# abort the apk transaction (the old process keeps enforcing).
 	if [ -z "$${IPKG_INSTROOT}" ]; then
 		/etc/init.d/goshisen enabled || true
 		[ -x /etc/init.d/goshisen-boot ] && /etc/init.d/goshisen-boot enable || true
+		if [ "$${PKG_UPGRADE:-0}" = "1" ] && /etc/init.d/goshisen enabled 2>/dev/null; then
+			/etc/init.d/goshisen restart || \
+				echo "goshisen: upgrade restart failed (manual /etc/init.d/goshisen restart required)" >&2
+		fi
 	fi
 endef
 
