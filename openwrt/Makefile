@@ -11,25 +11,24 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=goshisen
-PKG_VERSION:=0.2.3
+PKG_VERSION:=0.2.4
 # Package version is independent of the CLI release, but for this release
-# it is aligned with the CLI tag (v0.2.3). The daemon source is pinned by
-# PKG_SOURCE_VERSION below (v0.2.2 source commit c5de6e8; the v0.2.3
-# release is packaging/signing-only — no runtime change). PKG_RELEASE=1
+# it is aligned with the CLI tag (v0.2.4). The daemon source is pinned by
+# PKG_SOURCE_VERSION below (the v0.2.4 tag commit). PKG_RELEASE=1
 # restarts the package release counter for the new PKG_VERSION
-# (0.2.3-r1 > 0.2.0-r5 under apk ordering).
+# (0.2.4-r1 > 0.2.3-r1 under apk ordering).
 PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/88kbleirad/GoShiSen-Enforce.git
-# Daemon source SHA = release v0.2.2 (commit c5de6e8ec52a55b84ed16bdb3c9e5cff654f4dc6).
+# Daemon source SHA = release v0.2.4 (commit 9492da1712f038330bf639792e0df6b557ffec27).
 # This is the ONLY daemon source pin; the packaging recipe lives in this
 # checkout (Makefile + files/) and is versioned independently.
-PKG_SOURCE_VERSION:=c5de6e8ec52a55b84ed16bdb3c9e5cff654f4dc6
+PKG_SOURCE_VERSION:=9492da1712f038330bf639792e0df6b557ffec27
 # sha256 of the source tarball the SDK produces from a git clone of the
 # pinned commit (PKG_SOURCE_PROTO=git); lets the SDK verify the download
 # (mirror hash). Value set from the SDK's own mismatch output for this pin.
-PKG_MIRROR_HASH:=1867a2dec7ac45393b2ea075f9016d3988a72d8961dedc1b75e9e766ec79f35c
+PKG_MIRROR_HASH:=0d29ef8b7a6da381f6287b5138e64eb49e828182dc221026d288c64dd1797172
 PKG_SOURCE_SUBDIR:=$(PKG_NAME)-$(PKG_VERSION)
 
 # Go binary architecture for the SDK target (amd64 for x86/64, arm64 for
