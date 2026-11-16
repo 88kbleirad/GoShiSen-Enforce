@@ -25,9 +25,15 @@ v0.2.5 scope and its implementation status.
    - **DONE:** fix in `openwrt/Makefile` postinst + `files/etc/init.d/
      goshisen-boot`; contract tests (`tests/package/
      openwrt_upgrade_contract_test.go`); repro doc `docs/release/
-     v0.2.4-upgrade-repro.md`; branch `fix/apk-upgrade-restart`
-     (PR pending; fix proof in progress: clean SDK build + fresh-VM
-     downgrade→upgrade run with continuous deny probes).
+     v0.2.4-upgrade-repro.md`; fix merged in PR #60. Fix proof COMPLETE:
+     clean SDK build (Go 1.27.1, `fixedbuild/`) + fresh-VM downgrade→
+     upgrade run (`scripts/openwrt-upgrade-e2e.sh`, unsigned test build
+     with `--allow-untrusted` only): 0/60 deny probes passed during
+     `apk add`, daemon pid 3112→3386, running exe == on-disk == new
+     apk payload `1feebeba…`, queues 100/101 rebound, positive control
+     passed, EXIT=0 (log `/data/gsh025-item2/
+     v0.2.4-upgrade-fix-e2e.log`, sha256 992a4b81…). Harness version-
+     assertion fix: PR #62.
 2. **Release-apk evidence gaps (v0.2.4):**
    - queue 100 **and** 101 bound + stateful-IPv6 scenarios re-run on
      the release apk itself (fresh VMs, anchor installed, no
@@ -37,15 +43,15 @@ v0.2.5 scope and its implementation status.
    - two clean SDK builds of the v0.2.4 pin (17d1ad9d tree / tag
      9492da1 source) with matching hashes vs published pre-signing
      `eb975a19…`.
-   - **In progress** — evidence doc `docs/release/
-     v0.2.4-supplementary-evidence.md` (PR pending).
+   - **DONE** — evidence doc `docs/release/
+     v0.2.4-supplementary-evidence.md` (PR #61).
 3. **Signed tags (follow-up to issue #44):** tags are annotated but
    unsigned (`git tag -v v0.2.4` → `no signature found`). Plan written:
    options (GPG / SSH `allowed_signers` / sigstore), maintainer
    requirements, user verification docs, release-gate check, v0.2.5
    migration. Key/signing decisions are maintainer-only.
-   - **DONE (plan):** `docs/release/signed-tags-plan.md` (PR pending).
-     Implementation = maintainer action at release time.
+   - **DONE (plan):** `docs/release/signed-tags-plan.md` (merged in PR
+     #58). Implementation = maintainer action at release time.
 
 ## Remaining for the v0.2.5 release run (maintainer)
 
