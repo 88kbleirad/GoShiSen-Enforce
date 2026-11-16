@@ -49,16 +49,25 @@ LAB_LOG=${OPENWRT_LOG:-/tmp/owrt-console.log}
 PIDFILE=${OPENWRT_PIDFILE:-/tmp/owrt-qemu.pid}
 FIXTURE=${E2E_PREFLIGHT_FIXTURE:-}
 # E2E_LAB_MODE=v6 runs the IPv6 dual-tap lab + the stateful-v6 e2e
-# (issue #5). Any other value (default) runs the standard slirp lab.
+# (issue #5). E2E_LAB_MODE=upgrade runs the apk upgrade e2e
+# (issue #57) on the slirp lab with an apk-managed daemon (image
+# provisioned --no-daemon; the old/new apks and anchor come from
+# E2E_UPGRADE_OLD_APK / E2E_UPGRADE_NEW_APK / E2E_UPGRADE_ANCHOR, and
+# E2E_UPGRADE_ALLOW_UNTRUSTED=1 permits the unsigned pre-release test
+# build). Any other value (default) runs the standard slirp lab.
 LAB_MODE=${E2E_LAB_MODE:-}
-[ "$LAB_MODE" = v6 ] || LAB_MODE=""
+[ "$LAB_MODE" = v6 ] || [ "$LAB_MODE" = upgrade ] || LAB_MODE=""
 LAB_SCRIPT="scripts/openwrt-lab.sh"
 TEST_PKG="./tests/openwrt_integration/"
+PROVISION_ARGS=""
 if [ "$LAB_MODE" = v6 ]; then
   LAB_SCRIPT="scripts/openwrt-lab-v6.sh"
   LAB_LOG=${OPENWRT_V6_LOG:-/tmp/owrt-v6-console.log}
   PIDFILE=${OPENWRT_V6_PIDFILE:-/tmp/owrt-v6-qemu.pid}
   TEST_PKG="./tests/openwrt_integration/ -run TestOpenWrtE2EV6"
+elif [ "$LAB_MODE" = upgrade ]; then
+  TEST_PKG="./tests/openwrt_integration/ -run TestOpenWrtE2EUpgrade"
+  PROVISION_ARGS="--no-daemon"
 fi
 
 # Single source of truth for the fixture contract (see preflight section).
@@ -422,7 +431,7 @@ collect_artifacts() {
 say "provisioning image (checksum-pinned) -> $IMAGE"
 provision_image() {
   (cd "$ROOT" && sudo -E bash scripts/openwrt-image-prep.sh \
-    --download --daemon "$DAEMON" --output "$IMAGE")
+    --download --daemon "$DAEMON" --output "$IMAGE" $PROVISION_ARGS)
 }
 if ! provision_image; then
   # The udev/partx race (rootfs partition not found) is transient: a
