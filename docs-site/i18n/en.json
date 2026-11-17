@@ -1,0 +1,23 @@
+{
+  "site_title": "GoShiSen-Enforce Docs",
+  "tagline": "Fail-closed, stateful nftables/NFQUEUE firewall daemon",
+  "nav_search": "Filter docs…",
+  "nav_home": "Home",
+  "nav_user": "User documentation",
+  "nav_design": "Design",
+  "nav_release": "Release & evidence",
+  "nav_meta": "Project",
+  "theme_light": "Light",
+  "theme_dark": "Dark",
+  "lang_en": "EN",
+  "lang_vi": "VI",
+  "banner": "Welcome to the GoShiSen-Enforce documentation site. All content comes from the repository's markdown files.",
+  "translated_note": "Bản tiếng Việt",
+  "pending_note": "Vietnamese translation pending — showing the original English document.",
+  "translated_from": "Translated from the English original.",
+  "source_link": "Source",
+  "not_found": "Document not found.",
+  "load_error": "Failed to load document.",
+  "footer": "Static site — serve the repository root with any HTTP server (e.g. `python3 -m http.server`).",
+  "missing_translations": "VI"
+}

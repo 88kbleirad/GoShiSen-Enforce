@@ -77,6 +77,26 @@ CI runs the full integration suite on GitHub-hosted runners.
 | [Installation](docs/installation.md) | CLI binaries, upgrade, rollback |
 | [OpenWrt](docs/openwrt.md) | Package install, UCI, procd, recovery |
 
+## Documentation site (`docs-site/`)
+
+A static, dependency-free site for browsing these docs, with Catppuccin
+light/dark themes and an English/Vietnamese language switch.
+
+```bash
+python3 -m http.server 8901          # serve the repo root, then open:
+# http://127.0.0.1:8901/docs-site/index.html
+```
+
+- No build step, no CDN: markdown rendering is vendored (`docs-site/vendor/md.js`);
+  the site works from `file://` and any static host (including GitHub Pages).
+- UI chrome is bilingual (`docs-site/i18n/{en,vi}.json`); doc content comes from
+  the repo markdown, with Vietnamese translations mirrored under
+  `docs-site/translations/vi/` (same relative path). Missing translations fall
+  back to English with a notice.
+- The sidebar manifest (`docs-site/manifest.json`) is generated from the repo;
+  regenerate it after adding/renaming docs (see
+  `docs-site/README.md` for the exact command).
+
 ## License
 
 MIT, see [LICENSE](LICENSE). © 2026 Lê Thanh Phong.
