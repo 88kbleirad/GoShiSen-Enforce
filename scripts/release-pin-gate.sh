@@ -143,4 +143,40 @@ EXPECTED_APK="goshisen-$PKG_VERSION-r$PKG_RELEASE.apk"
   fail "apk filename '$APK_BASENAME' != expected '$EXPECTED_APK'"
 ok "apk filename matches PKG_VERSION-rPKG_RELEASE ($EXPECTED_APK)"
 
+# ---------------------------------------------------------------------------
+# 6. Tag signature (SSH allowed_signers, v0.2.6+). This check runs where
+#    the trust anchor lives (the maintainer's release environment). It
+#    is a HARD gate: an unsigned tag or a tag signed by a key not in the
+#    committed allowed_signers file fails.
+#
+#    `git verify-tag` returns 0 even for unsigned tags ("error: no
+#    signature found") and for a missing/empty allowed_signers file, so
+#    we parse the output:
+#      PASS: "Good \"git\" signature for <principal> ..."
+#      FAIL: "No principal matched." / "no signature found" / missing file
+# ---------------------------------------------------------------------------
+if [ -n "${GATE_TAG_SIGN_CHECK:-}" ] && [ "$GATE_TAG_SIGN_CHECK" = "1" ]; then
+  ALLOWED_SIGNERS="${ALLOWED_SIGNERS:-$ROOT/docs/trust/allowed_signers}"
+  if [ ! -f "$ALLOWED_SIGNERS" ]; then
+    fail "tag signature check: allowed_signers file missing: $ALLOWED_SIGNERS"
+  fi
+  verify_out="$(git -C "$GATE_REPO" -c gpg.format=ssh -c gpg.ssh.allowedSignersFile="$ALLOWED_SIGNERS" verify-tag "$TAG" 2>&1 || true)"
+  case "$verify_out" in
+    *'No principal matched.'*)
+      fail "tag signature check: \"$TAG\" not signed by an allowed signer (see $ALLOWED_SIGNERS)"
+      ;;
+    *'no signature found'*)
+      fail "tag signature check: \"$TAG\" is not signed (git verify-tag: no signature found)"
+      ;;
+    *'signature for '*)
+      ok "tag signature verified: $TAG ($(echo "$verify_out" | head -n1))"
+      ;;
+    *)
+      fail "tag signature check: unexpected verify-tag output: $(echo "$verify_out" | tr '\n' ' ')"
+      ;;
+  esac
+else
+  echo "note: tag signature check skipped (set GATE_TAG_SIGN_CHECK=1 to enable)" >&2
+fi
+
 echo "PASS: release pin/version agreement gate passed (tag $TAG)"

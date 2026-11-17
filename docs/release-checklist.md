@@ -147,7 +147,9 @@ Run in order. Every item must pass before tagging.
   tagging, commit the Makefile-only follow-up (pin = the tag commit SHA,
   `PKG_VERSION` = tag version) and run
   `scripts/release-pin-gate.sh --apk goshisen-<ver>-r<rel>.apk
-  --tag v<ver> --payload <extracted binary>`; it must PASS
+  --tag v<ver> --payload <extracted binary>` with `GATE_TAG_SIGN_CHECK=1`
+  (SSH tag signature enforced — see `docs/release/signed-tags-plan.md`);
+  it must PASS
   (PKG_VERSION == tag version, pin ancestor of tag, empty runtime diff
   over cmd/internal/pkg/go.mod/go.sum/openwrt/files, payload `--version`
   == PKG_VERSION, apk filename == PKG_VERSION-r<PKG_RELEASE>). See
