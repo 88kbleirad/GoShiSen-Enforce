@@ -28,7 +28,7 @@ GoShiSen-Enforce là tường lửa fail-closed, có trạng thái dựa trên n
 - CI trên GitHub (ubuntu-24.04, kernel 7.0.0-1017-azure, Go 1.25.14): build/vet/race/build/smoke PASS; tích hợp đặc quyền 21/21 PASS, không có skip bắt buộc.
 - Ba mục tồn đọng phase 8.7 nay đã kiểm chứng: NAT-reload (18.47s), queue overflow (23.70s), state timeout/hold (2.82s/1.81s); reload-while-established 18.48s.
 - Đối chứng dương trên mọi kịch bản deny/fail-closed đều PASS; không có bài kiểm thử nào bị nới lỏng hoặc bỏ qua để cho xanh.
-- Bằng chứng: `docs/release/phase9-ci-validation.md`, `docs/release-checklist.md` §2.
+- Bằng chứng: `docs/release/ci-validation.md`, `docs/release-checklist.md` §2.
 
 ## Hướng dẫn
 ```bash

@@ -2,10 +2,10 @@
 
 Status and notable history for GoShiSen-Enforce. Per-release detail lives in `docs/release/` (e.g. `v0.2.4-notes.md`, `proposal-next-version-scope.md`).
 
-## Release status (snapshot from README, 2026-11-17)
+## Release status (snapshot, 2026-11-17)
 
-- **v0.2.4** — latest release: production-signed OpenWrt apk; signed CLI archives.
-- **v0.2.5** — staged as a DRAFT release pending maintainer review: upgrade-hook packaging fix (issue #57). Scope and release-run checklist: `docs/release/proposal-next-version-scope.md`.
+- **v0.2.5** — latest release (published 2026-11-17): upgrade-hook packaging fix (issue #57). Release notes and assets: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.5).
+- **v0.2.4** — previous release: production-signed OpenWrt apk; signed CLI archives. Scope and release-run checklist: `docs/release/proposal-next-version-scope.md`.
 
 ## Details moved out of the README
 
