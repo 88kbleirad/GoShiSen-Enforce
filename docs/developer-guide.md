@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Go ≥ 1.25 (matches `go.mod`; CI and Docker use Go 1.25)
+- Go ≥ 1.26 (matches `go.mod`; CI and Docker install the pinned toolchain go1.27.4)
 - Linux (for the eventual lab namespace work, root)
 - `make` for the standard targets
 

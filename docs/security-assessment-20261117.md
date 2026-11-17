@@ -25,6 +25,7 @@ hosts were scanned or contacted.
 | S-002 | integer overflow, config validation (CWE-190) | low | `internal/config/config.go:478`, env layer | fixed | `TestValidateQueueNumIPv6Reserved`, `TestValidateQueueNumBoundaries` (see below) | `880e625` |
 | S-003 | CI script injection (CWE-78/CWE-94) | medium | `.github/workflows/release.yml` — unquoted `${{ github.ref_name }}` in run steps | fixed (follow-up PR, unmerged) | `release-tag-guard` CI job; `tests/ci/validate-release-tag-test.sh` | this PR |
 | S-004 | supply chain, mutable container tag | low | `.github/workflows/apk-sign.yml` `openwrt/sdk:x86_64-25.12.6` | fixed (follow-up PR, unmerged) | — | this PR |
+| S-005 | supply chain, unpatched stdlib in apk payload (CWE-1104) | medium | OpenWrt apk payload (SDK `golang/host` feed, go1.27.1) | **open** — documented accepted risk | `govulncheck` binary+source mode: 11 reachable (see below) | issue #78 |
 
 ### S-001 — reachable stdlib vulnerabilities
 The API server is an HTTP/1.1 `net/http` server on 127.0.0.1 using
@@ -90,10 +91,36 @@ pass. No public reproduction steps are included.
 compromised/republished tag would change the signing environment.
 Fixed in this PR by pinning the image by digest
 (`openwrt/sdk@sha256:a17d6436f7add9207513b6edd0370f5a1aeeceeedf3c9080de8909112892f261`,
-amd64 runner). The Dockerfile base images (`golang:1.25`,
+amd64 runner). The Dockerfile base images (`golang:1.27.4`,
 `gcr.io/distroless/base-debian13`) are digest-pinned the same way, with
 update instructions at each pin. The syft checksum-verification pattern
 for tools is unchanged.
+
+### S-005 — apk payload built with a vulnerable Go (open, documented)
+The published v0.2.5 OpenWrt apk payload (`usr/sbin/goshisen`) is built
+by the OpenWrt SDK's `golang/host` feed (not CI's Go) and embeds
+**go1.27.1** with `golang.org/x/net v0.53.0` / `x/sys v0.43.0`.
+govulncheck under that toolchain reproduces the S-001 finding exactly:
+**11 reachable standard-library vulnerabilities** (GO-2026-6859
+MaxBytesReader race, GO-2026-6610/6611/6612/6613/6617 http2 races,
+GO-2026-6603/6605/6607/6608, GO-2026-6809 x509) — **not fixed** in the
+apk. The CLI release archives are a separate build (go1.25.14 at
+v0.2.5; fixed to go1.27.4 by S-001 in CI from the next release on).
+The SDK feed now pins Go 1.27.4 (`lang/golang/golang1.27/Makefile`),
+so a rebuild with a fresh SDK (or the image re-pull digest) would fix
+it; until then, documented accepted risk (local API/metrics HTTP
+listeners, no outbound TLS). See issue #78.
+
+## Release tags are strict semver (no -rc)
+
+The S-003 release-tag validator accepts only `vX.Y.Z` (no suffix) in
+the release workflow and in `apk-sign.yml` production mode. If release
+candidates (`v0.2.6-rc.1`) are ever wanted, the pattern must be changed
+in **all three places together**: `scripts/validate-release-tag.sh`,
+the identical inline check in `.github/workflows/release.yml`, and the
+ref-validation case in `.github/workflows/apk-sign.yml`; and the
+`release-tag-guard` fixture in `tests/ci/validate-release-tag-test.sh`
+must be extended with the new allowed pattern.
 
 ## Not applicable / not tested
 

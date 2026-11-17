@@ -26,11 +26,15 @@
 # netns (or run with the netns pre-configured). See scripts/lab.sh.
 
 # ---- go build stage ----
-# S-004: digest-pinned. To update a base image digest:
-#   docker buildx imagetools inspect golang:1.25
-# (or curl https://hub.docker.com/v2/repositories/library/golang/tags/1.25)
+# S-004: digest-pinned. S-001: same toolchain as CI (go1.27.4) — the
+# previous golang:1.25 build used a vulnerable stdlib (govulncheck: 11
+# reachable). Base = Debian trixie (glibc 2.41), matching the
+# distroless base-debian13 runtime stage below.
+# To update a base image digest:
+#   docker buildx imagetools inspect golang:1.27.4
+# (or curl https://hub.docker.com/v2/repositories/library/golang/tags/1.27.4)
 # and replace the sha256:… value.
-FROM golang:1.25@sha256:699337d620559a59b4a2bb298ad59611e535d2ee755a34cf2d2a98f37578dc80 AS build
+FROM golang:1.27.4@sha256:205c7636d74e0ffbe3d007162df7d74f859f5a8c8322dfb9f907977686c126cf AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -41,7 +45,7 @@ RUN CGO_ENABLED=0 go build -trimpath \
     -o /out/goshisen ./cmd/goshisen
 
 # ---- nftables static build stage ----
-FROM golang:1.25@sha256:699337d620559a59b4a2bb298ad59611e535d2ee755a34cf2d2a98f37578dc80 AS nft-build
+FROM golang:1.27.4@sha256:205c7636d74e0ffbe3d007162df7d74f859f5a8c8322dfb9f907977686c126cf AS nft-build
 # Static nft (glibc) so the runtime needs no shared libs for nft.
 # The nftables repo builds libnftables + the nft CLI. It needs
 # libnftnl >= 1.3.2 (Debian bookworm ships 1.2.9), so build
@@ -78,8 +82,8 @@ RUN git clone --depth 1 --branch v1.1.7 https://git.netfilter.org/nftables \
 # distroless "base" (not "static") ships glibc, which the nft binary
 # needs; it has no shell, no package manager, no extra utilities. The
 # Go daemon itself is fully static. base-debian13 matches the
-# golang:1.25 builder's glibc (2.41), so the statically-built nft's
-# GLIBC_2.38+ requirements are satisfied.
+# golang:1.27.4 builder's glibc (2.41, Debian trixie), so the
+# statically-built nft's GLIBC_2.38+ requirements are satisfied.
 FROM gcr.io/distroless/base-debian13@sha256:0e48b9bcd868bce9fa872cee10b52961d9e32677823da4bf68eefb44f38e7b9d
 # ^ S-004: digest-pinned. To update:
 #   docker buildx imagetools inspect gcr.io/distroless/base-debian13:latest

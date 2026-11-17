@@ -35,6 +35,14 @@ Status and notable history for GoShiSen-Enforce. Per-release detail lives in `do
 - **CI actions on Node 24 runtime:** actions/checkout v7.0.1,
   actions/setup-go v7.1.0, actions/upload-artifact v7.0.2 (SHA-pinned),
   removing the Node.js 20 deprecation warnings on every job.
+- **Dockerfile and CI on go1.27.4 (S-001):** Dockerfile base images
+  bumped from golang:1.25 (go1.25.14, 11 reachable stdlib vulns) to
+  `golang:1.27.4@sha256:205c7636…`; all CI jobs install go1.27.4.
+- **APK payload toolchain (S-005, open):** the published v0.2.5
+  OpenWrt apk payload is built by the SDK `golang/host` feed with
+  go1.27.1 → 11 reachable stdlib vulns (see issue #78; accepted risk
+  documented in no-security-assessment-20261117.md until the apk is
+  rebuilt with Go ≥ 1.27.4).
 - **Toolchain pinned to go1.27.4 (S-001):** 11 reachable standard-library
   vulnerabilities (net/http Range-header DoS, MaxBytesReader race, http2
   HPACK races, crypto/x509) under go1.27.1 are closed; `golang.org/x/net`
