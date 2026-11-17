@@ -138,6 +138,11 @@ Run in order. Every item must pass before tagging.
   (`goshisen_backend_errors_total{kind="parse"}`), fuzz ≥ 60 s clean.
 - [x] Recovery path documented and tested: `goshisen hook cleanup`
   restores forwarding after a stop.
+
+- [ ] **Release-tag signature (v0.2.5+, docs/release/signed-tags-plan.md):** after
+  signing the tag, verify `git tag -v v0.2.5` passes against the committed
+  trust anchor (`docs/trust/allowed_signers` or GPG key) and record the raw
+  verification output + fingerprint in the release evidence doc.
 - [ ] **Pin/version agreement gate (v0.2.4+, issue #49):** after
   tagging, commit the Makefile-only follow-up (pin = the tag commit SHA,
   `PKG_VERSION` = tag version) and run

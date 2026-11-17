@@ -55,7 +55,8 @@ A release run requires, in order (none performed here):
    plan, scope update).
 2. **Approve + create** the signed tag `v0.2.5` at the source head
    (signing method per `signed-tags-plan.md`), then a Makefile-only
-   follow-up commit pinning `PKG_SOURCE_VERSION` to that tag commit.
+   pin PR (the v0.2.4 pattern, PR #56) pinning `PKG_SOURCE_VERSION` to
+   that tag commit.
 3. **Run the pin gate** against the release build
    (`scripts/release-pin-gate.sh`) + the tag-signature check (`git tag
    -v v0.2.5`); both must PASS.
@@ -64,9 +65,14 @@ A release run requires, in order (none performed here):
    signing is BLOCKED without it; the agent never provisions secrets).
 5. **CI green** on the tag: build, package, verify-signatures,
    integration (no SKIPs), openwrt e2e (slirp + v6), arm64 cross-build.
-6. **Publish** the release + assets (maintainer only; immutable releases
+6. **DRAFT staging:** the tag push stages a DRAFT release with the
+   signed CLI assets (release.yml never auto-publishes); build/attach
+   the apk from the pin-gate build into the draft and verify its sha256
+   (pre-signing) before the signing run. The draft stays unpublished
+   until the maintainer publishes.
+7. **Publish** the release + assets (maintainer only; immutable releases
    #44 gate active).
-7. **Post-publish evidence:** tag signature verification on a fresh
+8. **Post-publish evidence:** tag signature verification on a fresh
    clone, apk smoke incl. queues 100/101 (release apk), negative
    controls on VM, upgrade run (v0.2.4 → v0.2.5) with continuous deny
    probes and `/proc/<pid>/exe` hash check after restart.
@@ -78,8 +84,10 @@ A release run requires, in order (none performed here):
   arm64 optional. Not scheduled for v0.2.5.
 - Issue #8 (LuCI): **explicitly out of scope** — separate feature;
   depends on offload health flag surfacing (issue #6).
-- Issue #12 (tracking): updated with this scope (upgrade fix, apk
-  evidence, signed tags).
+- Issue #12 (tracking): this scope (upgrade fix, apk evidence, signed
+  tags) is recorded in this proposal; the tracking issue itself is
+  updated when the proposal is merged (the agent cannot comment/close
+  issues without authorization).
 
 ## Boundaries
 
