@@ -1,0 +1,23 @@
+{
+  "site_title": "GoShiSen-Enforce — Tài liệu",
+  "tagline": "Tường lửa fail-closed, có trạng thái dựa trên nftables/NFQUEUE",
+  "nav_search": "Lọc tài liệu…",
+  "nav_home": "Trang chủ",
+  "nav_user": "Tài liệu người dùng",
+  "nav_design": "Thiết kế",
+  "nav_release": "Phát hành & bằng chứng",
+  "nav_meta": "Dự án",
+  "theme_light": "Sáng",
+  "theme_dark": "Tối",
+  "lang_en": "EN",
+  "lang_vi": "VI",
+  "banner": "Chào mừng đến với trang tài liệu GoShiSen-Enforce. Toàn bộ nội dung lấy từ các tệp markdown trong kho lưu trữ.",
+  "translated_note": "Vietnamese translation",
+  "pending_note": "Bản dịch tiếng Việt chưa có — đang hiển thị tài liệu tiếng Anh gốc.",
+  "translated_from": "Dịch từ bản gốc tiếng Anh.",
+  "source_link": "Nguồn",
+  "not_found": "Không tìm thấy tài liệu.",
+  "load_error": "Không thể tải tài liệu.",
+  "footer": "Trang tĩnh — phục vụ thư mục gốc của kho bằng bất kỳ máy chủ HTTP nào (vd: `python3 -m http.server`).",
+  "missing_translations": "VI"
+}

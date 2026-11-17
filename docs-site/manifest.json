@@ -1,0 +1,437 @@
+[
+ {
+  "slug": "readme",
+  "path": "../README.md",
+  "title": "GoShiSen-Enforce"
+ },
+ {
+  "slug": "contributing",
+  "path": "../CONTRIBUTING.md",
+  "title": "Contributing to GoShiSen-Enforce"
+ },
+ {
+  "slug": "security",
+  "path": "../SECURITY.md",
+  "title": "Security Policy"
+ },
+ {
+  "slug": "docs-changelog",
+  "path": "../docs/CHANGELOG.md",
+  "title": "Changelog"
+ },
+ {
+  "slug": "docs-container-feasibility",
+  "path": "../docs/container-feasibility.md",
+  "title": "Container Feasibility Evaluation"
+ },
+ {
+  "slug": "docs-developer-guide",
+  "path": "../docs/developer-guide.md",
+  "title": "GoShiSen-Enforce — Developer Guide"
+ },
+ {
+  "slug": "docs-installation",
+  "path": "../docs/installation.md",
+  "title": "Installing GoShiSen-Enforce"
+ },
+ {
+  "slug": "docs-openwrt",
+  "path": "../docs/openwrt.md",
+  "title": "OpenWrt Integration"
+ },
+ {
+  "slug": "docs-release-checklist",
+  "path": "../docs/release-checklist.md",
+  "title": "GoShiSen-Enforce — Release Checklist (v0.1.0)"
+ },
+ {
+  "slug": "docs-release-notes-v0.1.0",
+  "path": "../docs/release-notes-v0.1.0.md",
+  "title": "GoShiSen-Enforce — v0.1.0 Release Notes (draft)"
+ },
+ {
+  "slug": "docs-release-notes-v0.2.0",
+  "path": "../docs/release-notes-v0.2.0.md",
+  "title": "GoShiSen-Enforce — v0.2.0 Release Notes (draft)"
+ },
+ {
+  "slug": "docs-user-guide",
+  "path": "../docs/user-guide.md",
+  "title": "GoShiSen-Enforce — User Guide"
+ },
+ {
+  "slug": "docs-design-acceptance",
+  "path": "../docs/design/acceptance.md",
+  "title": "Final Acceptance Report — GoShiSen-Enforce"
+ },
+ {
+  "slug": "docs-design-architecture",
+  "path": "../docs/design/architecture.md",
+  "title": "GoShiSen-Enforce Architecture"
+ },
+ {
+  "slug": "docs-design-baseline",
+  "path": "../docs/design/baseline.md",
+  "title": "Baseline Report — GoShiSen-Enforce (branch `phase7-baseline`)"
+ },
+ {
+  "slug": "docs-design-e2e-reproducibility",
+  "path": "../docs/design/e2e-reproducibility.md",
+  "title": "Privileged NFQUEUE e2e Reproducibility — Design (backlog #6)"
+ },
+ {
+  "slug": "docs-design-luci-proposal",
+  "path": "../docs/design/luci-proposal.md",
+  "title": "LuCI Architectural Proposal (draft)"
+ },
+ {
+  "slug": "docs-design-mvp-scope",
+  "path": "../docs/design/mvp-scope.md",
+  "title": "GoShiSen-Enforce — MVP Scope"
+ },
+ {
+  "slug": "docs-design-offload-disable",
+  "path": "../docs/design/offload-disable.md",
+  "title": "Offload Detect + Disable — Design (backlog #2)"
+ },
+ {
+  "slug": "docs-design-offload-observability",
+  "path": "../docs/design/offload-observability.md",
+  "title": "Flowtable Bypass Observability — Design (backlog #3)"
+ },
+ {
+  "slug": "docs-design-openwrt-downgrade-cleanup",
+  "path": "../docs/design/openwrt-downgrade-cleanup.md",
+  "title": "OpenWrt Package Downgrade Cleanup — Design (backlog #5)"
+ },
+ {
+  "slug": "docs-design-performance",
+  "path": "../docs/design/performance.md",
+  "title": "Performance — Baseline, Profile, Optimize"
+ },
+ {
+  "slug": "docs-design-signing-proposal",
+  "path": "../docs/design/signing-proposal.md",
+  "title": "Release Signing Proposal (v0.2.1+ / Issue #12)"
+ },
+ {
+  "slug": "docs-release-apk-production-gate",
+  "path": "../docs/release/apk-production-gate.md",
+  "title": "APK signing integrated into the production release gate"
+ },
+ {
+  "slug": "docs-release-apk-signing-key-custody",
+  "path": "../docs/release/apk-signing-key-custody.md",
+  "title": "APK signing key — custody, approval, rotation, revocation (handoff)"
+ },
+ {
+  "slug": "docs-release-apk-signing-path",
+  "path": "../docs/release/apk-signing-path.md",
+  "title": "APK signing path: test implementation with fail-closed verification"
+ },
+ {
+  "slug": "docs-release-apk-signing-readiness",
+  "path": "../docs/release/apk-signing-readiness.md",
+  "title": "Production APK signing readiness audit"
+ },
+ {
+  "slug": "docs-release-apk-staging-verification-results",
+  "path": "../docs/release/apk-staging-verification-results.md",
+  "title": "Production APK signing staging verification results"
+ },
+ {
+  "slug": "docs-release-apk-staging-verification",
+  "path": "../docs/release/apk-staging-verification.md",
+  "title": "Provision production APK key + staging verification"
+ },
+ {
+  "slug": "docs-release-arm64-runtime-evidence",
+  "path": "../docs/release/arm64-runtime-evidence.md",
+  "title": "Arm64 Runtime Verification — OpenWrt armsr QEMU Lab Evidence"
+ },
+ {
+  "slug": "docs-release-arm64-runtime-validation",
+  "path": "../docs/release/arm64-runtime-validation.md",
+  "title": "aarch64 runtime validation of OpenWrt r5 APK (PASS)"
+ },
+ {
+  "slug": "docs-release-candidate-validation-evidence",
+  "path": "../docs/release/candidate-validation-evidence.md",
+  "title": "v0.2.2 Candidate Validation — Evidence"
+ },
+ {
+  "slug": "docs-release-ci-validation",
+  "path": "../docs/release/ci-validation.md",
+  "title": "CI Validation Evidence (GitHub Hosted)"
+ },
+ {
+  "slug": "docs-release-conntrack-ci-validation",
+  "path": "../docs/release/conntrack-ci-validation.md",
+  "title": "Conntrack Namespace Recovery & GitHub Hosted CI Validation"
+ },
+ {
+  "slug": "docs-release-downgrade-cleanup-evidence",
+  "path": "../docs/release/downgrade-cleanup-evidence.md",
+  "title": "OpenWrt Downgrade Cleanup — Live Lab Evidence (backlog #5)"
+ },
+ {
+  "slug": "docs-release-e2e-gate-fix",
+  "path": "../docs/release/e2e-gate-fix.md",
+  "title": "OpenWrt e2e reload gate fix (report)"
+ },
+ {
+  "slug": "docs-release-e2e-reproducibility-evidence",
+  "path": "../docs/release/e2e-reproducibility-evidence.md",
+  "title": "Privileged NFQUEUE e2e Reproducibility — Evidence (backlog #6)"
+ },
+ {
+  "slug": "docs-release-erratum-v0.2.3",
+  "path": "../docs/release/erratum-v0.2.3.md",
+  "title": "Errata — v0.2.3 release description (DRAFT, not yet applied)"
+ },
+ {
+  "slug": "docs-release-evidence-index",
+  "path": "../docs/release/evidence-index.md",
+  "title": "GoShiSen-Enforce — Evidence Index"
+ },
+ {
+  "slug": "docs-release-final-ci-gate",
+  "path": "../docs/release/final-ci-gate.md",
+  "title": "Final NFQUEUE/Conntrack End-to-End Verification & CI Gate"
+ },
+ {
+  "slug": "docs-release-final-nfqueue-validation",
+  "path": "../docs/release/final-nfqueue-validation.md",
+  "title": "Final NFQUEUE Fix, Regression & Release Gate Validation"
+ },
+ {
+  "slug": "docs-release-final-report",
+  "path": "../docs/release/final-report.md",
+  "title": "GoShiSen-Enforce — Final Report"
+ },
+ {
+  "slug": "docs-release-flowtable-observability",
+  "path": "../docs/release/flowtable-observability.md",
+  "title": "Flowtable Bypass Observability — OpenWrt Lab Evidence"
+ },
+ {
+  "slug": "docs-release-hermetic-preflight-evidence",
+  "path": "../docs/release/hermetic-preflight-evidence.md",
+  "title": "Hermetic Preflight Tests + Real Preflight Integration Gate — Evidence"
+ },
+ {
+  "slug": "docs-release-issue-5-investigation",
+  "path": "../docs/release/issue-5-investigation.md",
+  "title": "Issue #5 — Stateful IPv6 investigation (2026-11-15)"
+ },
+ {
+  "slug": "docs-release-issue-5-v6-e2e-evidence",
+  "path": "../docs/release/issue-5-v6-e2e-evidence.md",
+  "title": "Stateful IPv6 e2e evidence — v0.2.4 (issue #5)"
+ },
+ {
+  "slug": "docs-release-merge-closeout",
+  "path": "../docs/release/merge-closeout.md",
+  "title": "Merge PR #33 + post-merge verification (OpenWrt package r5)"
+ },
+ {
+  "slug": "docs-release-metrics-grafana-validation",
+  "path": "../docs/release/metrics-grafana-validation.md",
+  "title": "Prometheus metrics + Grafana dashboard validation"
+ },
+ {
+  "slug": "docs-release-netlink-vm-validation",
+  "path": "../docs/release/netlink-vm-validation.md",
+  "title": "Netlink Protocol Verification & VM Integration"
+ },
+ {
+  "slug": "docs-release-next-backlog",
+  "path": "../docs/release/next-backlog.md",
+  "title": "Next phase backlog — prioritized by risk"
+ },
+ {
+  "slug": "docs-release-nfqueue-bind-enodev-diagnosis",
+  "path": "../docs/release/nfqueue-bind-enodev-diagnosis.md",
+  "title": "NFQUEUE BIND ENODEV Root Cause Diagnosis"
+ },
+ {
+  "slug": "docs-release-nfqueue-e2e-validation",
+  "path": "../docs/release/nfqueue-e2e-validation.md",
+  "title": "NFQUEUE End-to-End Enforcement Validation (executed)"
+ },
+ {
+  "slug": "docs-release-nfqueue-environment-recovery",
+  "path": "../docs/release/nfqueue-environment-recovery.md",
+  "title": "NFQUEUE Environment Recovery & Privileged Validation"
+ },
+ {
+  "slug": "docs-release-offload-lab-evidence",
+  "path": "../docs/release/offload-lab-evidence.md",
+  "title": "Offload Detect + Disable — OpenWrt Lab Evidence"
+ },
+ {
+  "slug": "docs-release-openwrt-ci-validation",
+  "path": "../docs/release/openwrt-ci-validation.md",
+  "title": "OpenWrt CI Recovery & E2E Validation"
+ },
+ {
+  "slug": "docs-release-openwrt-compat",
+  "path": "../docs/release/openwrt-compat.md",
+  "title": "OpenWrt Compatibility Verification"
+ },
+ {
+  "slug": "docs-release-openwrt-e2e",
+  "path": "../docs/release/openwrt-e2e.md",
+  "title": "OpenWrt Integration Hardening & Automated E2E (v0.2.0 prep)"
+ },
+ {
+  "slug": "docs-release-openwrt-v022-package-validation",
+  "path": "../docs/release/openwrt-v022-package-validation.md",
+  "title": "OpenWrt package v0.2.2 source-pin validation"
+ },
+ {
+  "slug": "docs-release-openwrt-validation",
+  "path": "../docs/release/openwrt-validation.md",
+  "title": "OpenWrt Hardening & Release Candidate Verification (evidence)"
+ },
+ {
+  "slug": "docs-release-packaging-validation",
+  "path": "../docs/release/packaging-validation.md",
+  "title": "Packaging & Distribution Validation (v0.2.0 prep)"
+ },
+ {
+  "slug": "docs-release-positive-controls-ci",
+  "path": "../docs/release/positive-controls-ci.md",
+  "title": "Positive Controls, Regression & Draft PR Preparation"
+ },
+ {
+  "slug": "docs-release-post-release-validation",
+  "path": "../docs/release/post-release-validation.md",
+  "title": "Post-Release Validation (v0.1.0)"
+ },
+ {
+  "slug": "docs-release-preflight-states-evidence",
+  "path": "../docs/release/preflight-states-evidence.md",
+  "title": "Typed Preflight State Machine — Evidence"
+ },
+ {
+  "slug": "docs-release-privileged-validation",
+  "path": "../docs/release/privileged-validation.md",
+  "title": "Privileged Validation Report (Release Gate)"
+ },
+ {
+  "slug": "docs-release-proposal-next-version-scope",
+  "path": "../docs/release/proposal-next-version-scope.md",
+  "title": "Proposal — v0.2.5 scope (after v0.2.4)"
+ },
+ {
+  "slug": "docs-release-proposal-v0.2.3-version-alignment",
+  "path": "../docs/release/proposal-v0.2.3-version-alignment.md",
+  "title": "Proposal — v0.2.3 packaging/signing release: version alignment"
+ },
+ {
+  "slug": "docs-release-rc-signing-validation",
+  "path": "../docs/release/rc-signing-validation.md",
+  "title": "Release-Candidate Signing Validation — v0.2.1-rc.2"
+ },
+ {
+  "slug": "docs-release-release-pin-gate",
+  "path": "../docs/release/release-pin-gate.md",
+  "title": "Release pin/version agreement gate (issue #49)"
+ },
+ {
+  "slug": "docs-release-release-readiness-v0.2.1",
+  "path": "../docs/release/release-readiness-v0.2.1.md",
+  "title": "v0.2.1 Release Readiness Audit — Report"
+ },
+ {
+  "slug": "docs-release-release-readiness-v0.2.2",
+  "path": "../docs/release/release-readiness-v0.2.2.md",
+  "title": "v0.2.2 Release Readiness — Candidate Report"
+ },
+ {
+  "slug": "docs-release-release-validation",
+  "path": "../docs/release/release-validation.md",
+  "title": "Release Validation Evidence (v0.1.0)"
+ },
+ {
+  "slug": "docs-release-signed-tags-plan",
+  "path": "../docs/release/signed-tags-plan.md",
+  "title": "Signed release tags — plan for v0.2.5"
+ },
+ {
+  "slug": "docs-release-signing-design",
+  "path": "../docs/release/signing-design.md",
+  "title": "Artifact Signing & Provenance — Design & Migration"
+ },
+ {
+  "slug": "docs-release-stacked-pr-merge",
+  "path": "../docs/release/stacked-pr-merge.md",
+  "title": "Stacked PR Resolution & Merge Readiness"
+ },
+ {
+  "slug": "docs-release-v0.2.0-notes",
+  "path": "../docs/release/v0.2.0-notes.md",
+  "title": "GoShiSen-Enforce — v0.2.0 Release Notes"
+ },
+ {
+  "slug": "docs-release-v0.2.1-notes",
+  "path": "../docs/release/v0.2.1-notes.md",
+  "title": "GoShiSen-Enforce — v0.2.1 Release Notes (draft)"
+ },
+ {
+  "slug": "docs-release-v0.2.2-notes",
+  "path": "../docs/release/v0.2.2-notes.md",
+  "title": "GoShiSen-Enforce — v0.2.2 Release Notes"
+ },
+ {
+  "slug": "docs-release-v0.2.3-notes",
+  "path": "../docs/release/v0.2.3-notes.md",
+  "title": "GoShiSen-Enforce v0.2.3 — Release Notes (draft)"
+ },
+ {
+  "slug": "docs-release-v0.2.4-notes",
+  "path": "../docs/release/v0.2.4-notes.md",
+  "title": "GoShiSen-Enforce v0.2.4 — Release Notes (draft)"
+ },
+ {
+  "slug": "docs-release-v0.2.4-postpublish-evidence",
+  "path": "../docs/release/v0.2.4-postpublish-evidence.md",
+  "title": "v0.2.4 post-publish verification — upgrade + negatives"
+ },
+ {
+  "slug": "docs-release-v0.2.4-supplementary-evidence",
+  "path": "../docs/release/v0.2.4-supplementary-evidence.md",
+  "title": "v0.2.4 supplementary evidence — release-apk gaps"
+ },
+ {
+  "slug": "docs-release-v0.2.4-upgrade-repro",
+  "path": "../docs/release/v0.2.4-upgrade-repro.md",
+  "title": "v0.2.4 upgrade behavior reproduction (Item 1b)"
+ },
+ {
+  "slug": "docs-release-v0.2.4-vm-smoke-evidence",
+  "path": "../docs/release/v0.2.4-vm-smoke-evidence.md",
+  "title": "v0.2.4 fresh-VM smoke evidence (production-signed apk)"
+ },
+ {
+  "slug": "docs-release-v023-release-evidence",
+  "path": "../docs/release/v023-release-evidence.md",
+  "title": "v0.2.3 release execution evidence"
+ },
+ {
+  "slug": "docs-release-v023-vm-smoke-evidence",
+  "path": "../docs/release/v023-vm-smoke-evidence.md",
+  "title": "v0.2.3 fresh-VM smoke evidence (production-signed apk)"
+ },
+ {
+  "slug": "docs-release-v6-step1a-evidence",
+  "path": "../docs/release/v6-step1a-evidence.md",
+  "title": "IPv6 queue 101 proof Step 1a (evidence)"
+ },
+ {
+  "slug": "docs-release-vm-smoke-evidence",
+  "path": "../docs/release/vm-smoke-evidence.md",
+  "title": "v0.2.3 fresh-VM smoke evidence (production-signed apk)"
+ }
+]
