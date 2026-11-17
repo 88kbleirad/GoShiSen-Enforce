@@ -500,3 +500,26 @@ func TestLoadRejectsTrailingGarbagePortEnv(t *testing.T) {
 		t.Fatalf("ports = %d/%d, want 8080/9090", o.APIPort, o.MetricsPort)
 	}
 }
+
+// TestValidateQueueNumIPv6Reserved: queue_num 65535 is accepted by the
+// old range check but can never be installed — the hook always renders
+// an IPv6 queue rule at queue_num+1, so 65535 would emit "queue to
+// 65536" (outside the u16 queue-number range) and the nft install fails
+// at every start. 65534 is the largest usable value.
+func TestValidateQueueNumIPv6Reserved(t *testing.T) {
+	p := writeTemp(t, "goshisen.yaml", `
+policy_file: /etc/goshisen/policy.yaml
+queue_num: 65535
+`)
+	if _, err := Load(p, envStub(nil), Overrides{}); err == nil {
+		t.Fatal("Load accepted queue_num 65535; queue+1 IPv6 rule would overflow u16")
+	}
+	// 65534 is fine: the IPv6 rule becomes 65535.
+	p = writeTemp(t, "goshisen.yaml", `
+policy_file: /etc/goshisen/policy.yaml
+queue_num: 65534
+`)
+	if _, err := Load(p, envStub(nil), Overrides{}); err != nil {
+		t.Fatalf("Load rejected queue_num 65534: %v", err)
+	}
+}

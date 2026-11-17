@@ -376,8 +376,8 @@ func (o *Options) loadEnv(env func(string) (string, bool)) error {
 	}
 	if v, ok := get("QUEUE_NUM"); ok {
 		n, err := strconv.Atoi(strings.TrimSpace(v))
-		if err != nil || n < 0 || n > 65535 {
-			errs = append(errs, fmt.Errorf("%sQUEUE_NUM: invalid queue number %q", EnvPrefix, v))
+		if err != nil || n < 0 || n > 65534 {
+			errs = append(errs, fmt.Errorf("%sQUEUE_NUM: invalid queue number %q (0..65534; 65535 would overflow the IPv6 queue+1 rule)", EnvPrefix, v))
 		} else {
 			o.QueueNum = n
 			o.Sources["queue_num"] = "env"
@@ -475,8 +475,8 @@ func (o *Options) validate() error {
 	if o.QueueMaxlen < 1 || o.QueueMaxlen > 65535 {
 		errs = append(errs, fmt.Errorf("queue_maxlen %d out of range 1..65535", o.QueueMaxlen))
 	}
-	if o.QueueNum < 0 || o.QueueNum > 65535 {
-		errs = append(errs, fmt.Errorf("queue_num %d out of range 0..65535", o.QueueNum))
+	if o.QueueNum < 0 || o.QueueNum > 65534 {
+		errs = append(errs, fmt.Errorf("queue_num %d out of range 0..65534 (65535 reserved: the hook installs an IPv6 queue rule at queue_num+1)", o.QueueNum))
 	}
 	if o.HookScope != "" && o.HookScope != HookScopeForwardAll && o.HookScope != HookScopeOpenWrt {
 		errs = append(errs, fmt.Errorf("hook_scope %q must be %q or %q",

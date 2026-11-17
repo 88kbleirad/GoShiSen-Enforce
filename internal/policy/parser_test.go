@@ -40,3 +40,21 @@ func TestCompileRejectsNonIntegerPorts(t *testing.T) {
 		t.Fatalf("leading-zero port parsed as %+v, want 80", r.SrcPort)
 	}
 }
+
+// FuzzCompile feeds arbitrary bytes to the policy compiler — the main
+// untrusted input surface (REST API policy body). It must never panic.
+func FuzzCompile(f *testing.F) {
+	seeds := []string{
+		"version: 1\nrules: []\n",
+		"version: 1\ndefault_action: drop\nrules:\n- id: r1\n  action: accept\n  protocol: tcp\n  src: 10.0.0.0/8\n  dst: any\n  src_port: 80\n  dst_port: 443\n",
+		"version: 2\n",
+		"{unclosed",
+		"version: 1\nrules:\n- id: a\n  action: accept\n  state: [new, established]\n",
+	}
+	for _, s := range seeds {
+		f.Add([]byte(s))
+	}
+	f.Fuzz(func(t *testing.T, data []byte) {
+		_, _ = Compile(data) // must not panic
+	})
+}
