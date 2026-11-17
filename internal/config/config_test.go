@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -317,6 +318,71 @@ queue_num: 70000
 	if _, err := Load(p, envStub(nil), Overrides{}); err == nil {
 		t.Fatal("Load accepted queue_num out of range")
 	}
+}
+
+// TestValidateQueueNumBoundaries: every accepted value must be usable by
+// the hook (IPv4 queue N, IPv6 queue N+1, both u16) and every rejected
+// value must make the daemon refuse to start (config.Load returns an
+// error -> app.RunCLI aborts). Values are never wrapped, truncated, or
+// defaulted: 65535 is rejected because the IPv6 rule would render
+// "queue to 65536" (outside u16), 65536 and negative values are outside
+// the valid range, and non-numeric input never parses.
+func TestValidateQueueNumBoundaries(t *testing.T) {
+	// Accepted: 0 (default) and 65534 (max usable; IPv6 rule -> 65535).
+	for _, good := range []string{"0", "65534"} {
+		p := writeTemp(t, "goshisen.yaml", fmt.Sprintf(`
+policy_file: /etc/goshisen/policy.yaml
+queue_num: %s
+`, good))
+		o, err := Load(p, envStub(nil), Overrides{})
+		if err != nil {
+			t.Fatalf("Load rejected queue_num %s: %v", good, err)
+		}
+		if o.QueueNum != mustParseInt(t, good) {
+			t.Fatalf("QueueNum = %d, want %s", o.QueueNum, good)
+		}
+	}
+	// Rejected: negative, reserved 65535, >u16 65536, far out of range,
+	// and non-numeric text. Each must fail validation (fail closed).
+	for _, bad := range []string{"-1", "65535", "65536", "70000", "abc"} {
+		p := writeTemp(t, "goshisen.yaml", fmt.Sprintf(`
+policy_file: /etc/goshisen/policy.yaml
+queue_num: %s
+`, bad))
+		if _, err := Load(p, envStub(nil), Overrides{}); err == nil {
+			t.Fatalf("Load accepted queue_num %s", bad)
+		}
+	}
+	// Rejected via the environment layer (GOSHISEN_QUEUE_NUM): the same
+	// fail-closed rule applies, never a wrap/truncate/default. (An empty
+	// value is treated as unset by design — identical to every other env
+	// var in this package — and falls back to the default 0.)
+	for _, bad := range []string{"-1", "65535", "65536", "70000", "abc"} {
+		env := envStub(map[string]string{"GOSHISEN_QUEUE_NUM": bad, "GOSHISEN_POLICY_FILE": "/etc/goshisen/policy.yaml"})
+		if _, err := Load("", env, Overrides{}); err == nil {
+			t.Fatalf("Load accepted env QUEUE_NUM=%q", bad)
+		}
+	}
+	// Env round-trip: 0 and 65534 are accepted there too.
+	for _, good := range []string{"0", "65534"} {
+		env := envStub(map[string]string{"GOSHISEN_QUEUE_NUM": good, "GOSHISEN_POLICY_FILE": "/etc/goshisen/policy.yaml"})
+		o, err := Load("", env, Overrides{})
+		if err != nil {
+			t.Fatalf("Load rejected env QUEUE_NUM=%s: %v", good, err)
+		}
+		if o.QueueNum != mustParseInt(t, good) {
+			t.Fatalf("QueueNum = %d, want %s", o.QueueNum, good)
+		}
+	}
+}
+
+func mustParseInt(t *testing.T, s string) int {
+	t.Helper()
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		t.Fatalf("bad fixture %q: %v", s, err)
+	}
+	return n
 }
 
 func TestValidateOffloadPolicy(t *testing.T) {

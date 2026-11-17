@@ -1,8 +1,12 @@
 # GoShiSen-Enforce — SSH allowed signers for release tags.
 #
-# The release tag (v0.2.6+) must be signed with an SSH key listed here;
-# scripts/release-pin-gate.sh enforces it (GATE_TAG_SIGN_CHECK=1) and
-# users verify with:  git tag -v vX.Y.Z
+# Tag signing is a GOAL, not an active requirement: once the maintainer
+# configures a signing key and replaces the placeholder below with the
+# real public key, the release tag (vX.Y.Z) must be signed with an SSH
+# key listed here; scripts/release-pin-gate.sh then enforces it
+# (GATE_TAG_SIGN_CHECK=1) and users verify with:  git tag -v vX.Y.Z
+# Until the placeholder is replaced, tags are annotated but unsigned and
+# the signature check is not an active requirement.
 #
 # Format (one key per line):  <principal> ssh-ed25519 <base64-pubkey>
 # Replace the placeholder below with the maintainer's release key.

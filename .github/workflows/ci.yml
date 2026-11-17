@@ -13,12 +13,12 @@ permissions:
 jobs:
   build:
     name: build, vet, test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
-          go-version: "1.25"
+          go-version: "1.27.4"
           cache: true
       - name: Verify modules
         run: go mod verify
@@ -67,14 +67,25 @@ jobs:
             echo "version stamp not applied: got $out"; exit 1
           fi
 
+  release-tag-guard:
+    # S-003 regression gate: a tag name containing shell metacharacters
+    # must be rejected by the release-tag validator BEFORE it can reach
+    # any shell command. Runs on every PR so the gate cannot regress.
+    name: release-tag-guard (S-003)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Metacharacter tag fixtures must be rejected before use
+        run: bash tests/ci/validate-release-tag-test.sh
+
   arm64:
     name: arm64 cross-build + static ELF
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
-          go-version: "1.25"
+          go-version: "1.27.4"
           cache: true
       - name: Cross-compile arm64 + static ELF assertions
         run: |
@@ -100,10 +111,10 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
-          go-version: "1.25"
+          go-version: "1.27.4"
           cache: true
       - name: Install packaging tools
         run: |
@@ -129,7 +140,7 @@ jobs:
           cmp /tmp/amd64-first.tar.gz dist/goshisen-linux-amd64.tar.gz
       - name: Upload package artifacts (PR validation, never published)
         if: github.event_name == 'pull_request'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: goshisen-release-archives
           path: |
@@ -143,10 +154,10 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
-          go-version: "1.25"
+          go-version: "1.27.4"
           cache: true
       - name: Install packaging tools (syft pinned)
         run: |
@@ -200,10 +211,10 @@ jobs:
     name: openwrt e2e (QEMU lab, privileged)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
-          go-version: "1.25"
+          go-version: "1.27.4"
           cache: true
       - name: Install lab tooling
         run: |
@@ -236,7 +247,7 @@ jobs:
         timeout-minutes: 35
       - name: Upload e2e artifacts (manifest/diagnostics/logs)
         if: failure() || cancelled()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.3
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-artifacts
           path: /tmp/e2e-artifacts/**
@@ -246,10 +257,10 @@ jobs:
     name: openwrt e2e v6 stateful (QEMU lab, privileged)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
-          go-version: "1.25"
+          go-version: "1.27.4"
           cache: true
       - name: Install lab tooling
         run: |
@@ -284,7 +295,7 @@ jobs:
         timeout-minutes: 40
       - name: Upload e2e artifacts (manifest/diagnostics/logs)
         if: failure() || cancelled()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.3
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-v6-artifacts
           path: /tmp/e2e-artifacts-v6/**
@@ -294,10 +305,10 @@ jobs:
     name: integration (real netns lab, privileged)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
-          go-version: "1.25"
+          go-version: "1.27.4"
           cache: true
       - name: Install netfilter tooling
         run: |

@@ -139,16 +139,19 @@ Run in order. Every item must pass before tagging.
 - [x] Recovery path documented and tested: `goshisen hook cleanup`
   restores forwarding after a stop.
 
-- [ ] **Release-tag signature (v0.2.5+, docs/release/signed-tags-plan.md):** after
-  signing the tag, verify `git tag -v v0.2.5` passes against the committed
-  trust anchor (`docs/trust/allowed_signers` or GPG key) and record the raw
-  verification output + fingerprint in the release evidence doc.
+- [ ] **Release-tag signature (goal, docs/release/signed-tags-plan.md):** once
+  the maintainer configures a signing key and commits the trust anchor,
+  sign the release tag and verify `git tag -v vX.Y.Z` passes against the
+  committed trust anchor (`docs/trust/allowed_signers` or GPG key);
+  record the raw verification output + fingerprint in the release
+  evidence doc. Not an active requirement until the key is configured.
 - [ ] **Pin/version agreement gate (v0.2.4+, issue #49):** after
   tagging, commit the Makefile-only follow-up (pin = the tag commit SHA,
   `PKG_VERSION` = tag version) and run
   `scripts/release-pin-gate.sh --apk goshisen-<ver>-r<rel>.apk
   --tag v<ver> --payload <extracted binary>` with `GATE_TAG_SIGN_CHECK=1`
-  (SSH tag signature enforced — see `docs/release/signed-tags-plan.md`);
+  (SSH tag signature check; meaningful only once tag signing is
+  configured — see `docs/release/signed-tags-plan.md`);
   it must PASS
   (PKG_VERSION == tag version, pin ancestor of tag, empty runtime diff
   over cmd/internal/pkg/go.mod/go.sum/openwrt/files, payload `--version`
