@@ -1,4 +1,4 @@
-# OpenWrt package v0.2.2 source-pin validation (Prompt 30)
+# OpenWrt package v0.2.2 source-pin validation
 
 **Status:** complete. **Date:** 2026-11-14.
 
@@ -148,7 +148,7 @@ Environment-applicable limits:
 - aarch64 runtime: **BLOCKED (environment)** on this sandbox (UEFI
   serial issue, see matrix note). The aarch64 APK/binary are verified
   at build level; runtime behavioral matrix is x86_64 (same recipe/pin).
-- IPv6 control in the dual-bridge lab (phase16 verified on r4) was not
+- IPv6 control in the dual-bridge lab (openwrt-compat verified on r4) was not
   repeated here; the v6 queue (101) bind and the inet table are verified.
 
 ## 7. Trust / signing

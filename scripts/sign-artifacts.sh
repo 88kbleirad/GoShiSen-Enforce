@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# GoShiSen-Enforce — sign release artifacts + write provenance (Prompt 12).
+# GoShiSen-Enforce — sign release artifacts + write provenance.
 #
 # Usage:
 #   sign-artifacts.sh --dist DIR --key PRIVATE.pem --public-key PUB.pem \

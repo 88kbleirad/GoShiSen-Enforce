@@ -1,6 +1,6 @@
 # GoShiSen-Enforce Architecture
 
-Status: **Phase 7 — hardening/release (implementation current).** This document is the normative design for the MVP and is kept in sync with the implementation; where the design and code differ, the code wins and this document is updated.
+Status: **hardening/release (implementation current).** This document is the normative design for the MVP and is kept in sync with the implementation; where the design and code differ, the code wins and this document is updated.
 
 Target: a **Linux lab firewall** filtering **IPv4 TCP/UDP forwarding** traffic. A **Go policy engine** evaluates packets delivered via **NFQUEUE**; the **kernel conntrack** subsystem owns connection tracking; **nftables** owns packet hooks (and future NAT). All non-TCP/UDP IPv4 forwarded traffic is dropped by the kernel hook's default policy.
 
@@ -41,7 +41,7 @@ Sequence per packet:
 
 | Component | Responsibility | Location |
 | --- | --- | --- |
-| nftables hook | FORWARD hook, IPv4-only table, queue TCP/UDP, policy drop; NAT chains (Phase 6) | `internal/hook` (provisioned via the `nft` binary; one atomic `nft -f` transaction) |
+| nftables hook | FORWARD hook, IPv4-only table, queue TCP/UDP, policy drop; NAT chains | `internal/hook` (provisioned via the `nft` binary; one atomic `nft -f` transaction) |
 | NFQUEUE transport | bind queue 0, read packets, write verdicts, attach CT metadata | `internal/packet/capture.go` over `github.com/mdlayher/netlink` (pure Go netlink) |
 | Packet parser | IPv4 header, TCP/UDP headers, options, truncation, fragment handling | `internal/packet/parser.go` (hand-rolled; no gopacket) |
 | Kernel conntrack metadata | per-packet state/direction (NFQA_CT_INFO) + tuple/TCP state (NFQA_CT) | kernel; mapped in `internal/packet/capture.go` (`applyCTInfo`) — no userspace conntrack mirror/event subscription |
@@ -246,7 +246,7 @@ See §4.1. Policy load failures abort startup or keep the previous policy on rel
 - Readiness: `GET /readyz` returns 200 only after the hook is installed AND the queue is bound; it is 503 during startup, on any startup failure, and from the moment shutdown begins. The hook is in place before the queue binds, so the firewall is failing closed throughout startup.
 
 ### 6.6 Policy reloads
-- Reload trigger: `SIGHUP` (the daemon reloads the policy file) and the REST API's versioned apply/activate endpoints (Phase 5; atomic, CAS-guarded).
+- Reload trigger: `SIGHUP` (the daemon reloads the policy file) and the REST API's versioned apply/activate endpoints (atomic, CAS-guarded).
 - The new policy is parsed and validated fully **before** switching; on any error the old policy stays active and the reload is logged/rejected.
 - A publish follows a strict order, so a policy is never applied half-way:
   1. serialize with the process-wide policy-mutation lock (one `sync.Mutex` shared by the daemon's SIGHUP path and the REST API),
@@ -289,7 +289,7 @@ flowchart LR
 
 ### 7.2 Reliable setup/cleanup
 
-- `scripts/lab.sh` (implemented, Phase 3) with `set -euo pipefail` and **unique resource prefixes** (`gsh_` namespaces, `gsh-fw*` veths): `up` creates, `down` tears down, `status` inspects. Runs only as root; refuses otherwise with a clear message.
+- `scripts/lab.sh` (implemented) with `set -euo pipefail` and **unique resource prefixes** (`gsh_` namespaces, `gsh-fw*` veths): `up` creates, `down` tears down, `status` inspects. Runs only as root; refuses otherwise with a clear message.
 - Only the router namespace `gsh_fw` ever receives nftables rules (the hook's table `ip goshisen`); the host firewall is never listed, flushed, or modified.
 - The daemon is started inside `gsh_fw` (`ip netns exec gsh_fw goshisen --config …`), so the hook is created in that namespace at startup; namespace teardown removes all firewall state with it.
 - Verification aids: the integration suite uses `tests/integration/probe` (a small Go binary: TCP/UDP listeners and connect probes), so `nc`/`socat` are not required.
@@ -313,7 +313,7 @@ Kernel/Go floor: Linux ≥ 5.6 (nf_tables per-netns queue semantics), Go ≥ 1.2
 - Version pins in go.mod are explicit; `go mod verify` passes.
 - The daemon refuses to start with a clear message if any kernel module is missing (probe at startup).
 
-### 8.2 NAT (implemented, Phase 6)
+### 8.2 NAT (implemented)
 
 NAT is implemented **entirely in the kernel** via nftables chains in the app-owned table `ip goshisen` — addresses/checksums are never rewritten in Go:
 
@@ -347,11 +347,11 @@ Implementation phases (full acceptance criteria in `mvp-scope.md` §5):
 | 8–13 | done (repo history) | OpenWrt packaging + procd lifecycle, IPv6 enforcement (inet hook), release build reproducibility (static archives, SBOM, checksums), flow-offload detection/warn — evidence in `docs/release/` |
 | 14 | done | Flow-offload policy (`offload_policy`: `warn`/`refuse`/`readiness`) — opt-in non-silent control of the established-flow enforcement gap (Issue #6) |
 | 15 | done | Atomic policy publish: unified SIGHUP/API publish pipeline (compile → durable store → king swap under one lock), outcome metrics, `policy dry-run` preview, fail-closed mid-publish recovery |
-| 16 | done | Performance: zero-allocation accepted-set key (packed 5-tuple struct, no `fmt`/string), compact `Rule` (state bitmask, value ports), single-lock allocation-free packet metrics (fixed enum-indexed arrays), pooled verdict buffer, inlined attribute parse; benchmark suite + baseline/profile/optimize evidence in `docs/design/performance-phase.md` (−70–99% on stateful/pipeline paths, −82% p95/p99, 0 allocs/packet) |
-| 17 | done | Offload detect + disable: state machine (disabled/enabled/failed/unknown), `offload_policy=enforce` fail-closed disable (verified), `offload status/disable` CLI, `allow_bypass` diagnostic escape hatch, metrics (`goshisen_flow_offload_state`, disable outcome counters) — `docs/design/offload-disable-phase.md` |
-| 18 | done | Flowtable bypass observability: `offload observe` read-only measurement (timestamp/state/per-flowtable hit counters/confidence), `goshisen_flowtable_hits_packets` + `_available` metrics, counter reset/wraparound handling, absent/zero-hit/positive/unknown state model — `docs/design/offload-observability-phase.md` |
+| 16 | done | Performance: zero-allocation accepted-set key (packed 5-tuple struct, no `fmt`/string), compact `Rule` (state bitmask, value ports), single-lock allocation-free packet metrics (fixed enum-indexed arrays), pooled verdict buffer, inlined attribute parse; benchmark suite + baseline/profile/optimize evidence in `docs/design/performance.md` (−70–99% on stateful/pipeline paths, −82% p95/p99, 0 allocs/packet) |
+| 17 | done | Offload detect + disable: state machine (disabled/enabled/failed/unknown), `offload_policy=enforce` fail-closed disable (verified), `offload status/disable` CLI, `allow_bypass` diagnostic escape hatch, metrics (`goshisen_flow_offload_state`, disable outcome counters) — `docs/design/offload-disable.md` |
+| 18 | done | Flowtable bypass observability: `offload observe` read-only measurement (timestamp/state/per-flowtable hit counters/confidence), `goshisen_flowtable_hits_packets` + `_available` metrics, counter reset/wraparound handling, absent/zero-hit/positive/unknown state model — `docs/design/offload-observability.md` |
 
-Config-file keys currently recognized: `interface`, `policy_file`, `log_level`, `log_json`, `api_host`, `api_port`, `api_token`, `metrics_port`, `policy_dir`, `queue_maxlen`, `offload_policy`, `allow_bypass`, `hook_scope`, `nat` (see `internal/config`). The policy YAML schema in §4 is a separate file format, implemented by `internal/policy` (Phase 2) and wired into the packet path in Phase 3.
+Config-file keys currently recognized: `interface`, `policy_file`, `log_level`, `log_json`, `api_host`, `api_port`, `api_token`, `metrics_port`, `policy_dir`, `queue_maxlen`, `offload_policy`, `allow_bypass`, `hook_scope`, `nat` (see `internal/config`). The policy YAML schema in §4 is a separate file format, implemented by `internal/policy` and wired into the packet path.
 
 ## 10. Open questions (tracked, not blocking)
 - Whether the kernel's conntrack `ct_event` subscription (or a periodic `/proc/net/nf_conntrack` dump) is needed for "accepted-set expiry" or metrics in a later phase; the current accepted-set grows until daemon restart (bounded per connection, acceptable for the lab).

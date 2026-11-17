@@ -41,7 +41,7 @@ make the published artifact traceable to a single source tree.
 
 - That the pin is the tag commit itself (impossible by construction).
 - Mirror-hash correctness (`PKG_MIRROR_HASH`) — that is proven by the
-  clean SDK download/verify step (release checklist §5/Phase 11).
+  clean SDK download/verify step (release checklist §5/OpenWrt release gates).
 - Binary reproducibility or apk signature/anchor validity — that is
   the job of the builds and `scripts/apk-release-gate.sh`.
 - That the release ran on the tagged commit — the gate caller must
@@ -65,7 +65,7 @@ make the published artifact traceable to a single source tree.
      --payload <extracted usr/sbin/goshisen>
    ```
    It must print `PASS`.
-5. Pre-tag dry run (unchanged from §5 phase-11): build the package from
+5. Pre-tag dry run (unchanged from §5 OpenWrt release gates): build the package from
    the tag commit `T` with the previous pin and record apk + payload
    sha256 in `/data/` — proves the mirror hash and reproducibility at
    the exact tagged source.

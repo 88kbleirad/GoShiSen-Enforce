@@ -1,6 +1,6 @@
 package package_test
 
-// Signing & provenance verification tests (Prompt 12).
+// Signing & provenance verification tests.
 //
 // Run the real scripts/sign-artifacts.sh + scripts/verify-signatures.sh with
 // throwaway Ed25519 keys (no secrets) against small fixture artifacts. These

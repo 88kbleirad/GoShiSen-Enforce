@@ -28,7 +28,7 @@ agreement.
 The v0.2.3 notes stated that stateful IPv6 ACCEPT relies on kernel
 conntrack CT-attribute delivery and is INVALID → DROP (fail-closed) when
 unavailable. Investigation (issue #5, PR #50) on OpenWrt 25.12.6 x86/64
-(kernel 6.12.112) shows the earlier phase-12 failure was a
+(kernel 6.12.112) shows the earlier IPv6-stateful failure was a
 **policy-rule-direction artifact**: a direction-specific established
 rule dropped the client's original-direction established ACK/data.
 `NFQA_CT_INFO` **is** delivered on IPv6 queue 101, and stateful IPv6

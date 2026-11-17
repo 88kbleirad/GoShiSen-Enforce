@@ -1,6 +1,6 @@
 name: apk-sign
 
-# APK signing gate (Prompt 36).
+# APK signing gate.
 #
 # This workflow signs + verifies OpenWrt .apk packages for the package
 # release path. It NEVER publishes (no feed/release upload) and NEVER

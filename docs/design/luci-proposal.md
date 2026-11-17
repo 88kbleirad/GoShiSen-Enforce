@@ -1,4 +1,4 @@
-# Phase 10.11 — LuCI Architectural Proposal (draft)
+# LuCI Architectural Proposal (draft)
 
 Date: 2026-11-11. Status: proposal only — no LuCI code exists in this
 repository (OpenWrt UI conventions live in the `luci` feed).
@@ -15,7 +15,7 @@ config (`/etc/config/goshisen`).
 
 - Management traffic is outside the queue scope by construction: the
   hook is `filter forward` only, so LuCI traffic (destination to the
-  router itself, input path) is never enforced. Phase 10.4 verified
+  router itself, input path) is never enforced. The NFQUEUE e2e validation verified
   the management console stays reachable through independent paths.
 - The API/metrics HTTP servers bind to `127.0.0.1` only; LuCI runs on
   the router itself, so it can read them directly. No new network

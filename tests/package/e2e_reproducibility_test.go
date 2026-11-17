@@ -1,6 +1,6 @@
 package package_test
 
-// Privileged e2e preflight state-machine tests (Prompt 21).
+// Privileged e2e preflight state-machine tests.
 //
 // The runner's preflight is a deterministic, typed state machine
 // (CONFIG_ERROR -> BLOCKED -> MISSING_DEPENDENCY -> RESOURCE -> READY).

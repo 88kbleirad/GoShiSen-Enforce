@@ -2,112 +2,46 @@
 
 **A Linux lab firewall: Go policy engine over NFQUEUE, kernel conntrack, nftables hooks.**
 
-> **Status: released v0.1.0; v0.2.0 released; v0.2.3 released (packaging/signing: production-signed OpenWrt apk, CLI-signed archives).** The daemon (policy engine, NFQUEUE enforcement, stateful filtering, management API/metrics, NAT, overflow monitoring, crash/restart hardening) is released as v0.1.0 with the privileged integration suite at 21/21 PASS and zero mandatory skips on GitHub-hosted runners. v0.2.0 adds reproducible Linux release binaries (amd64 + arm64), checksums, SBOM, packaging automation, and installation/upgrade documentation. Phase 15 makes policy publishes (SIGHUP and API) atomic and durable: validation → durable store → live ruleset under one lock, with outcome metrics and a `policy dry-run` preview. See `docs/installation.md`.
+> **Status:** latest release and known limitations on [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases) and in `docs/release/`.
+
+## Features
+
+- **Fail-closed by design**: the NFQUEUE backend never sets `NFQA_CFG_F_FAIL_OPEN`, so queue overflow or a missing listener never bypasses the firewall.
+- **Policy engine + stateful filtering** over NFQUEUE and kernel conntrack. Atomic, durable policy publishes (SIGHUP and REST API) and `policy dry-run` / `policy simulate` previews.
+- **NAT** via nftables (DNAT and MASQUERADE under `nat:` in the config), applied as a single `nft -f` transaction that touches only `table ip goshisen`. The policy engine sees the post-DNAT destination and pre-MASQUERADE source (`docs/design/architecture.md` §8.2).
+- **Queue overflow monitoring**: `goshisen_queue_overflow_total{cause}` metric plus rate-limited warnings. Tune depth with `queue_maxlen` (default 1024).
+- **Allocation-free hot path** (0 allocs/packet). Benchmarks: `docs/design/performance.md`.
+- **Reproducible packaging**: static `linux/amd64` and `linux/arm64` archives with `checksums.txt` and an SPDX SBOM (`make package`). The release workflow only creates draft releases. See `docs/installation.md`.
 
 ## OpenWrt
 
-The OpenWrt package (`openwrt/`, SDK-built `.apk`) adds GoShiSen-Enforce
-as a fail-closed enforcement layer after firewall4 on the forward path.
-Validated on OpenWrt 25.12.6 x86/64 (kernel 6.12.112); the service is
-disabled by default. Stateful IPv6 ACCEPT works with the canonical
-bidirectional `ESTABLISHED/RELATED` rule pattern (verified kernel
-6.12.112); see `docs/openwrt.md`.
-
-Latest release: `v0.2.3` — production-signed OpenWrt apk
-(`goshisen-0.2.3-r1.apk`, anchor `keys/goshisen-apk.pub.pem`,
-fingerprint `542bb7ae…`) and signed CLI archives (Ed25519
-`public_key.pem`, fingerprint `24215e01…`). Install instructions:
-`docs/openwrt.md` (OpenWrt package) and `docs/installation.md` (CLI
-binaries).
-
-- `docs/openwrt.md` — install, UCI options, procd usage, boot behavior,
-  recovery, upgrade/removal.
-- `docs/release/v0.2.0-notes.md` — verified behavior and known
-  limitations (boot-time window, flow offloading,
-  architecture coverage, stop semantics).
-- `docs/release/phase11-openwrt-validation.md` — full evidence matrix,
-  CI run IDs, reproducibility and package results.
-
-## What works today
-
-- **NAT** (`internal/hook`, kernel nftables): DNAT (`dstnat` prerouting chain) and MASQUERADE (`srcnat` postrouting chain) configured under `nat:` in the daemon config. Applied as one `nft -f` transaction; failed apply changes nothing; only `table ip goshisen` is ever touched. Documented semantics: **the policy engine sees post-DNAT destination and pre-MASQUERADE source** (see `docs/design/architecture.md` §8.2).
-- **Packaging**: reproducible release archives (`goshisen-linux-amd64.tar.gz`, `goshisen-linux-arm64.tar.gz`) built by `make package` — static, CGO-disabled, version-stamped, with `checksums.txt` and an SPDX SBOM. The `package` CI job builds + verifies on every PR; the `release` workflow attaches artifacts to a draft release on `v*` tags (never auto-publishes). Installation/upgrade/rollback: `docs/installation.md`. Container packaging (multi-stage `deployments/docker/Dockerfile`) exists but is **deferred** — see `docs/container-feasibility.md`.
-- **Queue overflow monitoring** (Phase 7): the daemon watches the kernel's per-queue stats (`/proc/net/netfilter/nfnetlink_queue`) and exports `goshisen_queue_overflow_total{cause="kernel_drop"|"user_drop"}` plus rate-limited `WARN` logs. The kernel drops overflowing packets by construction — the backend never sets `NFQA_CFG_F_FAIL_OPEN`, so overflow never bypasses the firewall. `queue_maxlen` (file/env/flag, default 1024) tunes the queue depth.
-- Phase 1–5 unchanged: policy engine, NFQUEUE enforcement, stateful filtering, REST API, metrics, durable store, reload. Phase 15: atomic durable publishes (SIGHUP + API), `goshisen_policy_updates_total` outcome metrics, `policy dry-run`.
-- **Phase 16 (performance):** the per-packet hot path is now allocation-free — the stateful accepted-set key is a packed 5-tuple struct (no `fmt`/string), `Rule` uses a state bitmask + value ports, and packet metrics are recorded under one lock into fixed enum-indexed arrays. Measured (same machine, 3 runs, median): pipeline decision 1129→253 ns for a NEW accept (−78%), established reply 634→193 ns (−70%), latency p95 1.72→0.31 µs, **0 allocs/packet** (was 15–16). Benchmarks, profile, and env/variance evidence: `docs/design/performance-phase.md`. Semantics unchanged (`go test -race ./...`, `make check` green).
-
-## Metrics (Prometheus)
-
-The daemon exposes Prometheus metrics in text format 0.0.4:
-
-- On the REST API server: `GET /metrics` (default `127.0.0.1:8080`).
-- Or on a dedicated port with `--metrics-port` (default 9090, binds
-  `127.0.0.1` only; no auth on `/metrics`, read-only).
-
-12 metric families (bounded-cardinality enum labels only — never IPs,
-ports, or flow IDs): packet verdicts
-(`goshisen_packets_total{action,protocol}`, `goshisen_packets_by_state_total{state}`),
-verdict latency histogram
-(`goshisen_packet_verdict_latency_seconds`), backend errors
-(`goshisen_backend_errors_total{kind}`), queue overflow
-(`goshisen_queue_overflow_total{cause}`), policy publish outcomes
-(`goshisen_policy_updates_total{outcome}`), active policy version gauge,
-flow-offload state/disable metrics, flowtable hit gauges. There is no
-daemon `up` metric — use scrape `up{job=...}` + `active_policy_version`
-+ `/healthz` `/readyz` for availability.
-
-Verified inventory + live validation + lab Prometheus/Grafana
-provisioning: `docs/release/prompt33-metrics-grafana-validation.md`.
-Lab-only monitoring files (never for production routers):
-`lab/monitoring/` (prometheus.yml, Grafana dashboard).
-
-## Integration tests & privileges
-
-The lab needs root (CAP_NET_ADMIN). As a non-root user, `go test ./...` compiles the suite and skips it with the reason `integration tests require root for CAP_NET_ADMIN`. Run it with:
-
-```bash
-sudo make integration
-```
-
-Privileged integration (21 scenarios: Phase 3 traffic pass/drop, default DROP, no-listener, clean shutdown; Phase 4 handshake+echo, unsolicited inbound, invalid state, timeout/hold, UDP re-use, reload-while-established; Phase 6 DNAT, MASQUERADE, return traffic, NAT+filtering, reload-while-NAT-connections, hook cleanup scope; Phase 7 crash/restart + readiness, queue overflow) runs on GitHub-hosted CI with a real netns lab — 21/21 PASS with zero mandatory skips. This unprivileged dev environment cannot run them locally (they require root + a kernel with NFQUEUE); the check is delegated to the isolated CI runner.
+The `openwrt/` SDK-built `.apk` adds a fail-closed NFQUEUE enforcement layer after firewall4 on the forward path; it never replaces firewall4, never modifies fw4's tables, and never NATs. Install, UCI options, lifecycle, recovery and upgrade (incl. the upgrade-hook fix, issue #57): `docs/openwrt.md`. CLI binaries, upgrade and rollback: `docs/installation.md`.
 
 ## Quick start
 
 ```bash
-make build                      # produces bin/goshisen (version from git describe)
+make build                      # produces bin/goshisen
 
-# Validate a config without starting the daemon:
+# Validate config and policy
 ./bin/goshisen -c configs/goshisen.yaml config check
-
-# Validate a policy and inspect the compiled rules:
 ./bin/goshisen policy validate --policy-file policies/examples/allow-lab.yaml
 
-# Simulate a packet — verdict + matching rule ID, no network changes:
+# Simulate a packet (no network changes)
 ./bin/goshisen policy simulate --policy-file policies/examples/allow-lab.yaml \
   --protocol tcp --state new --src 10.0.0.5 --dst 10.0.0.2 --dest-port 80
 #   verdict: ACCEPT
 #   matched rule: allow-http
 
-# Run inside the lab router namespace (root). It installs the hook in
-# that namespace only; host firewall untouched.
+# Run in the lab router namespace (root); the host firewall is untouched
 sudo scripts/lab.sh up
 sudo ip netns exec gsh_fw ./bin/goshisen \
   --interface gsh-fw1 --policy-file policies/examples/allow-lab.yaml
 sudo scripts/lab.sh down
 ```
 
-Sample configuration: `configs/goshisen.yaml`. Sample policies: `policies/default/deny-all.yaml`, `policies/examples/allow-lab.yaml`.
-
 ## Configuration
 
-Precedence (lowest to highest):
-
-| Layer | Example |
-| --- | --- |
-| built-in defaults | `log_level: info`, `log_json: false` |
-| config file | `interface: eth0` |
-| environment | `GOSHISEN_INTERFACE=eth0` |
-| flags | `--interface eth0` |
+Precedence (lowest to highest): defaults, config file, environment, flags.
 
 | Key | Flag | Environment | Default |
 | --- | --- | --- | --- |
@@ -117,39 +51,32 @@ Precedence (lowest to highest):
 | `log_level` | `--log-level` | `GOSHISEN_LOG_LEVEL` | `info` |
 | `log_json` | `--log-json` | `GOSHISEN_LOG_JSON` | `false` |
 
-Boolean env values accept `true/false`, `1/0`, `yes/no`, `on/off`.
+Booleans accept `true/false`, `1/0`, `yes/no`, `on/off`. Samples: `configs/goshisen.yaml`, `policies/`.
+
+## Metrics
+
+Prometheus text format 0.0.4: `GET /metrics` on the API server (`127.0.0.1:8080`) or a dedicated `--metrics-port` (default 9090, localhost only, no auth). Bounded-cardinality labels only. Metric inventory and Grafana setup: `docs/release/metrics-grafana-validation.md`.
+
+## Testing
+
+```bash
+go test ./...            # unprivileged; integration suite is skipped without root
+sudo make integration    # real netns scenarios, needs root (CAP_NET_ADMIN)
+```
+
+CI runs the full integration suite on GitHub-hosted runners.
 
 ## Documentation
 
 | Document | Contents |
 | --- | --- |
-| [Architecture](docs/design/architecture.md) | Full design: packet flow, policy schema, rule semantics, failure modes, lab topology, library risks |
-| [MVP Scope](docs/design/mvp-scope.md) | Component inventory, scenarios S1–S12, per-phase acceptance criteria, non-goals |
+| [Architecture](docs/design/architecture.md) | Packet flow, policy schema, failure modes, lab topology |
+| [MVP Scope](docs/design/mvp-scope.md) | Components, scenarios, acceptance criteria, non-goals |
 | [User Guide](docs/user-guide.md) | CLI, configuration, examples |
 | [Developer Guide](docs/developer-guide.md) | Build, test, CI, repository layout |
-| [Metrics + Grafana (Prompt 33)](docs/release/prompt33-metrics-grafana-validation.md) | Verified Prometheus metric inventory, lab validation, Prometheus/Grafana provisioning (lab-only) |
-
-## Repository layout
-
-```
-cmd/goshisen/        daemon entry point
-internal/app/        daemon lifecycle: policy load, hook install, queue loop, shutdown
-internal/cli/        flag parsing, help/version, subcommand resolution
-internal/config/     configuration model, YAML file, precedence, validation
-internal/policy/     policy YAML parser + evaluation engine (snapshots, atomic replace)
-internal/packet/     NFQUEUE backend + IPv4/TCP/UDP parser
-internal/hook/       nftables hook provisioning (router namespace only)
-configs/             sample configuration
-policies/default/    deny-all policy example
-policies/examples/   worked policy example
-scripts/lab.sh       isolated netns lab (up/down/status)
-lab/monitoring/      lab-only Prometheus scrape config + Grafana dashboard (Prompt 33)
-evidence/prompt33/   raw /metrics, Grafana export, PromQL query results
-tests/integration/   real-traffic integration suite + probe helper
-docs/                design and user/developer guides
-.github/workflows/   CI
-```
+| [Installation](docs/installation.md) | CLI binaries, upgrade, rollback |
+| [OpenWrt](docs/openwrt.md) | Package install, UCI, procd, recovery |
 
 ## License
 
-MIT — see [LICENSE](LICENSE). © 2026 Lê Thanh Phong.
+MIT, see [LICENSE](LICENSE). © 2026 Lê Thanh Phong.

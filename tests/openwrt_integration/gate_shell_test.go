@@ -1,7 +1,7 @@
 package openwrt_integration
 
 // Shell-level regression tests for the OpenWrt e2e reload gate
-// (Prompt 09). These run the real pattern used by
+// These run the real pattern used by
 // scripts/openwrt-e2e.sh through grep(1), so a change to the ERE that
 // would silently break the gate (or make it too permissive) fails the
 // ordinary CI "build, vet, test" job without needing the QEMU lab.
