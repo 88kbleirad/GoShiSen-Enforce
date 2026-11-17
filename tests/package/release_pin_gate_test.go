@@ -108,7 +108,9 @@ func newGateRepo(t *testing.T, version, release string, pinChoice string, source
 	git(t, dir, "commit", "-q", "-m", "makefile")
 	tip := strings.TrimSpace(git(t, dir, "rev-parse", "HEAD"))
 
-	git(t, dir, "tag", "v"+version)
+	// Annotated (not lightweight) so git verify-tag works on it: the
+	// release tags this gate checks are annotated.
+	git(t, dir, "tag", "-a", "v"+version, "-m", "v"+version)
 	return dir, tip, first
 }
 

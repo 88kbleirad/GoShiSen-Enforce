@@ -205,6 +205,23 @@ Remove it explicitly with:
 sudo goshisen hook cleanup
 ```
 
+## Verifying release tags
+
+Release tags (v0.2.6+) are SSH-signed against the committed trust
+anchor `docs/trust/allowed_signers`. Verify a tag before building from
+it:
+
+```bash
+git fetch --tags origin
+git tag -v vX.Y.Z        # needs gpg.format=ssh + the anchor on disk
+```
+
+For a signed tag this prints `Good "git" signature for <principal> ...`.
+An unsigned tag prints `error: no signature found` — do not build a
+release from it. The gate in `scripts/release-pin-gate.sh` enforces this
+on the release side (`GATE_TAG_SIGN_CHECK=1`); procedure and key
+management: `docs/release/signed-tags-plan.md`.
+
 ## Compatibility notes
 
 - **IPv6 (queue 101):** forwarded IPv6 TCP/UDP is queued on queue

@@ -2,7 +2,7 @@
 
 **A Linux lab firewall: Go policy engine over NFQUEUE, kernel conntrack, nftables hooks.**
 
-> **Status:** latest release and known limitations on [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases) and in `docs/release/`.
+> **Status:** latest release and known limitations on [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases) and in `docs/release/`. Release tags are SSH-signed against `docs/trust/allowed_signers` since v0.2.6 (see `docs/installation.md` → Verifying release tags).
 
 ## Features
 
