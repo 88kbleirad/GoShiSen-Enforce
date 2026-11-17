@@ -604,8 +604,8 @@ func parseBool(s string) (bool, error) {
 }
 
 func parsePort(s string) (int, error) {
-	var n int
-	if _, err := fmt.Sscanf(strings.TrimSpace(s), "%d", &n); err != nil || n < 0 || n > 65535 {
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil || n < 0 || n > 65535 {
 		return 0, fmt.Errorf("invalid port %q (0..65535)", s)
 	}
 	return n, nil
