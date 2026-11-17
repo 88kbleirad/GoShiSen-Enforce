@@ -220,3 +220,79 @@ func TestGateApkFilenameMismatchFails(t *testing.T) {
 		t.Fatalf("expected apk-filename failure message, got:\n%s", out)
 	}
 }
+
+// signTagSSH signs an existing tag in dir with a fresh ephemeral SSH key
+// and returns (dir, allowedSignersPath). The allowed_signers file maps the
+// principal to that key. The caller must run the gate with
+// GATE_TAG_SIGN_CHECK=1 and ALLOWED_SIGNERS=<allowedSignersPath>.
+func signTagSSH(t *testing.T, dir, tag string) string {
+	t.Helper()
+	key := filepath.Join(dir, "signer")
+	out, err := exec.Command("ssh-keygen", "-t", "ed25519", "-N", "", "-f", key).CombinedOutput()
+	if err != nil {
+		t.Fatalf("ssh-keygen: %v: %s", err, out)
+	}
+	pub, err := exec.Command("ssh-keygen", "-y", "-f", key).Output()
+	if err != nil {
+		t.Fatalf("ssh-keygen -y: %v", err)
+	}
+	allowed := filepath.Join(dir, "allowed_signers")
+	content := "maintainer@example.com " + strings.TrimSpace(string(pub)) + "\n"
+	if err := os.WriteFile(allowed, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, dir, "config", "gpg.format", "ssh")
+	git(t, dir, "config", "user.signingkey", key)
+	git(t, dir, "tag", "-f", "-s", tag, "-m", "signed "+tag)
+	return allowed
+}
+
+func TestGateTagSignatureCheckPasses(t *testing.T) {
+	dir, _, _ := newGateRepo(t, "0.2.4", "1", pinTip, false, false)
+	allowed := signTagSSH(t, dir, "v0.2.4")
+	cmd := exec.Command("bash", filepath.Join(repoRoot(t), "scripts", "release-pin-gate.sh"),
+		"--apk", "goshisen-0.2.4-r1.apk",
+		"--tag", "v0.2.4",
+		"--payload", filepath.Join(dir, "payload"))
+	cmd.Env = append(os.Environ(), "GATE_REPO="+dir, "GATE_TAG_SIGN_CHECK=1", "ALLOWED_SIGNERS="+allowed)
+	payload := filepath.Join(dir, "payload")
+	if err := os.WriteFile(payload, []byte("#!/bin/sh\necho \"goshisen 0.2.4\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("expected PASS, got error: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "tag signature verified") {
+		t.Fatalf("expected 'tag signature verified' in output:\n%s", out)
+	}
+	if !strings.Contains(string(out), "PASS") {
+		t.Fatalf("expected PASS in output:\n%s", out)
+	}
+}
+
+func TestGateTagSignatureCheckFailsUnsigned(t *testing.T) {
+	dir, _, _ := newGateRepo(t, "0.2.4", "1", pinTip, false, false)
+	// Tag is unsigned (as created by newGateRepo); force a valid
+	// allowed_signers so the only failure is the missing signature.
+	allowed := filepath.Join(dir, "allowed_signers")
+	if err := os.WriteFile(allowed, []byte("maintainer@example.com ssh-ed25519 AAAA\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("bash", filepath.Join(repoRoot(t), "scripts", "release-pin-gate.sh"),
+		"--apk", "goshisen-0.2.4-r1.apk",
+		"--tag", "v0.2.4",
+		"--payload", filepath.Join(dir, "payload"))
+	cmd.Env = append(os.Environ(), "GATE_REPO="+dir, "GATE_TAG_SIGN_CHECK=1", "ALLOWED_SIGNERS="+allowed)
+	payload := filepath.Join(dir, "payload")
+	if err := os.WriteFile(payload, []byte("#!/bin/sh\necho \"goshisen 0.2.4\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected failure on unsigned tag, got success:\n%s", out)
+	}
+	if !strings.Contains(string(out), "not signed") {
+		t.Fatalf("expected 'not signed' failure message:\n%s", out)
+	}
+}
