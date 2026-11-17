@@ -1,4 +1,4 @@
-# v0.2.2 Release Readiness — Candidate Report (Prompt 28)
+# v0.2.2 Release Readiness — Candidate Report
 
 **Date:** 2026-11-14 (UTC)
 **Candidate tree:** the candidate commit is **`main` @ `c5de6e8`**
@@ -6,7 +6,7 @@
 at candidate time). Docs-only successor `74846c8` (full SHA
 `74846c882088971ea8620ccd10ffe79e423260f9`, PR #30) is NOT part of the
 candidate build — same pattern as v0.2.1 (tag at code commit, docs after).
-Prior candidate `9147a0e` superseded by the Phase 14.2 merges.
+Prior candidate `9147a0e` superseded by the merged signing/offload/arm64/downgrade scope.
 
 **Auditor:** omp / 88kbleirad
 
@@ -73,7 +73,7 @@ Prior candidate `9147a0e` superseded by the Phase 14.2 merges.
 
 ### Documentation-only
 - `docs/design/{e2e-reproducibility,offload-disable,offload-observability,openwrt-downgrade-cleanup}-phase.md`, `signing-design.md`,
-  `docs/release/ev-index`, `phase11-next-backlog`, prompt evidence files,
+  `docs/release/ev-index`, `next-backlog`, prompt evidence files,
   `v0.2.2-notes.md`, release-readiness reports.
 
 ## 3. Validation evidence (candidate `c5de6e8`, 2026-11-14)
@@ -91,8 +91,8 @@ Local (workstation, Go 1.27.3, linux/amd64, checkout at exact candidate):
 | `make verify-package VERSION=0.2.2-ready` | PASS | arch, `goshisen 0.2.2-ready` stamp, checksums, SPDX-2.3 SBOM |
 | Sign+verify pipeline (ephemeral fixture Ed25519 key) | PASS | `VERIFY-PASS` all 4 artifacts; tamper negative control → exit 4 |
 | Signing regression tests | PASS | `signing_artifacts_test.go` (9) + `production_signing_test.go` (7) |
-| Privileged OpenWrt e2e runner | PASS | CI run 43560836375 job `openwrt e2e` (QEMU lab, privileged) success @ candidate head; instabox runner run (`TestOpenWrtE2E`, 14/14 gates) documented in prompt 26 evidence — daemon code at candidate identical modulo readiness fix |
-| arm64 runtime | PASS | CI run 43560836375 job `arm64 cross-build + static ELF` success @ candidate head; live armsr/armv8 QEMU TCG evidence (prompt 17) — daemon code at candidate identical to lab source modulo readiness fix |
+| Privileged OpenWrt e2e runner | PASS | CI run 43560836375 job `openwrt e2e` (QEMU lab, privileged) success @ candidate head; instabox runner run (`TestOpenWrtE2E`, 14/14 gates) documented in the e2e-reproducibility evidence — daemon code at candidate identical modulo readiness fix |
+| arm64 runtime | PASS | CI run 43560836375 job `arm64 cross-build + static ELF` success @ candidate head; live armsr/armv8 QEMU TCG evidence (arm64-runtime-evidence) — daemon code at candidate identical to lab source modulo readiness fix |
 
 CI (GitHub Actions, full head SHAs):
 
@@ -104,7 +104,7 @@ CI (GitHub Actions, full head SHAs):
 ### 3.1 Found-and-fixed during the audit
 
 1. **Stale-image boot** (`df6b0a0`) and **unprivileged teardown**
-   (`9147a0e`): runner fixes from prompt 26, merged and re-verified.
+   (`9147a0e`): runner fixes from the e2e-reproducibility evidence, merged and re-verified.
 2. **`needCmd` duplicate** removed from `arm64_build_test.go` when
    merging PR #27 (conflicted with PR #24's `signing_artifacts_test.go`).
 
@@ -156,7 +156,7 @@ Pre-approval (done):
 - [x] Repo state: candidate `c5de6e8` verified (full SHA); origin/main
   has only docs after it (`74846c8`); working tree clean.
 - [x] Docs: `v0.2.2-notes.md` draft rewritten to merged scope; this
-  report; evidence-index row (prompt 28).
+  report; evidence-index row 28.
 - [x] Validation suite PASS at exact candidate (see §3).
 - [x] Reproducibility double-build byte-identical; `make verify-package` PASS.
 - [x] Artifact signing readiness: anchor fingerprint verified; scripts

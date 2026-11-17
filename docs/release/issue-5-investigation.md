@@ -10,7 +10,7 @@ and stateful IPv6 ACCEPT completes end-to-end** when the policy uses the
 canonical bidirectional `ESTABLISHED/RELATED` rule; the earlier issue #5
 claim ("kernel does not deliver conntrack attributes for IPv6, so
 stateful IPv6 cannot complete") is **not reproducible on this kernel**
-and was, in the original phase-12 test, a **policy-rule-direction
+and was, in the original IPv6-stateful test, a **policy-rule-direction
 artifact** (direction-specific established rule that dropped the
 original-direction established ACK/data).
 
@@ -61,15 +61,15 @@ enough conntrack metadata for stateful IPv6.
 | Does the daemon's verdict/mark cause INVALID later? | no — INVALID is only assigned when `NFQA_CT_INFO` is absent; here it is present | `applyCTInfo`; probe |
 | Stateful v6 completes with the real daemon? | **yes, HTTP 200 + marker body** (canonical policy) | live curl + conntrack TIME_WAIT, 5+5 packets |
 
-## 5. What actually failed before (root cause of the phase-12 report)
+## 5. What actually failed before (root cause of the earlier IPv6-stateful report)
 
-The phase-12 stateful policy used **direction-specific** established
+The earlier IPv6-stateful policy used **direction-specific** established
 rules (e.g. reply-only `src=fd00::/64 dst=fdcd::/64`). The client's
 established **original-direction** ACK/data (ctInfo=0) matched no rule
 and hit `default_action: DROP`. The daemon accepted the SYN and the
 SYN-ACK reply, but the handshake never completed because the client ACK
 was dropped. Conntrack stayed `SYN_SENT [UNREPLIED]`-adjacent
-(ESTABLISHED with 1 reply) — the same signature the phase-12 report
+(ESTABLISHED with 1 reply) — the same signature the earlier IPv6-stateful report
 attributed to "no IPv6 CT attributes".
 
 The canonical pattern (`allow-established` with `state:
@@ -82,7 +82,7 @@ accepted connections) resolves it. This is documented in
 | Kernel | Stateful v6 tested | Result |
 | --- | --- | --- |
 | OpenWrt 25.12.6 x86/64 (6.12.112) | yes (this investigation) | **PASS** — completes end-to-end |
-| OpenWrt 25.12.6 armsr/armv8 (6.12.112 arm64) | no | **UNVERIFIED** (prompt-32 ran DROP/ACCEPT controls, not stateful v6) |
+| OpenWrt 25.12.6 armsr/armv8 (6.12.112 arm64) | no | **UNVERIFIED** (arm64 runtime validation ran DROP/ACCEPT controls, not stateful v6) |
 | Other kernels | no | **UNVERIFIED** |
 
 The original issue #5 premise (kernel CT-attribute delivery gap for

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# GoShiSen-Enforce — verify signed release artifacts (fail closed, Prompt 12).
+# GoShiSen-Enforce — verify signed release artifacts (fail closed).
 #
 # Usage:
 #   verify-signatures.sh --dist DIR --public-key PUB.pem --commit <sha> [--require-sign]

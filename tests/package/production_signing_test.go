@@ -1,6 +1,6 @@
 package package_test
 
-// Production key bootstrap tests (Prompt 13).
+// Production key bootstrap tests.
 //
 // These verify the *committed production trust anchor* and the fail-closed
 // release signing path using throwaway fixture keys only — never the real

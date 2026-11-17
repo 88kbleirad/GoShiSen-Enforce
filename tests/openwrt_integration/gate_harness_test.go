@@ -1,6 +1,6 @@
 package openwrt_integration
 
-// Regression tests for the OpenWrt e2e reload-gate harness (Prompt 09).
+// Regression tests for the OpenWrt e2e reload-gate harness.
 //
 // The gate must detect a successful policy publish from the daemon's log
 // even when the serial console transcript carries non-UTF-8 / control

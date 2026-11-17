@@ -1,6 +1,6 @@
 # GoShiSen-Enforce — User Guide
 
-Status: **Phase 7 (hardening/release).** This guide describes the daemon as built: CLI, configuration, lifecycle, policy engine, stateful filtering, REST API, metrics, NAT, and queue-overflow monitoring.
+Status: **hardening/release.** This guide describes the daemon as built: CLI, configuration, lifecycle, policy engine, stateful filtering, REST API, metrics, NAT, and queue-overflow monitoring.
 
 ## Building
 

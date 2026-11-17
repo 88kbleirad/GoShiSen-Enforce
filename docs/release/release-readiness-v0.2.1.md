@@ -1,4 +1,4 @@
-# v0.2.1 Release Readiness Audit — Report (Prompt 25)
+# v0.2.1 Release Readiness Audit — Report
 
 **Date:** 2026-11-14 (UTC)
 **Audited tree:** `main` @ `bb72f6d` — local == origin, working tree clean at
@@ -52,7 +52,7 @@ the validation results below apply unchanged to the final tree.
 
 | Gap | Fix (commit) |
 | --- | --- |
-| Evidence index lacked a prompt-21 / PR-29 row | added row with squash SHA `e94d60a`, CI runs, evidence pointers — `80edf70` |
+| Evidence index lacked a PR-29 row | added row with squash SHA `e94d60a`, CI runs, evidence pointers — `80edf70` |
 | Evidence-index claim "no binary/package behavior changed after the tag" was wrong for PR #29 (readiness fix is binary behavior) | corrected to explicitly scope post-tag code changes out of v0.2.1 — `80edf70` |
 | `v0.2.1-notes.md` remains draft | appropriate: it documents the *tagged* release; PR #29 changes belong to a future version's notes — no change |
 

@@ -1,6 +1,6 @@
 package package_test
 
-// OpenWrt package downgrade cleanup tests (Prompt 18).
+// OpenWrt package downgrade cleanup tests.
 //
 // These exercise openwrt/files/lib/goshisen-lifecycle.sh (the shell
 // helper sourced by prerm) against a sandboxed rc.d root

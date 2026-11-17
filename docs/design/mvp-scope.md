@@ -161,7 +161,7 @@ Each scenario is run against the lab topology (`fw`/`client`/`server`, §7 of ar
 - [x] Hot path optimized: zero-allocation packed 5-tuple key (`tupleKey` struct, no `fmt`/string), `sync.RWMutex`+map accepted-set, compact `Rule` (state bitmask + value ports), single-lock fixed-array packet metrics (`ObservePacket`), pooled verdict buffer, inlined attribute parse.
 - [x] Results (median, same env, 3 runs): King.Process NEW accept 934→103 ns (−89%), ESTABLISHED 409→53 ns (−87%), tupleKey 359→4.4 ns (−99%), pipeline e2e NEW accept 1129→253 ns (−78%), established reply 634→193 ns (−70%), default-drop 668→206 ns (−69%), metrics-only 86.5→15.8 ns (−82%), latency p50 1.04→0.31 µs, p95 1.72→0.31 µs, p99 2.69→0.48 µs; **0 allocations per packet** (was 15–16).
 - [x] Semantics preserved: stateful reply canonicalization pinned by `internal/policy/tuplekey_test.go` (v4/v6); `go test -race ./...` and `make check` green; verdict wire format unchanged (`TestVerdictMessageGolden`).
-- [x] Docs: `docs/design/performance-phase.md` (baseline/profile/result, env, variance), architecture §9 row 16, mvp-scope status synced. Worker count unchanged (2 goroutines, one per queue socket v4/v6); policy-size scaling verified (200-rule worst case).
+- [x] Docs: `docs/design/performance.md` (baseline/profile/result, env, variance), architecture §9 row 16, mvp-scope status synced. Worker count unchanged (2 goroutines, one per queue socket v4/v6); policy-size scaling verified (200-rule worst case).
 
 ---
 
@@ -215,7 +215,7 @@ See `docs/design/architecture.md` §8 for the full matrix. MVP pins:
 - [x] Watchdog: re-detects every 10 s; enforce re-attempts disable if an offload appears after startup.
 - [x] Metrics: `goshisen_flow_offload_state` (0/1/2) + `goshisen_flow_offload_disables_total{result=success|failed}`.
 - [x] OpenWrt package: UCI `offload_policy` accepts enforce; UCI `allow_bypass` option rendered; tests in `tests/package`.
-- [x] Docs: `docs/design/offload-disable-phase.md`, `docs/openwrt.md`, architecture §9.
+- [x] Docs: `docs/design/offload-disable.md`, `docs/openwrt.md`, architecture §9.
 
 ### Phase 18 — Flowtable bypass observability (backlog #3)
 - [x] Measurement contract: flowtable `counter` is the observable hit source; read-only parsing of `nft -a list ruleset` only.
@@ -224,4 +224,4 @@ See `docs/design/architecture.md` §8 for the full matrix. MVP pins:
 - [x] Metrics: `goshisen_flowtable_hits_packets` (gauge, -1 unavailable) + `goshisen_flowtable_hits_available`; watchdog/startup record them.
 - [x] Counter reset/wraparound handling (DeltaHits): after < before → report current value, no negative deltas.
 - [x] Tests: parser (with/bare/none/malformed counters), delta (positive/reset/zero), observe (absent/unknown/positive/limited), metrics.
-- [x] Docs: `docs/design/offload-observability-phase.md` (contract, state model, reset, platform limits, safety).
+- [x] Docs: `docs/design/offload-observability.md` (contract, state model, reset, platform limits, safety).

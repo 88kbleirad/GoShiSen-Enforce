@@ -16,7 +16,7 @@ DROP/ACCEPT controls, offload `enforce` disable (verified), lifecycle
 (stop/start/restart/reload), kill -9 fail-closed + respawn, reboot with
 boot guard, upgrade r4→r5 (config preserved), downgrade r5→r4 (no
 dangling guard links), uninstall cleanup — on x86_64 and aarch64
-(live armsr/armv8 QEMU, see `docs/release/prompt32-arm64-runtime-validation.md`).
+(live armsr/armv8 QEMU, see `docs/release/arm64-runtime-validation.md`).
 See `docs/release/openwrt-v022-package-validation.md`.
 
 Downgrade r5→r4 caveat: the r4 daemon (v0.2.1-era binary, pin
@@ -33,7 +33,7 @@ upgrade from v0.2.0-r2, old-config compatibility, boot guard (S12)
 ordering, flow-offload policy modes (warn/refuse/readiness), stateful
 IPv6 (allow/deny/established replies with real v6 peers), reload-failure
 atomicity, crash/restart recovery, and rollback to r2. See
-`docs/release/phase16-openwrt-compat.md`. Note: rolling back from r4 to
+`docs/release/openwrt-compat.md`. Note: rolling back from r4 to
 r2 leaves dangling `S12goshisen-boot`/`K10goshisen-boot` rc.d symlinks
 (r2 does not ship the guard). **Before downgrading**, disable the guard
 so its rc.d links are removed while the script still exists:

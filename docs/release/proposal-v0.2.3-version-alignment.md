@@ -1,7 +1,7 @@
 # Proposal — v0.2.3 packaging/signing release: version alignment
 
 **Status: PROPOSAL — no tag created. Awaiting owner confirmation.**
-**Base:** main `4233e2e` (post Prompt 39; CI 43620712710 6/6).
+**Base:** main `4233e2e` (post APK staging verification; CI 43620712710 6/6).
 
 ## 1. Decision (owner)
 
@@ -58,7 +58,7 @@ Two safe options:
   (`0.2.3` vs `0.2.0`) because `PKG_VERSION` feeds the ldflags; the
   stamp is data, not code. The package files (recipe) are the same r5
   recipe.
-- Evidence frame: rebuild of the same pin in Prompt 30/32 produced
+- Evidence frame: rebuild of the same pin in the OpenWrt r5 source-pin and arm64 runtime validations produced
   byte-identical apks; the only variable here is the version string in
   the ldflags.
 
@@ -72,7 +72,7 @@ Two safe options:
 | `0.2.3-r1` > `0.2.3` | release suffix newer |
 
 So a clean **upgrade path exists** from the published `0.2.0-r2` and
-from `0.2.0-r5` to `0.2.3-r1`. (Downgrade r5→r4 caveat from Prompt 30
+from `0.2.0-r5` to `0.2.3-r1`. (Downgrade r5→r4 caveat from the source-pin validation
 is unchanged.)
 
 ## 4. Remaining mismatches (documented in notes if accepted)

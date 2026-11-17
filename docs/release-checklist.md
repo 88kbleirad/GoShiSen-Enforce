@@ -15,7 +15,7 @@ Run in order. Every item must pass before tagging.
 ## 2. Privileged integration suite (root host, in the lab)
 
 - [x] Prereqs verification is now **functional**: `checkPrereqs` verifies an nftables queue rule installs in a throwaway namespace (NFQUEUE present) and asserts `nf_conntrack_count > 0` after a real TCP flow (skip with explicit reason otherwise). Reviewer: `tests/integration/e2e_test.go` `checkNFQUEUERule` / `checkConntrackNFQUEUE`.
-- [x] **Positive controls** added to every deny/fail-closed scenario (DeniedTraffic, DefaultDrop, QueueNoListener, StateUnsolicitedInbound, StateInvalidConnection) so a deny assertion cannot pass if the daemon/probe is broken. Verified PASS in the VM (5/5, exit 0). Evidence: `docs/release/phase8.7-positive-controls-ci.md`.
+- [x] **Positive controls** added to every deny/fail-closed scenario (DeniedTraffic, DefaultDrop, QueueNoListener, StateUnsolicitedInbound, StateInvalidConnection) so a deny assertion cannot pass if the daemon/probe is broken. Verified PASS in the VM (5/5, exit 0). Evidence: `docs/release/positive-controls-ci.md`.
 - [x] `sudo scripts/lab.sh up` succeeds; `sudo make integration` runs the full suite (all mandatory tests **must execute; skips are a release blocker**):
   - default DROP; explicit TCP/UDP allow; denied traffic; first-match semantics
   - stateful handshake+echo; unsolicited inbound; INVALID state; timeout/hold; UDP reuse
@@ -27,7 +27,7 @@ Run in order. Every item must pass before tagging.
 - [x] `sudo scripts/lab.sh down` clean; `ip netns list` shows no `gsh_*` leftovers.
 - [x] Teardown also runs after a killed/aborted test (cleanup traps).
 
-**Status note (Phase 9.2):** GitHub-hosted CI (ubuntu-24.04, kernel 7.0.0-1017-azure, Go 1.25.14) is green: build job PASS, integration job 21/21 PASS with zero mandatory skips. The three previously-TCG-timeout-bound scenarios are verified: NAT-reload (18.47s), queue overflow (23.70s), state timeout/hold (2.82s/1.81s) — plus reload-while-established (18.48s). Evidence: `docs/release/phase9-ci-validation.md`. Draft PR [#1](https://github.com/88kbleirad/GoShiSen-Enforce/pull/1) targets main; release gate is READY pending merge/tag authorization.
+**Status note (CI validation):** GitHub-hosted CI (ubuntu-24.04, kernel 7.0.0-1017-azure, Go 1.25.14) is green: build job PASS, integration job 21/21 PASS with zero mandatory skips. The three previously-TCG-timeout-bound scenarios are verified: NAT-reload (18.47s), queue overflow (23.70s), state timeout/hold (2.82s/1.81s) — plus reload-while-established (18.48s). Evidence: `docs/release/ci-validation.md`. Draft PR [#1](https://github.com/88kbleirad/GoShiSen-Enforce/pull/1) targets main; release gate is READY pending merge/tag authorization.
 
 ## 3. Security & hardening checks
 
@@ -55,12 +55,12 @@ Run in order. Every item must pass before tagging.
 
 ## 6. Release notes (draft)
 
-- Phase 1–6 foundation summary; Phase 7: queue-overflow monitoring, crash/restart hardening + readiness, supervisor examples, toolchain alignment, security hardening (typed metric enums, sample-config sanitization).
+- Foundation summary; hardening: queue-overflow monitoring, crash/restart hardening + readiness, supervisor examples, toolchain alignment, security hardening (typed metric enums, sample-config sanitization).
 - Explicit note: privileged suite must pass before claiming production readiness; this checklist's §2 is the gate.
 
 ---
 
-## Phase 11 additions (OpenWrt release gates)
+## OpenWrt release gates (additions)
 
 - [x] OpenWrt package pin: `PKG_SOURCE_VERSION` points to a **pushed**
   commit and `PKG_MIRROR_HASH` is set (verify with `curl -fsSL
@@ -78,11 +78,11 @@ Run in order. Every item must pass before tagging.
   after SIGKILL with traffic blocked during the gap and no duplicate
   tables, `uci commit` causes no restart loop.
 - [x] apk install/upgrade/remove: no fail-open window; `apk del`
-- [x] APK signing test path (Prompt 35):
-- [x] APK production gate wiring (Prompt 36):
-- [x] APK staging verification (Prompt 37):
-- [x] APK key custody handoff (Prompt 38):
-- [x] APK staging verification results (Prompt 39):
+- [x] APK signing test path:
+- [x] APK production gate wiring:
+- [x] APK staging verification:
+- [x] APK key custody handoff:
+- [x] APK staging verification results:
 - [x] Release gate: **dry-run the package build from the exact commit
   before tagging** — run `make package/feeds/goshisen/{download,compile}`
   in a clean official SDK container at the exact commit and record the
@@ -133,7 +133,7 @@ Run in order. Every item must pass before tagging.
   with tests; `enforce` disables and verifies (fail-closed if disable
   fails or state unknown), `allow_bypass` diagnostic hatch; `offload
   status/disable` CLI; documented UCI recommendation; live OpenWrt lab
-  evidence (`docs/release/prompt15-offload-lab-evidence.md`).
+  evidence (`docs/release/offload-lab-evidence.md`).
 - [x] Malformed packets: live parse-error path verified on the VM
   (`goshisen_backend_errors_total{kind="parse"}`), fuzz ≥ 60 s clean.
 - [x] Recovery path documented and tested: `goshisen hook cleanup`

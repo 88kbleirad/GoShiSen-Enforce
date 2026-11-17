@@ -1,6 +1,6 @@
 package package_test
 
-// APK signing path tests (Prompt 35).
+// APK signing path tests.
 //
 // Exercise scripts/apk-sign.sh + scripts/apk-verify.sh against a fixture
 // zip/tar "apk" file with throwaway keys. They require an apk-tools v3
@@ -156,7 +156,7 @@ func TestApkSignVerifyRoundtrip(t *testing.T) {
 	}
 }
 
-// ---- Prompt 36: release-gate orchestrator (fail-closed) ----
+// ---- release-gate orchestrator (fail-closed) ----
 
 func runGate(t *testing.T, env []string, args ...string) (string, error) {
 	t.Helper()

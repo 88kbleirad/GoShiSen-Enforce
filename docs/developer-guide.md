@@ -73,7 +73,7 @@ NAT lives in `internal/hook` (kernel-side nftables chains in the app-owned table
 - `internal/store`: version validation, atomic writes (no stray temp files), active-pointer integrity.
 - `internal/api`: auth (missing/valid + audit + no token leak), invalid-policy preserves active, version conflict, concurrent apply (exactly one 201), restart recovery, activate/rollback, body limit, readiness, metrics, policy-update outcome metric, shared-mutex concurrency with daemon publishes, mid-publish kill recovery (torn version never activates); all under `-race`.
 - `internal/metrics`: bounded label cardinality, no secret/flow-derived labels, histogram/gauge/counter output, queue-overflow counter (bounded `cause` enum).
-- `tests/integration`: real-traffic scenarios (Phase 3 six + Phase 4 six + Phase 6 five + Phase 7 overflow). **Root-gated**: `checkPrereqs` skips with an explicit reason. Run with `sudo make integration` (CI has a dedicated privileged job).
+- `tests/integration`: real-traffic scenarios (enforcement 6, stateful 6, NAT 5, overflow 1). **Root-gated**: `checkPrereqs` skips with an explicit reason. Run with `sudo make integration` (CI has a dedicated privileged job).
 - CLI smoke tests run in CI (help/version, missing-config error, invalid-policy error).
 
 ## Versioning

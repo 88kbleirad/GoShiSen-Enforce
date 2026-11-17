@@ -1,13 +1,13 @@
 package package_test
 
-// arm64 runtime/build regression coverage (Prompt 17).
+// arm64 runtime/build regression coverage.
 //
 // Deterministic CI check: cross-compile the daemon for linux/arm64,
 // assert the artifact is a statically-linked aarch64 ELF, and if a
 // qemu-user binfmt handler is available (e.g. `qemu-aarch64-static`),
 // run the smoke CLI under emulation. No root, no production secret,
 // no network is required. The full runtime path is covered by the
-// OpenWrt armsr/armv8 QEMU lab evidence (docs/release/prompt17-*).
+// OpenWrt armsr/armv8 QEMU lab evidence (docs/release/arm64-runtime-evidence*).
 import (
 	"os"
 	"os/exec"

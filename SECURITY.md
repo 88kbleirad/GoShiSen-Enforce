@@ -2,7 +2,7 @@
 
 ## Project status
 
-GoShiSen-Enforce is a lab firewall under active development (Phase 7 — hardening/release). It implements policy enforcement over NFQUEUE with kernel-side conntrack state and nftables hooks, a localhost REST management API, and bounded-cardinality Prometheus metrics. It is **not yet officially released**; treat it as not-yet-suitable for protecting real production networks until the first tagged release. Tests requiring root (privileged integration suite) are gated and never falsely reported as passing.
+GoShiSen-Enforce is a lab firewall under active development (hardening/release). It implements policy enforcement over NFQUEUE with kernel-side conntrack state and nftables hooks, a localhost REST management API, and bounded-cardinality Prometheus metrics. It is **not yet officially released**; treat it as not-yet-suitable for protecting real production networks until the first tagged release. Tests requiring root (privileged integration suite) are gated and never falsely reported as passing.
 
 ## Reporting a vulnerability
 

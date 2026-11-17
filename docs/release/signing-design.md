@@ -1,6 +1,6 @@
-# Artifact Signing & Provenance — Design & Migration (Prompt 12)
+# Artifact Signing & Provenance — Design & Migration
 
-**Status:** verified, promoted to production. Prompt 13 bootstrap is in review
+**Status:** verified, promoted to production. The bootstrap PR is in review
 (PR #24) — release tag signing is enabled and fail-closed; `v0.2.1` and its
 assets are untouched. Final activation only requires the maintainer to store the
 production private key as `GH_RELEASE_SIGNING_KEY` (public key already committed
