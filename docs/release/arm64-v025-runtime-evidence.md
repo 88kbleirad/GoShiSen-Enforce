@@ -1,10 +1,27 @@
 # Arm64 runtime verification — v0.2.5 release payload (PASS)
 
 **Date:** 2026-11-17. **Status:** PASS — real aarch64 runtime execution of
-the v0.2.5 release payload (`goshisen-linux-arm64.tar.gz` from the v0.2.5
-release asset set), including policy controls, SIGHUP reload, queue binds,
-and offload enforce. Closes the "arm64 runtime unverified for v0.2.5" gap
-(prior arm64 evidence covered v0.2.1/v0.2.2 only).
+the v0.2.5 release payload, including policy controls, SIGHUP reload,
+queue binds, and offload enforce. Closes the "arm64 runtime unverified
+for v0.2.5" gap (prior arm64 evidence covered v0.2.1/v0.2.2 only).
+
+## 0. What was (and was not) run — plain scope
+
+- **Ran: the public `goshisen-linux-arm64.tar.gz` release asset.**
+  Binary sha256 `715ec1c9425965032b2668f1ea78e968203e5b4b6ea5c0ef90a109688de6d8a0`;
+  tarball sha256 `cf400ac852b8d5a7135c9f642d65058a775d58b2e5b48b2828dc6a97d3556a26`
+  **matches the release's `checksums.txt`** (verified 2026-11-17 against
+  the published asset set). This is the PUBLIC v0.2.5 arm64 asset, not a
+  local build.
+- **Did NOT run: the aarch64 apk.** The published `goshisen-0.2.5-r1.apk`
+  is an x86-64 package (payload extracted and `file`-checked: "ELF 64-bit
+  LSB executable, x86-64"); no aarch64 apk exists in the v0.2.5 release.
+- **Emulation is QEMU aarch64 TCG, not hardware.** No physical arm64
+  hardware was used. Flowtable hit counters under TCG are zero-hit, so
+  `offload_policy=enforce` disable (the observable control) was verified,
+  but **this run proves nothing about real offload behavior on hardware**.
+- **Issue #7 (other architectures / hardware runtime) remains OPEN.** This
+  run does not resolve it; hardware verification is still required.
 
 ## 1. Environment
 
