@@ -25,6 +25,15 @@
   function $(id) { return document.getElementById(id); }
   function listen(id, ev, fn) { var el = $(id); if (el) el.addEventListener(ev, fn); }
 
+  /* Inline SVG icons (stroke, currentColor — follow the Catppuccin theme). */
+  var ICONS = {
+    root: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3h0a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9v0a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+    docs: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 4h6a4 4 0 0 1 4 4v12a3 3 0 0 0-3-3H2z"/><path d="M22 4h-6a4 4 0 0 0-4 4v12a3 3 0 0 1 3-3h7z"/></svg>',
+    design: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>',
+    release: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>',
+    home: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>'
+  };
+
   function fetchText(url) {
     return fetch(url, { cache: "no-store" }).then(function (r) {
       if (!r.ok) throw new Error("HTTP " + r.status);
@@ -81,14 +90,24 @@
 
   /* ── nav tree ──────────────────────────────────────── */
   var GROUPS = [
-    { key: "root", labelKey: "nav_meta", match: /^(readme|contributing|security)$/ },
-    { key: "docs", labelKey: "nav_user", match: /^docs-/ },
-    { key: "design", labelKey: "nav_design", match: /^docs-design-/ },
-    { key: "release", labelKey: "nav_release", match: /^docs-release-/ }
+    { key: "root", labelKey: "nav_meta" },
+    { key: "docs", labelKey: "nav_user" },
+    { key: "design", labelKey: "nav_design" },
+    { key: "release", labelKey: "nav_release" }
   ];
 
+  // Group by the manifest's real path (../docs/design/…, ../docs/release/…),
+  // not by slug prefix — "docs-release-checklist" is a top-level doc.
+  function docGroup(d) {
+    var p = d.path;
+    if (p.indexOf("../docs/design/") === 0) return "design";
+    if (p.indexOf("../docs/release/") === 0) return "release";
+    if (p.indexOf("../docs/") === 0) return "docs";
+    return "root";
+  }
+
   function groupLabel(key) {
-    for (var i = 0; i < GROUPS.length; i++) if (GROUPS[i].key === key) return t(GROUPS[i].labelKey);
+    for (var i = 0; i < GROUPS.length; i++) if (GROUPS[i].key === key) return (ICONS[key] || "") + t(GROUPS[i].labelKey);
     return key;
   }
 
@@ -100,16 +119,15 @@
 
     var groups = {};
     state.manifest.forEach(function (d) {
-      var g = "docs";
-      for (var i = 0; i < GROUPS.length; i++) {
-        if (GROUPS[i].match.test(d.slug)) { g = GROUPS[i].key; break; }
-      }
+      var g = docGroup(d);
       (groups[g] = groups[g] || []).push(d);
     });
 
-    Object.keys(groups).forEach(function (g) {
-      html += "<section><h4>" + groupLabel(g) + "</h4>";
-      groups[g].forEach(function (d) {
+    GROUPS.forEach(function (grp) {
+      var list = groups[grp.key];
+      if (!list) return;
+      html += "<section><h4>" + groupLabel(grp.key) + "</h4>";
+      list.forEach(function (d) {
         var active = state.current === d.slug ? ' class="active"' : "";
         html += '<a href="#' + encodeURIComponent(d.slug) + '"' + active + " data-slug=\"" + d.slug + "\">" +
           escapeHtml(d.title) + "</a>";
@@ -138,7 +156,7 @@
 
   /* ── render ────────────────────────────────────────── */
   function renderHome() {
-    var html = '<div class="home"><h1>' + t("site_title") + "</h1>";
+    var html = '<div class="home"><h1>' + ICONS.home + " " + t("site_title") + "</h1>";
     html += '<p class="lead">' + t("banner") + "</p><div class=\"cards\">";
     var core = ["readme", "docs-developer-guide", "docs-user-guide", "docs-installation",
       "docs-openwrt", "docs-release-checklist", "docs-changelog",
@@ -146,8 +164,10 @@
     core.forEach(function (slug) {
       var d = state.pages[slug];
       if (!d) return;
-      html += '<a class="card" href="#' + encodeURIComponent(slug) + '"><h3>' +
-        escapeHtml(d.title) + "</h3><p>" + escapeHtml(slug) + "</p></a>";
+      var g = docGroup(d);
+      html += '<a class="card" href="#' + encodeURIComponent(slug) + '">' +
+        '<span class="card-icon">' + (ICONS[g] || "") + "</span>" +
+        "<h3>" + escapeHtml(d.title) + "</h3><p>" + escapeHtml(slug) + "</p></a>";
     });
     html += "</div></div>";
     return html;
