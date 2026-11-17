@@ -296,3 +296,49 @@ func TestGateTagSignatureCheckFailsUnsigned(t *testing.T) {
 		t.Fatalf("expected 'not signed' failure message:\n%s", out)
 	}
 }
+
+func TestGateTagSignatureCheckFailsForgedKey(t *testing.T) {
+	// Tag signed with key A, but allowed_signers lists key B: the
+	// signature is cryptographically valid yet from an unauthorized key
+	// ("No principal matched.") — must fail when enforcement is on.
+	dir, _, _ := newGateRepo(t, "0.2.4", "1", pinTip, false, false)
+	// Sign with key A.
+	keyA := filepath.Join(dir, "signerA")
+	if out, err := exec.Command("ssh-keygen", "-t", "ed25519", "-N", "", "-f", keyA).CombinedOutput(); err != nil {
+		t.Fatalf("ssh-keygen A: %v: %s", err, out)
+	}
+	git(t, dir, "config", "gpg.format", "ssh")
+	git(t, dir, "config", "user.signingkey", keyA)
+	git(t, dir, "tag", "-f", "-s", "v0.2.4", "-m", "signed v0.2.4")
+
+	// allowed_signers lists key B (a different key).
+	keyB := filepath.Join(dir, "signerB")
+	if out, err := exec.Command("ssh-keygen", "-t", "ed25519", "-N", "", "-f", keyB).CombinedOutput(); err != nil {
+		t.Fatalf("ssh-keygen B: %v: %s", err, out)
+	}
+	pubB, err := exec.Command("ssh-keygen", "-y", "-f", keyB).Output()
+	if err != nil {
+		t.Fatalf("ssh-keygen -y B: %v", err)
+	}
+	allowed := filepath.Join(dir, "allowed_signers")
+	if err := os.WriteFile(allowed, []byte("maintainer@example.com "+strings.TrimSpace(string(pubB))+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command("bash", filepath.Join(repoRoot(t), "scripts", "release-pin-gate.sh"),
+		"--apk", "goshisen-0.2.4-r1.apk",
+		"--tag", "v0.2.4",
+		"--payload", filepath.Join(dir, "payload"))
+	cmd.Env = append(os.Environ(), "GATE_REPO="+dir, "GATE_TAG_SIGN_CHECK=1", "ALLOWED_SIGNERS="+allowed)
+	payload := filepath.Join(dir, "payload")
+	if err := os.WriteFile(payload, []byte("#!/bin/sh\necho \"goshisen 0.2.4\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected failure on forged/wrong-key signature, got success:\n%s", out)
+	}
+	if !strings.Contains(string(out), "not signed by an allowed signer") {
+		t.Fatalf("expected 'not signed by an allowed signer' failure message:\n%s", out)
+	}
+}
