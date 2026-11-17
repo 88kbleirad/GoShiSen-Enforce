@@ -1,10 +1,15 @@
 package packet
 
 import (
+	"context"
 	"encoding/binary"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/88kbleirad/GoShiSen-Enforce/internal/policy"
+	"github.com/mdlayher/netlink"
+	"golang.org/x/sys/unix"
 )
 
 // TestEvaluateVerdicts exercises the backend's packet-decision logic
@@ -310,5 +315,64 @@ func TestBackendErrorObserver(t *testing.T) {
 	}
 	if b.Stats.ParseErrors.Load() != 1 {
 		t.Fatalf("ParseErrors = %d, want 1", b.Stats.ParseErrors.Load())
+	}
+}
+
+// TestRunSocketReceiveErrorKind locks the backend error attribution: a
+// receive-side failure (e.g. the netlink socket dying) must be reported
+// to the error observer as "receive", matching the documented
+// goshisen_backend_errors_total{kind=receive|send|parse|panic} contract.
+// Previously the receive-error branch reported "send" and the "receive"
+// kind was unreachable.
+func TestRunSocketReceiveErrorKind(t *testing.T) {
+	c, err := netlink.Dial(unix.NETLINK_NETFILTER, nil)
+	if err != nil {
+		t.Skipf("cannot open a netfilter netlink socket in this environment: %v", err)
+	}
+	c.Close() // subsequent Receive fails permanently (EBADF)
+
+	var mu sync.Mutex
+	var kinds []string
+	b := &Backend{
+		conn:   c,
+		conn6:  nil,
+		queue:  0,
+		maxlen: 1024,
+		observeErr: func(kind string) {
+			mu.Lock()
+			kinds = append(kinds, kind)
+			mu.Unlock()
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		_ = b.runSocket(ctx, c, afInet)
+		close(done)
+	}()
+
+	// The receive error fires immediately; give the loop one iteration,
+	// then stop it (runSocket only exits via ctx — see F-003).
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("runSocket did not exit after context cancellation")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(kinds) == 0 {
+		t.Fatal("no backend error observed for failed Receive")
+	}
+	for _, k := range kinds {
+		if k == "send" {
+			t.Fatalf("receive-side failure reported as %q; want %q", k, "receive")
+		}
+	}
+	if kinds[0] != "receive" {
+		t.Fatalf("first backend error kind = %q, want %q", kinds[0], "receive")
 	}
 }

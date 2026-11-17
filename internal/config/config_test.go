@@ -470,3 +470,33 @@ func TestExpandPath(t *testing.T) {
 		t.Errorf("ExpandPath(~/x.yaml) = %q, want %s/x.yaml", got, home)
 	}
 }
+
+// TestLoadRejectsTrailingGarbagePortEnv locks the strictness of the
+// API/METRICS port environment parsing: fmt.Sscanf's "%d" stops at the
+// first non-digit, so GOSHISEN_API_PORT=8080x would silently bind 8080
+// and GOSHISEN_METRICS_PORT=9090evil would bind 9090 instead of failing
+// the daemon at startup.
+func TestLoadRejectsTrailingGarbagePortEnv(t *testing.T) {
+	for _, bad := range []string{"8080x", "9090evil", "12.5", "1e3"} {
+		env := policyEnv(map[string]string{EnvPrefix + "API_PORT": bad})
+		if _, err := Load("", env, Overrides{}); err == nil {
+			t.Fatalf("Load accepted %sAPI_PORT=%q; want validation error", EnvPrefix, bad)
+		}
+		env = policyEnv(map[string]string{EnvPrefix + "METRICS_PORT": bad})
+		if _, err := Load("", env, Overrides{}); err == nil {
+			t.Fatalf("Load accepted %sMETRICS_PORT=%q; want validation error", EnvPrefix, bad)
+		}
+	}
+	// Valid values must still load.
+	env := policyEnv(map[string]string{
+		EnvPrefix + "API_PORT":     "8080",
+		EnvPrefix + "METRICS_PORT": "9090",
+	})
+	o, err := Load("", env, Overrides{})
+	if err != nil {
+		t.Fatalf("Load rejected valid ports: %v", err)
+	}
+	if o.APIPort != 8080 || o.MetricsPort != 9090 {
+		t.Fatalf("ports = %d/%d, want 8080/9090", o.APIPort, o.MetricsPort)
+	}
+}

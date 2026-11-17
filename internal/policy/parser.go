@@ -13,6 +13,7 @@ package policy
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -144,8 +145,8 @@ func parsePortNum(s string) (uint16, error) {
 	if s == "0" {
 		return 0, errors.New("port 0 is invalid (valid range 1..65535)")
 	}
-	var n int
-	if _, err := fmt.Sscanf(s, "%d", &n); err != nil {
+	n, err := strconv.Atoi(s)
+	if err != nil {
 		return 0, fmt.Errorf("port %q is not an integer", s)
 	}
 	if n < 1 || n > 65535 {

@@ -443,7 +443,7 @@ func (b *Backend) runSocket(ctx context.Context, c *netlink.Conn, family uint8) 
 				continue // deadline fired; check ctx again
 			}
 			b.Stats.SendErrors.Add(1)
-			b.noteError("send")
+			b.noteError("receive")
 			continue
 		}
 		for i := range msgs {
