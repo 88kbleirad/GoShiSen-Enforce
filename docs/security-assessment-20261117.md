@@ -31,11 +31,13 @@ The API server is an HTTP/1.1 `net/http` server on 127.0.0.1 using
 `http.MaxBytesReader` directly (`internal/api/server.go:267`), so the
 MaxBytesReader-header race (GO-2026-6859) and the Range-header parsing
 limit (GO-2026-6609) are reachable. Fixed by locking `toolchain go1.27.4`
-(auto-downloaded by CI via `GOTOOLCHAIN=auto`) and bumping
+(installed directly by CI setup-go; see below) and bumping
 `golang.org/x/net` v0.62.0 + `golang.org/x/sys` v0.49.0. The `go`
-directive rose 1.25.0 → 1.26.0 (required by x/net v0.62.0). CI keeps
-`go-version: "1.25"` in setup-go but the toolchain directive makes every
-build use go1.27.4.
+directive rose 1.25.0 → 1.26.0 (required by x/net v0.62.0). CI
+setup-go installs go1.27.4 directly (`go-version: "1.27.4"`,
+matching the toolchain directive); setup-go v6+ sets
+`GOTOOLCHAIN=local`, so no build can silently drift to another
+toolchain.
 
 ### S-002 — queue_num 65535 accepted but uninstallable
 `queue_num: 65535` passed validation, but the hook always renders an

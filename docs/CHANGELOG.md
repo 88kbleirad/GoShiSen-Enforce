@@ -39,8 +39,7 @@ Status and notable history for GoShiSen-Enforce. Per-release detail lives in `do
   vulnerabilities (net/http Range-header DoS, MaxBytesReader race, http2
   HPACK races, crypto/x509) under go1.27.1 are closed; `golang.org/x/net`
   v0.62.0 and `golang.org/x/sys` v0.49.0. The `go` directive is now
-  `go 1.26.0` (requires Go ≥ 1.26; builds auto-download the pinned
-  toolchain).
+  `go 1.26.0` (requires Go ≥ 1.26; CI installs go1.27.4 directly).
 - **queue_num bounded to 0..65534 (S-002):** queue_num 65535 was accepted
   but could never be installed (the IPv6 queue rule at queue_num+1 would
   be `queue to 65536`, outside the u16 range); config now rejects it with
