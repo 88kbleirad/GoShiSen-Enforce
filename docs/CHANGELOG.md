@@ -41,7 +41,7 @@ Status and notable history for GoShiSen-Enforce. Per-release detail lives in `do
 - **APK payload toolchain (S-005, open):** the published v0.2.5
   OpenWrt apk payload is built by the SDK `golang/host` feed with
   go1.27.1 → 11 reachable stdlib vulns (see issue #78; accepted risk
-  documented in no-security-assessment-20261117.md until the apk is
+  documented in `docs/security-assessment-20261117.md` until the apk is
   rebuilt with Go ≥ 1.27.4).
 - **Toolchain pinned to go1.27.4 (S-001):** 11 reachable standard-library
   vulnerabilities (net/http Range-header DoS, MaxBytesReader race, http2
