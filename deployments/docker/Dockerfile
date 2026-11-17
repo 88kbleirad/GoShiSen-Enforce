@@ -26,7 +26,11 @@
 # netns (or run with the netns pre-configured). See scripts/lab.sh.
 
 # ---- go build stage ----
-FROM golang:1.25 AS build
+# S-004: digest-pinned. To update a base image digest:
+#   docker buildx imagetools inspect golang:1.25
+# (or curl https://hub.docker.com/v2/repositories/library/golang/tags/1.25)
+# and replace the sha256:… value.
+FROM golang:1.25@sha256:699337d620559a59b4a2bb298ad59611e535d2ee755a34cf2d2a98f37578dc80 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -37,7 +41,7 @@ RUN CGO_ENABLED=0 go build -trimpath \
     -o /out/goshisen ./cmd/goshisen
 
 # ---- nftables static build stage ----
-FROM golang:1.25 AS nft-build
+FROM golang:1.25@sha256:699337d620559a59b4a2bb298ad59611e535d2ee755a34cf2d2a98f37578dc80 AS nft-build
 # Static nft (glibc) so the runtime needs no shared libs for nft.
 # The nftables repo builds libnftables + the nft CLI. It needs
 # libnftnl >= 1.3.2 (Debian bookworm ships 1.2.9), so build
@@ -76,7 +80,10 @@ RUN git clone --depth 1 --branch v1.1.7 https://git.netfilter.org/nftables \
 # Go daemon itself is fully static. base-debian13 matches the
 # golang:1.25 builder's glibc (2.41), so the statically-built nft's
 # GLIBC_2.38+ requirements are satisfied.
-FROM gcr.io/distroless/base-debian13
+FROM gcr.io/distroless/base-debian13@sha256:0e48b9bcd868bce9fa872cee10b52961d9e32677823da4bf68eefb44f38e7b9d
+# ^ S-004: digest-pinned. To update:
+#   docker buildx imagetools inspect gcr.io/distroless/base-debian13:latest
+# and replace the sha256:… value.
 COPY --from=build /out/goshisen /usr/local/bin/goshisen
 COPY --from=nft-build /usr/sbin/nft /usr/sbin/nft
 COPY policies /policies

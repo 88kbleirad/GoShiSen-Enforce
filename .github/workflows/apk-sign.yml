@@ -51,7 +51,13 @@ jobs:
   sign:
     runs-on: ubuntu-24.04
     container:
-      image: openwrt/sdk:x86_64-25.12.6
+      # S-004: pinned by digest — a republished/mutated SDK tag cannot
+      # change the signing environment. To update: resolve the digest
+      # for a new openwrt/sdk tag with
+      #   docker buildx imagetools inspect openwrt/sdk:x86_64-25.12.6
+      # (or curl https://hub.docker.com/v2/repositories/openwrt/sdk/tags/<tag>)
+      # and replace the sha256:… value; keep the tag comment in sync.
+      image: openwrt/sdk@sha256:a17d6436f7add9207513b6edd0370f5a1aeeceeedf3c9080de8909112892f261 # x86_64-25.12.6
       options: --user root
     # Reading a DRAFT release (and its assets) requires a token with write
     # access; a read-only GITHUB_TOKEN does not see drafts at all. The job
@@ -67,7 +73,32 @@ jobs:
       group: apk-sign-${{ github.ref }}
       cancel-in-progress: true
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Validate ref (fail-closed, before any other step)
+        if: inputs.mode == 'production'
+        run: |
+          set -euo pipefail
+          # S-003 (same pattern as scripts/validate-release-tag.sh and
+          # release.yml): production signing is allowed only from main or
+          # strict semver tags; anything else is rejected before use.
+          # Test mode is unaffected (no secret, dispatchable from any ref).
+          case "$GITHUB_REF" in
+            refs/heads/main)
+              echo "OK: ref refs/heads/main allowed"
+              ;;
+            refs/tags/v[0-9]*.[0-9]*.[0-9]*)
+              tag="${GITHUB_REF#refs/tags/}"
+              if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                echo "FAIL: ref '$GITHUB_REF' is not a valid v<major>.<minor>.<patch> tag" >&2
+                exit 1
+              fi
+              echo "OK: ref tag '$tag' allowed"
+              ;;
+            *)
+              echo "FAIL: ref '$GITHUB_REF' not allowed (main or v* semver tags only)" >&2
+              exit 1
+              ;;
+          esac
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Verify apk-tools v3 present (SDK container)
         shell: bash
         run: |
@@ -170,7 +201,7 @@ jobs:
 
       - name: Upload signed APK artifacts
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.3
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: signed-apks
           path: dist-apk/**
@@ -181,7 +212,7 @@ jobs:
     needs: [sign]
     if: always()
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Fail-closed gate cases (no apk binary required)
         run: |
           set -euo pipefail

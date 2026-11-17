@@ -16,7 +16,8 @@ Date: 2026-11-15. Role: release engineer (packaging/signing release).
 ## B. Mirror hash (dry-run gate)
 
 The v0.2.3 pin requires `PKG_MIRROR_HASH`. Verified in the **official** SDK
-container `openwrt/sdk:x86_64-25.12.6`:
+container `openwrt/sdk:x86_64-25.12.6` (CI now pins it by digest —
+`openwrt/sdk@sha256:a17d6436f7add9207513b6edd0370f5a1aeeceeedf3c9080de8909112892f261`):
 
 - `make package/feeds/goshisen/download V=s` → `1867a2dec7ac45393b2ea075f9016d3988a72d8961dedc1b75e9e766ec79f35c`
 - Matches `openwrt/Makefile` exactly.

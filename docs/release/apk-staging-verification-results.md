@@ -19,7 +19,7 @@
 
 Workflow `.github/workflows/apk-sign.yml` (`workflow_dispatch`, mode=production)
 on the staging branch, in the OpenWrt SDK container
-(`openwrt/sdk:x86_64-25.12.6`, root, bash shell; apk-tools v3.0.5 static):
+(`openwrt/sdk:x86_64-25.12.6`, root, bash shell; apk-tools v3.0.5 static; CI now pins this image by digest — `openwrt/sdk@sha256:a17d6436f7add9207513b6edd0370f5a1aeeceeedf3c9080de8909112892f261`, see `.github/workflows/apk-sign.yml`):
 
 ```
 OK: anchor keys/goshisen-apk.pub.pem fingerprint 542bb7ae…

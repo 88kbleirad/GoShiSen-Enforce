@@ -200,6 +200,8 @@ remote head `36dc861` (`TestPreflightReady` → MISSING_DEPENDENCY qemu;
 - `make check`
 - `PATH=/usr/bin:/bin go test ./tests/package -count=1` (hermetic)
 - `docker run golang:1.25` (no qemu/nft/ip/sudo): unit tests PASS
+  (that image is digest-pinned in `deployments/docker/Dockerfile`:
+  `golang:1.25@sha256:699337d620559a59b4a2bb298ad59611e535d2ee755a34cf2d2a98f37578dc80`)
 - `go test -tags preflight_integration -run '^TestPreflightReal$' ./tests/integration`
   → BLOCKED (no privilege) with explicit reason — valid outcome, not a
   unit-test failure.
