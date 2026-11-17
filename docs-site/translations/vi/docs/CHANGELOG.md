@@ -2,10 +2,10 @@
 
 Trạng thái và lịch sử đáng chú ý của GoShiSen-Enforce. Chi tiết theo từng bản phát hành nằm trong `docs/release/` (vd: `v0.2.4-notes.md`, `proposal-next-version-scope.md`).
 
-## Trạng thái phát hành (ảnh chụp từ README, 2026-11-17)
+## Trạng thái phát hành (ảnh chụp, 2026-11-17)
 
-- **v0.2.4** — bản phát hành mới nhất: apk OpenWrt ký production; kho lưu trữ CLI đã ký.
-- **v0.2.5** — đã dàn dựng thành bản phát hành DRAFT chờ duyệt của người duy trì: bản vá đóng gói upgrade-hook (issue #57). Phạm vi và checklist chạy phát hành: `docs/release/proposal-next-version-scope.md`.
+- **v0.2.5** — bản phát hành mới nhất (đã công bố 2026-11-17): bản vá đóng gói upgrade-hook (issue #57). Ghi chú phát hành và asset: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.5).
+- **v0.2.4** — bản phát hành trước: apk OpenWrt ký production; kho lưu trữ CLI đã ký. Phạm vi và checklist chạy phát hành: `docs/release/proposal-next-version-scope.md`.
 
 ## Chi tiết đã chuyển ra khỏi README
 

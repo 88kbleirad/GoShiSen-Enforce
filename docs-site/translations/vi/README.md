@@ -77,6 +77,25 @@ CI chạy toàn bộ bộ kiểm thử tích hợp trên runner GitHub.
 | [Installation](docs/installation.md) | Nhị phân CLI, nâng cấp, hồi lùi |
 | [OpenWrt](docs/openwrt.md) | Cài gói, UCI, procd, phục hồi |
 
+## Trang tài liệu (`docs-site/`)
+
+Trang tĩnh, không phụ thuộc để xem các tài liệu này, với theme Catppuccin
+sáng/tối và công tắc chuyển ngôn ngữ Anh/Việt.
+
+```bash
+python3 -m http.server 8901          # phục vụ thư mục gốc của kho, rồi mở:
+# http://127.0.0.1:8901/docs-site/index.html
+```
+
+- Không bước build, không CDN: việc render markdown được vendored (`docs-site/vendor/md.js`);
+  trang hoạt động từ `file://` và mọi máy chủ tĩnh (gồm GitHub Pages).
+- Khung giao diện song ngữ (`docs-site/i18n/{en,vi}.json`); nội dung tài liệu đến từ
+  markdown của kho, với các bản dịch tiếng Việt đặt trong
+  `docs-site/translations/vi/` (cùng đường dẫn tương đối). Bản dịch thiếu sẽ
+  quay về tiếng Anh kèm thông báo.
+- Manifest thanh bên (`docs-site/manifest.json`) được sinh từ kho; tái tạo sau khi
+  thêm/đổi tên tài liệu (xem `docs-site/README.md` để biết lệnh chính xác).
+
 ## Giấy phép
 
 MIT, xem [LICENSE](LICENSE). © 2026 Lê Thanh Phong.
