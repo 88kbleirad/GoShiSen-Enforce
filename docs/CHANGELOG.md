@@ -19,3 +19,16 @@ Status and notable history for GoShiSen-Enforce. Per-release detail lives in `do
 
 - **Strict port parsing (F-001):** policy `src_port`/`dst_port` matchers and `GOSHISEN_API_PORT`/`GOSHISEN_METRICS_PORT` env values must now be plain integers. Previously `fmt.Sscanf("%d")` silently accepted trailing garbage (`"80evil"` → 80), so a typo could change the enforced policy or the bound port instead of failing configuration.
 - **Backend error attribution (F-002):** receive-side NFQUEUE socket errors are now reported as `kind=receive` (matching the documented `goshisen_backend_errors_total` label set) instead of `kind=send`.
+
+## Security fixes (2026-11-17, PR in review)
+
+- **Toolchain pinned to go1.27.4 (S-001):** 11 reachable standard-library
+  vulnerabilities (net/http Range-header DoS, MaxBytesReader race, http2
+  HPACK races, crypto/x509) under go1.27.1 are closed; `golang.org/x/net`
+  v0.62.0 and `golang.org/x/sys` v0.49.0. The `go` directive is now
+  `go 1.26.0` (requires Go ≥ 1.26; builds auto-download the pinned
+  toolchain).
+- **queue_num bounded to 0..65534 (S-002):** queue_num 65535 was accepted
+  but could never be installed (the IPv6 queue rule at queue_num+1 would
+  be `queue to 65536`, outside the u16 range); config now rejects it with
+  a clear message.
