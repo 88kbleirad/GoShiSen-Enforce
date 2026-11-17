@@ -14,3 +14,8 @@ Status and notable history for GoShiSen-Enforce. Per-release detail lives in `do
 - Allocation-free hot path (0 allocs/packet); benchmarks: `docs/design/performance.md`.
 - Metrics inventory (12 families) and Grafana setup: `docs/release/metrics-grafana-validation.md`.
 - Repository layout: `docs/developer-guide.md`.
+
+## Audit fixes (2026-11-17, PR in review)
+
+- **Strict port parsing (F-001):** policy `src_port`/`dst_port` matchers and `GOSHISEN_API_PORT`/`GOSHISEN_METRICS_PORT` env values must now be plain integers. Previously `fmt.Sscanf("%d")` silently accepted trailing garbage (`"80evil"` → 80), so a typo could change the enforced policy or the bound port instead of failing configuration.
+- **Backend error attribution (F-002):** receive-side NFQUEUE socket errors are now reported as `kind=receive` (matching the documented `goshisen_backend_errors_total` label set) instead of `kind=send`.
