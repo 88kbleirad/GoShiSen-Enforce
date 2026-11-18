@@ -25,7 +25,7 @@ hosts were scanned or contacted.
 | S-002 | integer overflow, config validation (CWE-190) | low | `internal/config/config.go:478`, env layer | fixed | `TestValidateQueueNumIPv6Reserved`, `TestValidateQueueNumBoundaries` (see below) | `880e625` |
 | S-003 | CI script injection (CWE-78/CWE-94) | medium | `.github/workflows/release.yml` — unquoted `${{ github.ref_name }}` in run steps | fixed (follow-up PR, unmerged) | `release-tag-guard` CI job; `tests/ci/validate-release-tag-test.sh` | this PR |
 | S-004 | supply chain, mutable container tag | low | `.github/workflows/apk-sign.yml` `openwrt/sdk:x86_64-25.12.6` | fixed (follow-up PR, unmerged) | — | this PR |
-| S-005 | supply chain, unpatched stdlib in apk payload (CWE-1104) | medium | OpenWrt apk payload (SDK `golang/host` feed, go1.27.1) | **open** — documented accepted risk | `govulncheck` binary+source mode: 11 reachable (see below) | issue #78 |
+| S-005 | supply chain, unpatched stdlib in apk payload (CWE-1104) | medium | OpenWrt apk payload (SDK `golang/host` feed, go1.27.1) | **fixed** — fail-closed signing-path gate (script + CI regression) | `scripts/check-apk-payload-go.sh` + `apk-sign.yml` production gate; `tests/ci/check-apk-payload-go-test.sh` | issue #78 |
 
 ### S-001 — reachable stdlib vulnerabilities
 The API server is an HTTP/1.1 `net/http` server on 127.0.0.1 using
@@ -96,7 +96,7 @@ amd64 runner). The Dockerfile base images (`golang:1.27.4`,
 update instructions at each pin. The syft checksum-verification pattern
 for tools is unchanged.
 
-### S-005 — apk payload built with a vulnerable Go (open, documented)
+### S-005 — apk payload built with a vulnerable Go (fixed by signing-path gate)
 The published v0.2.5 OpenWrt apk payload (`usr/sbin/goshisen`) is built
 by the OpenWrt SDK's `golang/host` feed (not CI's Go) and embeds
 **go1.27.1** with `golang.org/x/net v0.53.0` / `x/sys v0.43.0`.
@@ -106,10 +106,18 @@ MaxBytesReader race, GO-2026-6610/6611/6612/6613/6617 http2 races,
 GO-2026-6603/6605/6607/6608, GO-2026-6809 x509) — **not fixed** in the
 apk. The CLI release archives are a separate build (go1.25.14 at
 v0.2.5; fixed to go1.27.4 by S-001 in CI from the next release on).
-The SDK feed now pins Go 1.27.4 (`lang/golang/golang1.27/Makefile`),
-so a rebuild with a fresh SDK (or the image re-pull digest) would fix
-it; until then, documented accepted risk (local API/metrics HTTP
-listeners, no outbound TLS). See issue #78.
+The SDK feed now pins Go 1.27.4 (`lang/golang/golang1.27/Makefile`).
+
+**Fix (issue #78, option 2):** a fail-closed gate
+(`scripts/check-apk-payload-go.sh`) runs in `apk-sign.yml` production
+mode **before signing**: it extracts the payload from the staged apk and
+verifies the embedded Go toolchain is >= 1.27.4 (the S-001-pinned
+version). An apk built with an older SDK/feed Go (or one whose payload
+is missing/unreadable) fails the signing path closed. The gate itself
+cannot regress: the `apk-payload-go-gate (S-005)` CI job
+(`tests/ci/check-apk-payload-go-test.sh`) exercises pass + fail-closed
+fixtures on every PR. The released v0.2.5 apk remains as-is; the next
+apk rebuild with the current SDK (Go 1.27.4) will satisfy the gate.
 
 ## Release tags are strict semver (no -rc)
 
@@ -161,7 +169,7 @@ must be extended with the new allowed pattern.
   checksum-verified before use; release archives byte-identical across
   two SDK builds; deps are well-known modules (mdlayher/netlink,
   gopkg.in/yaml.v3 — yaml.v3 is in maintenance mode, no known CVEs per
-  govulncheck). Remaining: S-004 container digest.
+  govulncheck). Remaining: none (S-004 and S-005 fixed).
 
 ## Environment note
 
