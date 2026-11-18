@@ -98,4 +98,4 @@ python3 -m http.server 8901          # phục vụ thư mục gốc của kho, r
 
 ## Giấy phép
 
-MIT, xem [LICENSE](LICENSE). © 2026 Lê Thanh Phong.
+MIT, xem [LICENSE](../../../LICENSE). © 2026 Lê Thanh Phong.
