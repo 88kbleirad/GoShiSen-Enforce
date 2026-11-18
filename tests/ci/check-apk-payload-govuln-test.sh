@@ -25,7 +25,7 @@ trap 'rm -rf "$TMP"' EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 command -v govulncheck >/dev/null 2>&1 || fail "govulncheck not installed (needed for S-005 payload gate tests)"
-command -v jq >/dev/null 2>&1 || fail "jq not installed (needed for S-005 payload gate tests)"
+command -v python3 >/dev/null 2>&1 || fail "python3 not installed (needed for S-005 payload gate tests)"
 
 # ---------------------------------------------------------------------------
 # Fixture 1: current-toolchain payload (must pass)
@@ -62,7 +62,25 @@ echo "$out" | grep -q "NOT allowlisted" \
 # Fixture 3: allowlisted findings (must pass AND be reported)
 # ---------------------------------------------------------------------------
 govulncheck -mode=binary -format json "$TMP/oldgobin" 2>/dev/null \
-  | jq -r 'select(has("finding")) | .finding.osv' | sort -u > "$TMP/allow.txt"
+  | python3 -c '
+import json, sys
+dec = json.JSONDecoder()
+buf = sys.stdin.read()
+idx = 0
+seen = set()
+while idx < len(buf):
+    while idx < len(buf) and buf[idx] in " \t\r\n": idx += 1
+    if idx >= len(buf): break
+    try:
+        obj, end = dec.raw_decode(buf, idx)
+    except json.JSONDecodeError:
+        break
+    idx = end
+    if isinstance(obj, dict) and "finding" in obj:
+        osv = obj["finding"].get("osv")
+        if osv: seen.add(osv)
+print("\n".join(sorted(seen)))
+' | sort -u > "$TMP/allow.txt"
 if [ ! -s "$TMP/allow.txt" ]; then
   fail "old-go fixture unexpectedly produced no finding IDs"
 fi

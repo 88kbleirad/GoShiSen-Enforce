@@ -37,7 +37,7 @@ fi
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 command -v govulncheck >/dev/null 2>&1 || fail "'govulncheck' not found (install golang.org/x/vuln/cmd/govulncheck, pinned version; see ci.yml)"
-command -v jq >/dev/null 2>&1 || fail "'jq' not found (required to parse govulncheck JSON)"
+command -v python3 >/dev/null 2>&1 || fail "'python3' not found (required to parse govulncheck JSON)"
 
 [ -f "$apk" ] || fail "apk '$apk' not found"
 
@@ -71,7 +71,25 @@ set -e
 # yielded no parseable finding IDs is treated as a parse failure
 # (fail closed), never as a clean result.
 if [ -s "$tmp/govuln.jsonl" ]; then
-  mapfile -t findings < <(jq -r 'select(has("finding")) | .finding.osv' "$tmp/govuln.jsonl" 2>/dev/null | sort -u || true)
+  mapfile -t findings < <(python3 -c '
+import json, sys
+dec = json.JSONDecoder()
+buf = sys.stdin.read()
+idx = 0
+seen = set()
+while idx < len(buf):
+    while idx < len(buf) and buf[idx] in " \t\r\n": idx += 1
+    if idx >= len(buf): break
+    try:
+        obj, end = dec.raw_decode(buf, idx)
+    except json.JSONDecodeError:
+        break
+    idx = end
+    if isinstance(obj, dict) and "finding" in obj:
+        osv = obj["finding"].get("osv")
+        if osv: seen.add(osv)
+print("\n".join(sorted(seen)))
+' < "$tmp/govuln.jsonl" 2>/dev/null || true)
 else
   findings=()
 fi
