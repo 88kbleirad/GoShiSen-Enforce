@@ -78,6 +78,22 @@ jobs:
       - name: Metacharacter tag fixtures must be rejected before use
         run: bash tests/ci/validate-release-tag-test.sh
 
+  apk-payload-go-gate:
+    # S-005 regression gate: the apk payload's embedded Go toolchain
+    # must be >= 1.27.4 (the pinned CI/release version) — the released
+    # v0.2.5 apk embedded go1.27.1 with 11 reachable stdlib vulns.
+    # Runs on every PR so the signing-path gate cannot regress.
+    name: apk-payload-go-gate (S-005)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: "1.27.4"
+          cache: true
+      - name: Go toolchain gate fixtures must fail closed
+        run: bash tests/ci/check-apk-payload-go-test.sh
+
   arm64:
     name: arm64 cross-build + static ELF
     runs-on: ubuntu-24.04

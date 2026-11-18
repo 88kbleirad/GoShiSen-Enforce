@@ -99,6 +99,13 @@ jobs:
               ;;
           esac
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The S-005 payload gate reads the embedded Go buildinfo with the
+      # `go` toolchain (S-001-pinned version in CI); the SDK container
+      # does not ship one on PATH.
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: "1.27.4"
+          cache: true
       - name: Verify apk-tools v3 present (SDK container)
         shell: bash
         run: |
@@ -117,6 +124,22 @@ jobs:
           python3 scripts/fetch-release-asset.py "$tag" "$asset" "$asset"
           [ -s "$asset" ] || { echo "FAIL: asset download empty" >&2; exit 1; }
           echo "OK: downloaded $asset from draft $tag"
+      - name: S-005 gate — payload must be built with Go >= 1.27.4
+        if: inputs.mode == 'production'
+        shell: bash
+        env:
+          APK_TOOL: /builder/staging_dir/host/bin/apk
+        run: |
+          set -euo pipefail
+          # The apk payload is built by the SDK's golang/host feed, not
+          # by CI's Go (S-005, issue #78). Fail closed BEFORE signing if
+          # the embedded Go toolchain is older than 1.27.4 (the pinned
+          # CI/release version); the v0.2.5 apk embedded go1.27.1 with
+          # 11 reachable stdlib vulns. The staged apk is unsigned, so
+          # plain tar extracts the payload; the script falls back to the
+          # SDK's apk-tools v3 (APK_TOOL) for signed apks.
+          bash scripts/check-apk-payload-go.sh \
+            "${{ inputs.apk_release_asset }}"
       - name: Run APK release gate
         shell: bash
         env:

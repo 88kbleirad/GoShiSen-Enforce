@@ -38,11 +38,16 @@ Status and notable history for GoShiSen-Enforce. Per-release detail lives in `do
 - **Dockerfile and CI on go1.27.4 (S-001):** Dockerfile base images
   bumped from golang:1.25 (go1.25.14, 11 reachable stdlib vulns) to
   `golang:1.27.4@sha256:205c7636…`; all CI jobs install go1.27.4.
-- **APK payload toolchain (S-005, open):** the published v0.2.5
-  OpenWrt apk payload is built by the SDK `golang/host` feed with
-  go1.27.1 → 11 reachable stdlib vulns (see issue #78; accepted risk
-  documented in `docs/security-assessment-20261117.md` until the apk is
-  rebuilt with Go ≥ 1.27.4).
+- **APK payload toolchain (S-005, fixed):** the published v0.2.5
+  OpenWrt apk payload was built by the SDK `golang/host` feed with
+  go1.27.1 → 11 reachable stdlib vulns (issue #78). Fixed with a
+  fail-closed signing-path gate: `scripts/check-apk-payload-go.sh`
+  runs in `apk-sign.yml` production mode before signing and rejects any
+  apk whose payload was built with Go < 1.27.4; the
+  `apk-payload-go-gate (S-005)` CI job (`tests/ci/check-apk-payload-go-test.sh`)
+  prevents the gate itself from regressing. The next apk rebuild with
+  the current SDK (Go 1.27.4) satisfies the gate; the shipped v0.2.5
+  apk is unchanged.
 - **Toolchain pinned to go1.27.4 (S-001):** 11 reachable standard-library
   vulnerabilities (net/http Range-header DoS, MaxBytesReader race, http2
   HPACK races, crypto/x509) under go1.27.1 are closed; `golang.org/x/net`
