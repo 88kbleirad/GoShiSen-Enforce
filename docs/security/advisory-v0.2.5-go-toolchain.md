@@ -103,8 +103,8 @@ tag commit `79927ca` under the payload's go1.27.1 toolchain
 
 | GO ID | package/symbol | call path from our code | precondition (attacker must control) | classification |
 | --- | --- | --- | --- | --- |
-| GO-2026-6859 | net/http (MaxBytesReader race) | `api.Server.Serve` → `http.Server.Serve` (server.go:143); `app.Daemon.serveMetrics` → `http.Server.ListenAndServe` (app.go:530) | a client sends an HTTP/1 request to the API or metrics listener and the handler reads the body (`MaxBytesReader`) concurrently with writing the response header — `readBody` (server.go:267) is on POST handlers; `handleMetrics` uses `http.ResponseWriter` directly (metrics.go:354) | **local user** (loopback listener) / **remote with non-default `api_host`** |
-| GO-2026-6613 | net/http (CONNECT desync) | same `http.Server.Serve` path (server.go:143) | a client sends an HTTP/1 CONNECT request; the server handler would have to reply 2xx to CONNECT — no handler accepts CONNECT (mux has no CONNECT pattern; net/http answers 405) | **local user** / **remote with non-default `api_host`** |
+| GO-2026-6859 | net/http (MaxBytesReader race) | `api.Server.Serve` → `http.Server.Serve` (server.go:143); `app.Daemon.serveMetrics` → `http.Server.ListenAndServe` (app.go:530) | an authenticated client (valid bearer token) sends an HTTP/1 POST with a body that exceeds `MaxBodyBytes` (16 KiB), so the handler's `readBody` (server.go:267, `http.MaxBytesReader`) races its own response-header write; `requireAuth` runs before `readBody`, so unauthenticated requests never read bodies; the metrics handler never reads bodies | **local user with API token** (loopback listener) / **remote with non-default `api_host`** |
+| GO-2026-6613 | net/http (CONNECT desync) | same `http.Server.Serve` path (server.go:143) | a client sends an HTTP/1 CONNECT request; the server handler would have to reply 2xx to CONNECT — no handler accepts CONNECT (mux has no CONNECT pattern; net/http answers 405) | **not reachable in practice** (no handler emits 2xx CONNECT; listener reachable only when enabled) |
 | GO-2026-6617 | net/http/internal/http2 (HPACK race) | `http.Server.Serve` → h2 only after TLS negotiation | TLS-negotiated h2 — no `tls.Config`, plaintext listener | **not reachable (no TLS)** |
 | GO-2026-6612 | net/http/internal/http2 (double flow refund) | `http.Server.Serve` h2 path | same | **not reachable (no TLS)** |
 | GO-2026-6611 | net/http/internal/http2 (SETTINGS CPU) | `http.Server.Serve` h2 path | same | **not reachable (no TLS)** |
@@ -137,12 +137,17 @@ Notes:
 daemon's only network surface is two plaintext HTTP servers on
 127.0.0.1 that are disabled by default on the OpenWrt package; it has
 no TLS and no outbound connections, so the h2/TLS/x509/client-side
-classes are unreachable by construction. The reachable class is
-**local users on the loopback HTTP listeners** (6859, 6613, and 6608
-on the CLI archives). A **non-default `api_host` config makes the API
-listener remotely reachable** and raises 6859/6613 (and 6608 on CLI
-archives) to remote — but the h2 class still requires TLS, which the
-daemon cannot do, so those stay unreachable even then.
+classes are unreachable by construction. The nearest-to-reachable
+class is **local users on the loopback HTTP listeners**: 6859 needs a
+valid API bearer token plus an oversized POST body (mutations are
+token-gated; unauthenticated GET endpoints never read bodies), and
+6613 needs a handler that replies 2xx to CONNECT, which no handler
+does (net/http answers 405). On the CLI archives (go1.25.14) 6608 is
+reachable on the unauthenticated HTTP/1 server header-parse path when
+a listener is enabled. A **non-default `api_host` config makes the
+API listener remotely reachable** and raises these to remote — but
+the h2 class still requires TLS, which the daemon cannot do, so those
+stay unreachable even then.
 
 The mitigation claimed in issue #78 — "HTTP listeners bind 127.0.0.1
 only, no outbound TLS" — is **true for the default and shipped
