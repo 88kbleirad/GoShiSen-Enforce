@@ -11,7 +11,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=goshisen
-PKG_VERSION:=0.2.5
+PKG_VERSION:=0.2.6
 # Package version is independent of the CLI release, but for this release
 # it is aligned with the CLI tag (v0.2.4). The daemon source is pinned by
 # PKG_SOURCE_VERSION below (the v0.2.4 tag commit). PKG_RELEASE=1
@@ -24,11 +24,11 @@ PKG_SOURCE_URL:=https://github.com/88kbleirad/GoShiSen-Enforce.git
 # Daemon source SHA = release v0.2.4 (commit 9492da1712f038330bf639792e0df6b557ffec27).
 # This is the ONLY daemon source pin; the packaging recipe lives in this
 # checkout (Makefile + files/) and is versioned independently.
-PKG_SOURCE_VERSION:=79927ca3d5f8170f1c334ce2d5a218d5308a1bdf
+PKG_SOURCE_VERSION:=af96e895c55f9d8962fc955faa5feae1bc2d590a
 # sha256 of the source tarball the SDK produces from a git clone of the
 # pinned commit (PKG_SOURCE_PROTO=git); lets the SDK verify the download
 # (mirror hash). Value set from the SDK's own mismatch output for this pin.
-PKG_MIRROR_HASH:=4742a0d0f59cd4a18b25f3b201100b8eb0817ccc1fe8aa74e188f738ec879839
+PKG_MIRROR_HASH:=21990216cec840c570ff26e4fa76b73823f3149d695fcf00316ca6d26990b9eb
 PKG_SOURCE_SUBDIR:=$(PKG_NAME)-$(PKG_VERSION)
 
 # Go binary architecture for the SDK target (amd64 for x86/64, arm64 for
@@ -41,6 +41,7 @@ PKG_BUILD_DEPENDS:=golang/host
 PKG_USE_MIPS16:=0
 PKG_BUILD_PARALLEL:=1
 
+STRIP:=true
 include $(INCLUDE_DIR)/package.mk
 
 define Package/goshisen
@@ -63,7 +64,7 @@ define Build/Compile
 	cd $(PKG_BUILD_DIR) && \
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(PKG_GOARCH) \
 		go build -trimpath -buildvcs=false \
-		-ldflags "-s -w -buildid= \
+		-ldflags "-s -w \
 			-X github.com/88kbleirad/GoShiSen-Enforce/internal/cli.Version=$(PKG_VERSION) \
 			-X github.com/88kbleirad/GoShiSen-Enforce/internal/app.Version=$(PKG_VERSION)" \
 		-o $(PKG_BUILD_DIR)/goshisen ./cmd/goshisen
