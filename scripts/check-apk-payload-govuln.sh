@@ -22,6 +22,13 @@
 set -euo pipefail
 
 apk="${1:?usage: check-apk-payload-govuln.sh <apk> [--allowlist path]}"
+# Resolve to an absolute path: the APK_TOOL fallback runs from a temp
+# cwd (cd "$tmp"), so a relative path (as the workflows pass) would
+# break there.
+case "$apk" in
+  /*) ;;
+  *) apk="$PWD/$apk" ;;
+esac
 allowlist="${GOVULN_ALLOWLIST:-$(cd "$(dirname "$0")/.." && pwd)/packaging/govulncheck-allowlist.txt}"
 if [[ "${2:-}" == "--allowlist" ]]; then
   allowlist="${3:?usage: --allowlist needs a path}"
