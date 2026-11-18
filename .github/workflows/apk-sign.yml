@@ -75,6 +75,7 @@ jobs:
     steps:
       - name: Validate ref (fail-closed, before any other step)
         if: inputs.mode == 'production'
+        shell: bash
         run: |
           set -euo pipefail
           # S-003 (same pattern as scripts/validate-release-tag.sh and
