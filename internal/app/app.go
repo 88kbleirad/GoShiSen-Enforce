@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -189,6 +190,10 @@ type Daemon struct {
 	// pointer and the in-memory snapshot disagreeing. The API server is
 	// handed this mutex when it is constructed (api.Options.Mu).
 	reloadMu sync.Mutex
+
+	// metricsAddr records the actual bound address of the metrics HTTP
+	// server once Serve begins (test seam; mirrors api.Server.actualAddr).
+	metricsAddr atomic.Value // string
 
 	// Seams (defaults set by New; overridable in tests).
 	installHook func(hook.Ruleset) error
@@ -521,15 +526,30 @@ func (d *Daemon) serveMetrics(ctx context.Context, port int) {
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
+	ln, err := net.Listen("tcp", srv.Addr)
+	if err != nil {
+		d.log.Warn("metrics server listen failed", "error", err)
+		return
+	}
+	d.metricsAddr.Store(ln.Addr().String())
 	go func() {
 		<-ctx.Done()
 		shCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shCtx)
 	}()
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		d.log.Warn("metrics server stopped", "error", err)
 	}
+}
+
+// MetricsAddr returns the actual bound address of the metrics server
+// once it is serving ("" before Serve starts). Test seam.
+func (d *Daemon) MetricsAddr() string {
+	if s, ok := d.metricsAddr.Load().(string); ok {
+		return s
+	}
+	return ""
 }
 
 // loadPolicy reads and compiles the configured policy file. The policy
