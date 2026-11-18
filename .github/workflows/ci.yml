@@ -109,9 +109,9 @@ jobs:
       - name: Install govulncheck (pinned, reviewed)
         run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
       - name: govulncheck gate fixtures must fail closed
-        env:
-          PATH: "$(go env GOPATH)/bin:$PATH"
-        run: bash tests/ci/check-apk-payload-govuln-test.sh
+        run: |
+          export PATH="$(go env GOPATH)/bin:$PATH"
+          bash tests/ci/check-apk-payload-govuln-test.sh
 
   arm64:
     name: arm64 cross-build + static ELF
