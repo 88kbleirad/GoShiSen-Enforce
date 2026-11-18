@@ -179,4 +179,24 @@ else
   echo "note: tag signature check skipped (set GATE_TAG_SIGN_CHECK=1 to enable)" >&2
 fi
 
+# ---------------------------------------------------------------------------
+# 7. S-005 gate — payload Go toolchain >= MIN_GO_VERSION (packaging policy).
+# 8. S-005 gate — govulncheck binary-mode on the payload (empty allowlist).
+#
+# These are optional here (the signing path enforces them too, in
+# apk-sign.yml production mode); the release run enables them with
+# GATE_S005_CHECKS=1 so the pinned release apk is verified before it
+# is staged. Fail closed on any missing tool.
+# ---------------------------------------------------------------------------
+if [ -n "${GATE_S005_CHECKS:-}" ] && [ "$GATE_S005_CHECKS" = "1" ]; then
+  command -v go >/dev/null 2>&1 || fail "S-005 gates: 'go' toolchain required (>= $(grep -E '^MIN_GO_VERSION=' "$ROOT/packaging/go-toolchain.env" | cut -d= -f2-))"
+  command -v govulncheck >/dev/null 2>&1 || fail "S-005 gates: 'govulncheck' required (install golang.org/x/vuln/cmd/govulncheck, pinned; see ci.yml)"
+  [ -f "$APK" ] || fail "S-005 gates: apk not found: $APK"
+  APK_TOOL="${APK_TOOL:-}" bash "$ROOT/scripts/check-apk-payload-go.sh" "$APK"
+  APK_TOOL="${APK_TOOL:-}" bash "$ROOT/scripts/check-apk-payload-govuln.sh" "$APK"
+  ok "S-005 gates passed: payload Go >= $(grep -E '^MIN_GO_VERSION=' "$ROOT/packaging/go-toolchain.env" | cut -d= -f2-) and govulncheck clean"
+else
+  echo "note: S-005 payload gates skipped (set GATE_S005_CHECKS=1 to enable)" >&2
+fi
+
 echo "PASS: release pin/version agreement gate passed (tag $TAG)"

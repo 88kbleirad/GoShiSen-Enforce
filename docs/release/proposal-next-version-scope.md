@@ -1,112 +1,184 @@
-# Proposal — v0.2.5 scope (after v0.2.4)
+# Proposal — v0.2.6 scope (after v0.2.5)
 
-**Status: IMPLEMENTATION IN PROGRESS.** Date: 2026-11-16.
-Base: main after v0.2.4 publish (tag 9492da1; signed apk 0.2.4-r1
-sha256 8ec8ff6c…; anchor fp 542bb7ae…; immutable releases enabled).
+**Status: PROPOSED (S-005 investigation complete, 2026-11-18).**
+Base: main at `9a303e1` (post-PR #76; the v0.2.5 tag is `79927ca`).
 
-## Context
+## v0.2.5 status (previous scope, completed 2026-11-17)
 
-v0.2.4 (2026-11-16) shipped the production-signed OpenWrt apk
-(`0.2.4-r1`) and signed CLI archives; post-publish verification pass
-(`docs/release/v0.2.4-postpublish-evidence.md`). This proposal records the
-v0.2.5 scope and its implementation status.
+v0.2.5 shipped the upgrade-hook restart fix (issue #57), release-apk
+supplementary evidence, and signed-tag planning. It also introduced
+**S-005 (issue #78)**: the published apk payload embeds **go1.27.1**
+and the CLI archives **go1.25.14** — both below the go1.27.4 that
+fixes the 11 reachable stdlib vulnerabilities govulncheck reports at
+the v0.2.5 source commit. The mitigation claimed at the time ("HTTP
+listeners bind 127.0.0.1 only, no outbound TLS") was **not proven**;
+this investigation (`docs/security/advisory-v0.2.5-go-toolchain.md`,
+S-005 readiness PR) now classifies every finding and closes the gap
+with gates. **v0.2.6 is the fix version.**
 
-## Planned scope for v0.2.5
+## S-005 classification (evidence in the advisory draft)
 
-1. **Upgrade hook fix (issue #57):** after `apk upgrade` from
-   v0.2.3 to v0.2.4 the new daemon binary only took effect after a
-   manual restart — the post-upgrade hook hit the existing nft chain
-   while the old process ran. Reproduced on a fresh pinned OpenWrt
-   25.12.6 VM (0/43 deny probes passed during upgrade — no fail-open
-   window, but version skew). Fix: controlled restart in postinst on
-   `PKG_UPGRADE=1` (keeps hook/boot guard in place; never stop-then-
-   start), `goshisen-boot start` idempotent (never re-add/replace an
-   existing app-owned chain).
-   - **DONE:** fix in `openwrt/Makefile` postinst + `files/etc/init.d/
-     goshisen-boot`; contract tests (`tests/package/
-     openwrt_upgrade_contract_test.go`); repro doc `docs/release/
-     v0.2.4-upgrade-repro.md`; fix merged in PR #60. Fix proof COMPLETE:
-     clean SDK build (Go 1.27.1, `fixedbuild/`) + fresh-VM downgrade→
-     upgrade run (`scripts/openwrt-upgrade-e2e.sh`, unsigned test build
-     with `--allow-untrusted` only): 0/60 deny probes passed during
-     `apk add`, daemon pid 3112→3386, running exe == on-disk == new
-     apk payload `1feebeba…`, queues 100/101 rebound, positive control
-     passed, EXIT=0 (log `/data/gsh025-item2/
-     v0.2.4-upgrade-fix-e2e.log`, sha256 992a4b81…). Harness version-
-     assertion fix: PR #62.
-2. **Release-apk evidence gaps (v0.2.4):**
-   - queue 100 **and** 101 bound + stateful-IPv6 scenarios re-run on
-     the release apk itself (fresh VMs, anchor installed, no
-     `--allow-untrusted`),
-   - tampered/unsigned/anchor-removed negative controls ON a VM
-     (v0.2.4 ran them host-side only),
-   - two clean SDK builds of the v0.2.4 pin (17d1ad9d tree / tag
-     9492da1 source) with matching hashes vs published pre-signing
-     `eb975a19…`.
-   - **DONE** — evidence doc `docs/release/
-     v0.2.4-supplementary-evidence.md` (PR #61).
-3. **Signed tags (follow-up to issue #44):** tags are annotated but
-   unsigned (`git tag -v v0.2.4` → `no signature found`). Plan written:
-   options (GPG / SSH `allowed_signers` / sigstore), maintainer
-   requirements, user verification docs, release-gate check, v0.2.5
-   migration. Key/signing decisions are maintainer-only.
-   - **DONE (plan):** `docs/release/signed-tags-plan.md` (merged in PR
-     #58). Implementation = maintainer action at release time.
+- 11 stdlib GO IDs (GO-2026-6859, 6809, 6617, 6613, 6612, 6611, 6610,
+  6608, 6607, 6605, 6603). Source-mode govulncheck at the v0.2.5 source
+  (go1.27.1) gives traces for 6 (6859, 6613, 6617, 6612, 6611, 6603)
+  through `http.Server.Serve`; the other 5 (6809 x509, 6610 h2 client,
+  6608 textproto, 6607 tls, 6605 http client) have no call trace — the
+  daemon has no TLS, no h2, no `http.Client`, no multipart (listener
+  inventory in the advisory).
+- Default OpenWrt config: both listeners **disabled** (`api_port 0`,
+  `metrics_port 0`, rendered by the init script without `api_host` so
+  the packaged bind is loopback by construction); the metrics host is
+  hardcoded 127.0.0.1; `api_host` is configurable in the daemon YAML —
+  a non-loopback `api_host` exposes the API to the network (only
+  whitespace validation), so remote reachability exists only under
+  that non-default config.
+- Verdict: **not remotely exploitable in the default configuration**;
+  locally reachable DoS (HTTP/1 server races/desync) when a listener
+  is enabled; TLS/x509/h2/client IDs are not reachable by construction
+  (no TLS, no h2, no `http.Client`). The v0.2.5 "loopback only"
+  mitigation is TRUE for the default/shipped config but is **not
+  closed by construction** (`api_host` configurable) — the advisory
+  treats non-loopback `api_host` as a misconfiguration.
 
-## Remaining for the v0.2.5 release run (maintainer)
+## Go-pinning approach (chosen)
 
-A release run requires, in order (none performed here):
+Task 2 evidence (SDK container, pinned image
+`openwrt/sdk@sha256:a17d6436...`):
 
-1. **Merge** the PRs (upgrade fix, supplementary evidence, signed-tags
-   plan, scope update).
-2. **Approve + create** the signed tag `v0.2.5` at the source head
-   (signing method per `signed-tags-plan.md`), then a Makefile-only
-   pin PR (the v0.2.4 pattern, PR #56) pinning `PKG_SOURCE_VERSION` to
-   that tag commit.
-3. **Run the pin gate** against the release build
-   (`scripts/release-pin-gate.sh`) + the tag-signature check (`git tag
-   -v v0.2.5`); both must PASS.
-4. **Signing environment check:** `GH_RELEASE_APK_SIGNING_KEY`
-   provisioned + approved anchor/fingerprint present (production APK
-   signing is BLOCKED without it; the agent never provisions secrets).
-5. **CI green** on the tag: build, package, verify-signatures,
-   integration (no SKIPs), openwrt e2e (slirp + v6), arm64 cross-build.
-6. **DRAFT staging:** the tag push stages a DRAFT release with the
-   signed CLI assets (release.yml never auto-publishes); build/attach
-   the apk from the pin-gate build into the draft and verify its sha256
-   (pre-signing) before the signing run. The draft stays unpublished
-   until the maintainer publishes.
-7. **Publish** the release + assets (maintainer only; immutable releases
-   #44 gate active).
-8. **Post-publish evidence:** tag signature verification on a fresh
-   clone, apk smoke incl. queues 100/101 (release apk), negative
-   controls on VM, upgrade run (v0.2.4 → v0.2.5) with continuous deny
-   probes and `/proc/<pid>/exe` hash check after restart.
+- The image bakes **no feeds** — only `feeds.conf.default` pinning
+  each feed to a commit (`packages` @ `093d551675...`). `scripts/feeds
+  update -a` honors those pins (verified in-container), so the same
+  image digest yields the **same** feed commits and the **same** Go
+  version on any date. Digest pinning alone therefore DOES fix the Go
+  version **for the feed state** — but it fixes it at go1.26.9
+  (`GO_DEFAULT_VERSION:=1.26` on the 25.12 feed branch) with
+  golang1.27=go1.27.1, i.e. **not** at 1.27.4.
+- The v0.2.5 apk got go1.27.1 from the **host toolchain mounted into
+  the SDK container** (build recipe exported `/go-host/bin`), not from
+  the feed default; the recipe is the real compiler selector.
+- `go.mod` now declares `go 1.26.0` + `toolchain go1.27.4`. Proven
+  (host + in-container): with `GOTOOLCHAIN=auto` an older SDK Go
+  (1.26.9/1.27.1) auto-downloads and builds with **go1.27.4**; with
+  `GOTOOLCHAIN=local` the toolchain line is **silently ignored** (the
+  v0.2.5 CLI drift root cause). The line stays (fixes the auto path)
+  but is not the enforcement — the payload gates are.
 
-## Tracking references
+**Decision (recommended, Task 2c option 3):** the v0.2.6 apk is
+built in the pinned SDK container with a **sha256-verified go1.27.4
+toolchain mounted at /go-host** (`GOTOOLCHAIN=local`, PATH updated),
+exactly as the v0.2.5 recipe did but with the pinned patch version
+(`scripts/sdk-build-v026.sh`). This is a legitimate OpenWrt-style
+build — the package is still built by the OpenWrt buildroot via
+`PKG_BUILD_DEPENDS:=golang/host`; only the Go compiler is pinned, as
+CI pins setup-go. Feed repinning (option 2) was **verified to break**
+on this SDK snapshot: pinning `packages` to a commit carrying
+golang1.27=1.27.4 fails the SDK's metadata scan
+(`ERROR: please fix feeds/.../Makefile` for several packages, e.g.
+admin/bottom, lang/python/python-cryptography), so it is **not** a
+viable fix today. A newer SDK image digest (option 1) would carry a
+newer feed but is a larger trust/reproducibility change and still
+needs verification. The `toolchain go1.27.4` line stays (backstop for
+the auto path) and the two S-005 gates enforce the outcome on the
+payload.
 
-- Issue #7 (other architectures): **pending** — runtime verification
-  beyond x86_64/aarch64 (e.g. armv7, mips) when runners exist; hardware
-  arm64 optional. Not scheduled for v0.2.5.
-- Issue #8 (LuCI): **explicitly out of scope** — separate feature;
-  depends on offload health flag surfacing (issue #6).
-- Issue #12 (tracking): this scope (upgrade fix, apk evidence, signed
-  tags) is recorded in this proposal; the tracking issue itself is
-  updated when the proposal is merged (the agent cannot comment/close
-  issues without authorization).
+## Verified results (S-005 readiness PR, 2026-11-18)
+
+- **Dual clean-SDK test builds** (option 3 recipe, `0.2.6-r0` test
+  label): payloads byte-identical (sha256
+  `c3bb7c52c8e5bb58eb349b0380ad6a6c5be1cd97147a5759064efc8813730827`),
+  apks byte-identical (sha256
+  `767b8901fad3f2c1df9106ab5c3db1c375c20de832bbf21e9b2d56847a130962`);
+  embedded Go **go1.27.4**; `govulncheck -mode=binary` on the payload
+  -> **No vulnerabilities found**. `STRIP:=true` in the package
+  Makefile is required (the SDK's default `sstrip` breaks `go version
+  -m` and binary-mode scanning even with `-buildid=` removed).
+- **VM smoke** (fresh OpenWrt 25.12.6 x86/64 QEMU, kernel 6.12.112):
+  queue-100 DROP/ACCEPT controls with counter evidence; stateful IPv6
+  queue-101 with paired IPv4 controls (4 scenarios); apk upgrade
+  signed 0.2.5-r1 -> test 0.2.6-r0 with continuous deny probes blocked,
+  new binary running without restart (`/proc/<pid>/exe` sha256 == new
+  payload), SIGKILL respawn by procd, `apk del` cleanup (hook removed,
+  binary gone, no processes).
+- **Gates (Task 4):** `scripts/check-apk-payload-go.sh` and
+  `scripts/check-apk-payload-govuln.sh` (empty allowlist) run in
+  `apk-sign.yml` production mode before signing and in CI
+  (`apk-payload-go-gate` + `apk-payload-govuln-gate` jobs); the pin
+  gate `scripts/release-pin-gate.sh` gained opt-in S-005 checks
+  (`GATE_S005_CHECKS=1`). Tests cover: good payload passes, old-Go
+  payload fails both gates with the right reason, allowlisted finding
+  passes and is reported, non-Go payload fails closed.
+- **release.yml:** `go-version: "1.27.4"` + `GOTOOLCHAIN: local`
+  (new); verified locally the CLI archives built this way embed
+  go1.27.4 and govulncheck binary-mode reports no findings.
+
+## v0.2.6 release run — maintainer steps (in order)
+
+1. **Merge** the S-005 readiness PRs (this PR: advisory draft + scope
+   update + govulncheck gate; PR #80: payload Go-version gate; recipe
+   draft PR).
+2. **Makefile-only pin PR** (v0.2.4 pattern, PR #56): bump
+   `openwrt/Makefile` `PKG_VERSION` to 0.2.6, `PKG_RELEASE` 1,
+   `PKG_SOURCE_VERSION` to the v0.2.6 tag commit, new `PKG_MIRROR_HASH`
+   (derived from the official SDK container), and **remove `-buildid=`
+   from the Go ldflags** and **set `STRIP:=true`** so the payload keeps
+   readable buildinfo (required by the govulncheck gate; the SDK's
+   `sstrip` otherwise breaks `go version -m` and binary-mode
+   govulncheck). The apk is then built with the
+   sha256-verified go1.27.4 mounted into the pinned SDK container
+   (`scripts/sdk-build-v026.sh`, option 3).
+3. **Approve + create** the signed tag `v0.2.6` at the source head
+   (signing method per `docs/release/signed-tags-plan.md`).
+4. **Run the pin gate** `scripts/release-pin-gate.sh` + tag-signature
+   check; then **both S-005 gates** on the unsigned staged apk:
+   `scripts/check-apk-payload-go.sh` (min Go 1.27.4 from
+   `packaging/go-toolchain.env`) and
+   `scripts/check-apk-payload-govuln.sh` (empty allowlist).
+5. **Signing environment check:** `GH_RELEASE_APK_SIGNING_KEY`
+   provisioned + approved anchor/fingerprint; production APK signing is
+   BLOCKED without it.
+6. **CI green** on the tag: build, package, verify-signatures,
+   integration (no SKIPs), openwrt e2e (slirp + v6), arm64
+   cross-build, plus the two apk-payload gate jobs.
+7. **DRAFT staging:** tag push stages a DRAFT release with signed CLI
+   assets (release.yml never auto-publishes); build/attach the apk
+   from the pinned-feed build into the draft; verify pre-signing
+   sha256; **run the production apk-sign workflow** (maintainer
+   dispatch; it now runs the S-005 min-Go and govulncheck gates before
+   signing).
+8. **Publish** (maintainer only; immutable releases gate active).
+9. **Post-publish evidence:** fresh-VM apk smoke (queues 100/101,
+   DROP/ACCEPT controls, stateful IPv6 + paired IPv4 control, SIGKILL
+   respawn), upgrade run v0.2.5 → v0.2.6 with continuous deny probes
+   and `/proc/<pid>/exe` sha256 == new payload, apk del cleanup,
+   CLI archive smoke; record kernel version.
+
+## v0.2.6 release notes must say (honest S-005 text)
+
+- v0.2.5 (and earlier v0.2.x) apk payloads were built with
+  go1.27.1/go1.25.14-era toolchains carrying 11 reachable stdlib
+  vulnerabilities (list); full per-ID classification and the
+  "no default-config remote exploit" analysis in
+  `docs/security/advisory-v0.2.5-go-toolchain.md`.
+- v0.2.6 ships the apk payload **and** both CLI archives built with
+  go1.27.4 (payload enforced by the sign-time gates; CLI archives by
+  the release.yml `go-version: 1.27.4` pin), closing all 11 IDs.
+- Workarounds for v0.2.5 and earlier: keep `api_port`/`metrics_port`
+  disabled or loopback-only; never set a non-loopback `api_host`.
+
+## Remaining out of scope for v0.2.6
+
+- **LuCI (issue #8):** separate feature; depends on offload health
+  flag surfacing (issue #6). Not in v0.2.6.
+- **Hardware arm64 (issue #7):** runtime verification beyond
+  x86_64/aarch64 QEMU remains pending; hardware optional. Not in
+  v0.2.6.
+- Advisory publication (GitHub security advisory) is maintainer-only;
+  only the draft file exists.
 
 ## Boundaries
 
-Publishing, issue closing, and repository/environment settings changes
-require **explicit per-run maintainer authorization**. The agent never
-creates/moves/deletes tags, never signs/publishes releases, never
-dispatches the apk-sign workflow, never touches secrets/signing keys/
-the APK anchor, never force-pushes, and never merges PRs.
-
-## Guardrails (unchanged)
-
-- No version bump/tag without a release authorization; draft-only.
-- Mirror hash must be derived from an official SDK container; document
-  any toolchain drift.
-- Fail-closed invariants remain: no `--allow-untrusted` in production
-  flows, no NFQA_CFG_F_FAIL_OPEN, INVALID → DROP.
+Publishing, issue closing, repository/environment/settings changes,
+tags, signing, and the apk-sign dispatch require **explicit per-run
+maintainer authorization**. The agent never creates/moves/deletes
+tags, never signs/publishes releases, never touches secrets/signing
+keys/the APK anchor, and never merges PRs.

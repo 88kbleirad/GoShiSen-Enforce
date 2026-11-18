@@ -22,6 +22,12 @@ jobs:
     # before it is used anywhere (S-003: ref-name script injection).
     env:
       RELEASE_TAG: ${{ github.ref_name }}
+      # S-005: the release build must use the pinned toolchain and never
+      # silently switch versions via the go.mod `toolchain` line
+      # (GOTOOLCHAIN=auto would download/use whatever the line demands).
+      # setup-go installs exactly go-version 1.27.4; GOTOOLCHAIN=local
+      # makes `go` refuse any other version with a hard error.
+      GOTOOLCHAIN: local
     steps:
       - name: Validate release tag (fail-closed, before any other step)
         run: |
