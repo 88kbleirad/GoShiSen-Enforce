@@ -140,6 +140,21 @@ jobs:
           # SDK's apk-tools v3 (APK_TOOL) for signed apks.
           bash scripts/check-apk-payload-go.sh \
             "${{ inputs.apk_release_asset }}"
+      - name: S-005 gate — govulncheck binary-mode on the payload (allowlist-reviewed)
+        if: inputs.mode == 'production'
+        shell: bash
+        env:
+          APK_TOOL: /builder/staging_dir/host/bin/apk
+        run: |
+          set -euo pipefail
+          # govulncheck pinned (not @latest): the DB is updated by the
+          # scanner itself; the binary is the reviewed v1.9.0. The
+          # payload must carry Go buildinfo (the v0.2.6 recipe keeps
+          # buildid), otherwise the gate fails closed.
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+          export PATH="$(go env GOPATH)/bin:$PATH"
+          bash scripts/check-apk-payload-govuln.sh \
+            "${{ inputs.apk_release_asset }}"
       - name: Run APK release gate
         shell: bash
         env:

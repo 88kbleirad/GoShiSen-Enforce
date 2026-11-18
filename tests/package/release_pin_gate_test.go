@@ -342,3 +342,126 @@ func TestGateTagSignatureCheckFailsForgedKey(t *testing.T) {
 		t.Fatalf("expected 'not signed by an allowed signer' failure message:\n%s", out)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// S-005 payload gates (issue #78): GATE_S005_CHECKS=1 runs
+// check-apk-payload-go.sh + check-apk-payload-govuln.sh on the apk.
+// ---------------------------------------------------------------------------
+
+// buildPayloadApk builds cmd/goshisen with the given GOTOOLCHAIN and wraps
+// the binary in a tar.gz "apk" (unsigned staged form; the gates extract
+// with tar first, falling back to APK_TOOL only when tar fails).
+func buildPayloadApk(t *testing.T, toolchain, outApk string) {
+	t.Helper()
+	if toolchain != "" {
+		// Force the requested toolchain for the fixture binary.
+		prev, ok := os.LookupEnv("GOTOOLCHAIN")
+		if err := os.Setenv("GOTOOLCHAIN", toolchain); err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			if ok {
+				_ = os.Setenv("GOTOOLCHAIN", prev)
+			} else {
+				_ = os.Unsetenv("GOTOOLCHAIN")
+			}
+		}()
+	} else {
+		// "" → GOTOOLCHAIN=auto: the repo go.mod's `toolchain go1.27.4`
+		// line selects the fixed toolchain (same as CI).
+		if err := os.Unsetenv("GOTOOLCHAIN"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bin := filepath.Join(t.TempDir(), "goshisen")
+	cmd := exec.Command("go", "build", "-trimpath", "-buildvcs=false", "-o", bin, "./cmd/goshisen")
+	cmd.Dir = repoRoot(t)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go build (%s): %v: %s", toolchain, err, out)
+	}
+	// tar.gz wrapper (unsigned apk staging form).
+	work := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(work, "usr", "sbin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(work, "usr", "sbin", "goshisen"), data, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd = exec.Command("tar", "-czf", outApk, "-C", work, "usr/sbin/goshisen")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("tar apk fixture: %v: %s", err, out)
+	}
+}
+
+// TestGateS005ChecksPassWithCurrentToolchain runs the release pin gate
+// with GATE_S005_CHECKS=1 against a matching scratch repo (pin=tip,
+// empty diff, labels agree) and a real payload built with the current
+// toolchain; both S-005 payload gates must pass.
+func TestGateS005ChecksPassWithCurrentToolchain(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go toolchain required")
+	}
+	if _, err := exec.LookPath("govulncheck"); err != nil {
+		t.Skip("govulncheck required")
+	}
+	apk := filepath.Join(t.TempDir(), "goshisen-0.2.4-r1.apk")
+	buildPayloadApk(t, "", apk)
+	dir, _, _ := newGateRepo(t, "0.2.4", "1", pinTip, false, false)
+	data, err := os.ReadFile(apk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "goshisen-0.2.4-r1.apk"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	payload := filepath.Join(dir, "payload")
+	if err := os.WriteFile(payload, []byte("#!/bin/sh\necho \"goshisen 0.2.4\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("bash", filepath.Join(repoRoot(t), "scripts", "release-pin-gate.sh"),
+		"--apk", apk,
+		"--tag", "v0.2.4",
+		"--payload", payload)
+	cmd.Env = append(os.Environ(), "GATE_REPO="+dir, "GATE_S005_CHECKS=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("expected S-005 gates PASS on current-toolchain payload:\n%s", out)
+	}
+	if !strings.Contains(string(out), "S-005 gates passed") {
+		t.Fatalf("expected 'S-005 gates passed' marker:\n%s", out)
+	}
+}
+
+func TestGateS005ChecksFailWithOldToolchain(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go toolchain required")
+	}
+	if _, err := exec.LookPath("govulncheck"); err != nil {
+		t.Skip("govulncheck required")
+	}
+	apk := filepath.Join(t.TempDir(), "goshisen-0.2.4-r1.apk")
+	// An older toolchain than the go.mod `toolchain go1.27.4` line:
+	// go1.27.1 carries the 11 reachable stdlib vulns of S-005.
+	buildPayloadApk(t, "go1.27.1", apk)
+	dir, _, _ := newGateRepo(t, "0.2.4", "1", pinTip, false, false)
+	payload := filepath.Join(dir, "payload")
+	if err := os.WriteFile(payload, []byte("#!/bin/sh\necho \"goshisen 0.2.4\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("bash", filepath.Join(repoRoot(t), "scripts", "release-pin-gate.sh"),
+		"--apk", apk,
+		"--tag", "v0.2.4",
+		"--payload", payload)
+	cmd.Env = append(os.Environ(), "GATE_REPO="+dir, "GATE_S005_CHECKS=1")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected S-005 gates to FAIL on go1.27.1 payload, got success:\n%s", out)
+	}
+	if !strings.Contains(string(out), "requires Go >= 1.27.4") {
+		t.Fatalf("expected Go-version failure message, got:\n%s", out)
+	}
+}

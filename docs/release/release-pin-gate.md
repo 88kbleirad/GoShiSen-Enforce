@@ -36,6 +36,19 @@ make the published artifact traceable to a single source tree.
    extracted `usr/sbin/goshisen` from the apk).
 5. **The apk filename version equals `PKG_VERSION-r<PKG_RELEASE>`**
    (e.g. `goshisen-0.2.4-r1.apk`).
+6. **Tag signature** (SSH `allowed_signers`, enabled with
+   `GATE_TAG_SIGN_CHECK=1`): the release tag must be signed by a key in
+   `docs/trust/allowed_signers` (signed-tags-plan, v0.2.5+).
+7. **S-005 payload Go-version gate** (`GATE_S005_CHECKS=1`): the apk
+   payload's embedded Go toolchain must be >= `MIN_GO_VERSION`
+   (`packaging/go-toolchain.env`). Runs
+   `scripts/check-apk-payload-go.sh`.
+8. **S-005 payload govulncheck gate** (`GATE_S005_CHECKS=1`):
+   govulncheck binary-mode on the extracted payload; fails on any
+   reachable stdlib/module vulnerability not in
+   `packaging/govulncheck-allowlist.txt` (empty by default). Runs
+   `scripts/check-apk-payload-govuln.sh`. The payload must carry Go
+   buildinfo (the v0.2.6 package recipe keeps buildid).
 
 ## What the gate does NOT prove
 

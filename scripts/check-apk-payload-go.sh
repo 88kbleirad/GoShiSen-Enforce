@@ -23,6 +23,15 @@ set -euo pipefail
 
 apk="${1:?usage: check-apk-payload-go.sh <apk> [--min 1.27.4]}"
 min="1.27.4"
+# Single source of truth for the minimum: packaging/go-toolchain.env
+# (S-005 gate policy). An explicit --min still overrides.
+policy="$(cd "$(dirname "$0")/.." && pwd)/packaging/go-toolchain.env"
+if [ -f "$policy" ]; then
+  v="$(grep -E '^MIN_GO_VERSION=' "$policy" | head -1 | cut -d= -f2- || true)"
+  if [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    min="$v"
+  fi
+fi
 if [[ "${2:-}" == "--min" ]]; then
   min="${3:?usage: --min needs a version like 1.27.4}"
 fi

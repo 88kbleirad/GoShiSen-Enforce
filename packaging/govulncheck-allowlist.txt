@@ -1,0 +1,10 @@
+# GoShiSen-Enforce accepted govulncheck findings (S-005 gate).
+#
+# Empty by default: ANY reachable vulnerability in a shipped artifact
+# (apk payload or CLI archive) fails the gate. When a finding is
+# reviewed and deliberately accepted, add its GO ID here (one per
+# line, `#` comments allowed). Accepting a finding is a lasting
+# security decision: the gate reports accepted findings on every run.
+# The gate only allowslist IDENTIFIERS, never "fixed in" or other
+# metadata — a finding whose ID matches an allowlist entry still
+# reports it and passes, so allowed entries stay visible.

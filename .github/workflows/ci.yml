@@ -94,6 +94,25 @@ jobs:
       - name: Go toolchain gate fixtures must fail closed
         run: bash tests/ci/check-apk-payload-go-test.sh
 
+  apk-payload-govuln-gate:
+    # S-005 regression gate: the apk payload must pass govulncheck
+    # binary-mode with an empty (or explicitly reviewed) allowlist.
+    # Runs on every PR so the signing-path gate cannot regress.
+    name: apk-payload-govuln-gate (S-005)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: "1.27.4"
+          cache: true
+      - name: Install govulncheck (pinned, reviewed)
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+      - name: govulncheck gate fixtures must fail closed
+        env:
+          PATH: "$(go env GOPATH)/bin:$PATH"
+        run: bash tests/ci/check-apk-payload-govuln-test.sh
+
   arm64:
     name: arm64 cross-build + static ELF
     runs-on: ubuntu-24.04
