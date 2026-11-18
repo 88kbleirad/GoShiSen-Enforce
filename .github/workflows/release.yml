@@ -56,10 +56,22 @@ jobs:
           grep 'syft_1.30.0_linux_amd64.tar.gz' /tmp/syft-checksums.txt > /tmp/expected.sha
           (cd /tmp && sha256sum -c expected.sha)
           tar xzf /tmp/syft_1.30.0_linux_amd64.tar.gz -C /usr/local/bin syft
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
       - name: Build archives
         run: make package VERSION="$RELEASE_TAG"
       - name: Verify archives (arch, version, checksums, SBOM)
         run: make verify-package VERSION="$RELEASE_TAG"
+      - name: S-005 gate — govulncheck binary-mode on CLI archives (allowlist-reviewed)
+        run: |
+          set -euo pipefail
+          # The CLI archives must pass binary-mode govulncheck with the
+          # reviewed allowlist (empty by default). Fails closed on any
+          # finding not explicitly allowlisted in
+          # packaging/govulncheck-allowlist.txt.
+          export PATH="$(go env GOPATH)/bin:$PATH"
+          command -v govulncheck >/dev/null 2>&1 || { echo "FAIL: govulncheck not installed (S-005 CLI gate)" >&2; exit 1; }
+          bash scripts/check-cli-archive-govuln.sh dist/goshisen-linux-amd64.tar.gz
+          bash scripts/check-cli-archive-govuln.sh dist/goshisen-linux-arm64.tar.gz
       - name: Sign release artifacts with production key
         env:
           RELEASE_SIGN_KEY: ${{ secrets.GH_RELEASE_SIGNING_KEY }}
