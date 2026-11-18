@@ -48,11 +48,12 @@ Status and notable history for GoShiSen-Enforce. Per-release detail lives in `do
   - `scripts/check-apk-payload-govuln.sh` runs govulncheck binary-mode
     on the extracted payload and fails on any reachable stdlib/module
     vulnerability not in `packaging/govulncheck-allowlist.txt` (empty
-    by default); the payload must carry Go buildinfo (the v0.2.6
-    package recipe keeps buildid and sets `STRIP:=true` (the SDK's
-    `sstrip` still breaks `go version -m`/binary-mode scanning; the
-    v0.2.5 recipe stripped both `-buildid=` and the ELF section string
-    table, defeating binary-mode scanning entirely).
+    by default). The payload must carry readable Go buildinfo, so the
+    v0.2.6 package recipe drops `-buildid=` and sets `STRIP:=true` —
+    the SDK's default `sstrip` removes the ELF section string table,
+    which breaks `go version -m` and binary-mode scanning even when
+    `-buildid=` is kept (the v0.2.5 recipe stripped both, defeating
+    binary-mode scanning entirely).
   The current SDK image's baked feed does NOT yet build Go 1.27.4
   (feed default go1.26.9, golang1.27 go1.27.1; repinning the feed to a
   newer commit breaks this SDK's metadata scan) — the v0.2.6 build
