@@ -22,6 +22,13 @@
 set -euo pipefail
 
 apk="${1:?usage: check-apk-payload-go.sh <apk> [--min 1.27.4]}"
+# Resolve to an absolute path: the APK_TOOL fallback runs from a temp
+# cwd (cd "$tmp"), so a relative path (as the workflows pass) would
+# break there.
+case "$apk" in
+  /*) ;;
+  *) apk="$PWD/$apk" ;;
+esac
 min="1.27.4"
 # Single source of truth for the minimum: packaging/go-toolchain.env
 # (S-005 gate policy). An explicit --min still overrides.
