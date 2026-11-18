@@ -1,11 +1,13 @@
 package api
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -638,5 +640,87 @@ func TestStoreAtomicity(t *testing.T) {
 		if strings.Contains(e.Name(), ".tmp") {
 			t.Errorf("stray temp file: %s", e.Name())
 		}
+	}
+}
+
+// rawHTTP sends an HTTP/1.1 request over a raw TCP connection and returns
+// the first response status line plus whether the server responded before
+// the client finished sending the body (sendBody bytes). The stdlib
+// http.Client cannot issue CONNECT to an arbitrary target, and the
+// "responds before the body is complete" observable for the oversized-POST
+// test requires a manually framed request.
+func rawHTTP(t *testing.T, addr, method, path string, authed bool, contentLength int, sendBody int) (statusLine string, respondedEarly bool) {
+	t.Helper()
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		t.Fatalf("dial %s: %v", addr, err)
+	}
+	defer conn.Close()
+	var auth string
+	if authed {
+		auth = "Authorization: Bearer " + testToken + "\r\n"
+	}
+	fmt.Fprintf(conn, "%s %s HTTP/1.1\r\nHost: %s\r\n%sContent-Length: %d\r\nConnection: close\r\n\r\n",
+		method, path, addr, auth, contentLength)
+	if sendBody > 0 {
+		conn.Write([]byte(strings.Repeat("a", sendBody)))
+	}
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	line, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		return "", false
+	}
+	return strings.TrimSpace(line), true
+}
+
+// TestConnectMethodNotAllowed verifies that CONNECT requests to the API
+// server never receive a 2xx response (GO-2026-6613 precondition). The API
+// mux registers method-specific patterns only; CONNECT matches none.
+func TestConnectMethodNotAllowed(t *testing.T) {
+	f := newFixture(t)
+	f.serve()
+	for _, tc := range []struct {
+		path string
+	}{
+		{"/healthz"},
+		{"/readyz"},
+		{"/metrics"},
+		{"/v1/policy"},
+		{"/v1/policy/versions"},
+	} {
+		line, _ := rawHTTP(t, f.addr(), "CONNECT", tc.path, false, 0, 0)
+		if strings.Contains(line, "2") && strings.HasPrefix(line, "HTTP/1.1 2") {
+			t.Errorf("CONNECT %s returned 2xx: %s", tc.path, line)
+		}
+		if !strings.Contains(line, "405") && !strings.Contains(line, "404") {
+			t.Errorf("CONNECT %s: expected 405/404, got: %s", tc.path, line)
+		}
+	}
+}
+
+// TestUnauthenticatedOversizedPostRejectedBeforeBodyRead verifies the
+// observable behavior of an unauthenticated oversized POST on the API:
+// requireAuth runs before readBody, so the server answers 401 without
+// reading the request body (it does not wait for the declared body).
+// This is an observation of the existing behavior, not an exploit.
+func TestUnauthenticatedOversizedPostRejectedBeforeBodyRead(t *testing.T) {
+	f := newFixture(t)
+	f.serve()
+	// Declare a 1 MiB body but send only 64 bytes; if the server reads
+	// the body before authorizing it would not respond until the body
+	// arrives (or times out). Requiring the 401 before the body is
+	// complete proves the body is not read on the unauthenticated path.
+	line, early := rawHTTP(t, f.addr(), "POST", "/v1/policy", false, 1<<20, 64)
+	if !early {
+		t.Fatal("unauthenticated oversized POST did not respond before the body was complete")
+	}
+	if !strings.Contains(line, "401") {
+		t.Fatalf("unauthenticated oversized POST: expected 401, got %s", line)
+	}
+	// Control: the authenticated oversized POST is read (up to the
+	// limit) and rejected with 413 when the full body is sent.
+	line, _ = rawHTTP(t, f.addr(), "POST", "/v1/policy", true, 1<<20, 1<<20)
+	if !strings.Contains(line, "413") {
+		t.Fatalf("authenticated oversized POST: expected 413, got %s", line)
 	}
 }

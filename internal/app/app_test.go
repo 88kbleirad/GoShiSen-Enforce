@@ -1,10 +1,15 @@
 package app
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +20,7 @@ import (
 
 	"github.com/88kbleirad/GoShiSen-Enforce/internal/config"
 	"github.com/88kbleirad/GoShiSen-Enforce/internal/hook"
+	"github.com/88kbleirad/GoShiSen-Enforce/internal/metrics"
 	"github.com/88kbleirad/GoShiSen-Enforce/internal/packet"
 	"github.com/88kbleirad/GoShiSen-Enforce/internal/policy"
 )
@@ -843,4 +849,64 @@ func TestWatchFlowOffloadEnforceReattemptsDisable(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	cancel()
+}
+
+// TestMetricsServerConnectToMetricsPath verifies the standalone metrics
+// server's behavior for an HTTP/1 CONNECT request to its methodless
+// /metrics handler (GO-2026-6613 precondition check, advisory evidence).
+// The handler is registered without a method, so CONNECT /metrics matches
+// it and receives 200; the connection then continues to serve HTTP on the
+// same connection (the GO-2026-6613 "server continues to read and serve
+// requests" condition). This is an observation of the shipped handler, not
+// an exploit: the metrics listener is loopback-only and disabled by
+// default, and no proxy sits in front of it, so the request-smuggling
+// impact of GO-2026-6613 is not realized.
+func TestMetricsServerConnectToMetricsPath(t *testing.T) {
+	d := &Daemon{
+		log:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		metrics: metrics.New(),
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go d.serveMetrics(ctx, 0)
+	deadline := time.Now().Add(5 * time.Second)
+	for d.MetricsAddr() == "" {
+		if time.Now().After(deadline) {
+			t.Fatal("metrics server did not bind within 5s")
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+
+	// CONNECT path-form to /metrics: the methodless handler answers 200.
+	conn, err := net.DialTimeout("tcp", d.MetricsAddr(), 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	br := bufio.NewReader(conn)
+	fmt.Fprintf(conn, "CONNECT /metrics HTTP/1.1\r\nHost: %s\r\n\r\n", d.MetricsAddr())
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	line, err := br.ReadString('\n')
+	if err != nil {
+		t.Fatalf("CONNECT /metrics: %v", err)
+	}
+	if !strings.Contains(line, "200") {
+		t.Fatalf("CONNECT /metrics: expected 200, got %s", strings.TrimSpace(line))
+	}
+
+	// CONNECT authority-form to an unknown host: no route -> 404, never 2xx.
+	conn2, err := net.DialTimeout("tcp", d.MetricsAddr(), 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn2.Close()
+	fmt.Fprintf(conn2, "CONNECT 127.0.0.1:9999 HTTP/1.1\r\nHost: %s\r\n\r\n", d.MetricsAddr())
+	conn2.SetReadDeadline(time.Now().Add(5 * time.Second))
+	line3, err := bufio.NewReader(conn2).ReadString('\n')
+	if err != nil {
+		t.Fatalf("CONNECT authority-form: %v", err)
+	}
+	if !strings.Contains(line3, "404") {
+		t.Fatalf("CONNECT authority-form: expected 404, got %s", strings.TrimSpace(line3))
+	}
 }
