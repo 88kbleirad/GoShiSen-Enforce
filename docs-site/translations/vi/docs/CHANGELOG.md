@@ -32,3 +32,18 @@ Trạng thái và lịch sử đáng chú ý của GoShiSen-Enforce. Chi tiết 
   Feed được nướng sẵn của ảnh SDK hiện tại CHƯA build Go 1.27.4 (mặc định feed go1.26.9, golang1.27 go1.27.1; ghim lại feed về commit mới hơn làm hỏng quét metadata của SDK này) — bản build v0.2.6 gắn toolchain go1.27.4 được xác minh sha256 (`scripts/sdk-build-v026.sh`, phương án 3 trong báo cáo S-005). Apk v0.2.5 đã phân phối không thay đổi.
 - **Toolchain ghim go1.27.4 (S-001):** 11 lỗ hổng thư viện chuẩn có thể tiếp cận (net/http Range-header DoS, chạy đua MaxBytesReader, chạy đua HPACK http2, crypto/x509) dưới go1.27.1 đã đóng; `golang.org/x/net` v0.62.0 và `golang.org/x/sys` v0.49.0. Chỉ thị `go` giờ là `go 1.26.0` (yêu cầu Go ≥ 1.26; CI cài trực tiếp go1.27.4).
 - **queue_num giới hạn 0..65534 (S-002):** queue_num 65535 từng được chấp nhận nhưng không bao giờ cài được (quy tắc queue IPv6 tại queue_num+1 sẽ thành `queue to 65536`, ngoài phạm vi u16); cấu hình giờ từ chối nó kèm thông báo rõ ràng.
+
+## Hiệu chỉnh (tài liệu hậu v0.2.6, 2026-11-19)
+
+- **Mặc định listener HTTP (hiệu chỉnh tài liệu):** ghi chú v0.2.6,
+  cảnh báo bảo mật v0.2.5 và tài liệu OpenWrt từng nói các listener
+  HTTP "bị tắt theo mặc định". Thực tế mặc định tích hợp của daemon là
+  API `127.0.0.1:8080` và metrics `127.0.0.1:9090` (loopback) sau khi
+  dịch vụ được bật; cấu hình OpenWrt được phân phối lưu
+  `api_port '0'`/`metrics_port '0'`, nhưng v0.2.6 bỏ qua giá trị `0`
+  từ tệp/cờ (quay về mặc định; `internal/config/config.go` và
+  `internal/cli/cli.go`). Cách duy nhất để tắt listener hiện nay là
+  `GOSHISEN_API_PORT=0` / `GOSHISEN_METRICS_PORT=0`, hoặc giữ dịch vụ
+  tắt (`enabled=0`). Không có thay đổi hành vi mã; mức độ nghiêm trọng
+  vẫn là Low (mặc định) / Medium (`api_host` không-loopback).
+  Bản vá mã để tôn trọng `0` tường minh dự kiến ở v0.2.7.

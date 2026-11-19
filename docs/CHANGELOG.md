@@ -70,3 +70,18 @@ Status and notable history for GoShiSen-Enforce. Per-release detail lives in `do
   but could never be installed (the IPv6 queue rule at queue_num+1 would
   be `queue to 65536`, outside the u16 range); config now rejects it with
   a clear message.
+
+## Corrections (post-v0.2.6 docs, 2026-11-19)
+
+- **HTTP listener defaults (docs correction):** the v0.2.6 notes, the
+  v0.2.5 security advisory and the OpenWrt docs said the HTTP listeners
+  are "disabled by default". In fact the daemon's built-in default is
+  API `127.0.0.1:8080` and metrics `127.0.0.1:9090` (loopback) once the
+  service is enabled; the shipped OpenWrt config stores
+  `api_port '0'`/`metrics_port '0'`, but v0.2.6 ignores a file/flag
+  value of `0` (falls back to the defaults; `internal/config/config.go`
+  and `internal/cli/cli.go`). The only way to disable the listeners
+  today is `GOSHISEN_API_PORT=0` / `GOSHISEN_METRICS_PORT=0`, or
+  leaving the service disabled (`enabled=0`). No code behavior changed;
+  severity remains Low (default) / Medium (non-loopback `api_host`).
+  A code fix to honor explicit `0` is planned for v0.2.7.

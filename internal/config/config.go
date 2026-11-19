@@ -64,7 +64,10 @@ type File struct {
 	// APIHost is the API bind host. Default 127.0.0.1 (localhost only).
 	APIHost string `yaml:"api_host"`
 
-	// APIPort is the API TCP port; 0 disables the API server.
+	// APIPort is the API TCP port; default 8080 (loopback). A value of
+	// 0 disables the API only when supplied via GOSHISEN_API_PORT; the
+	// file and flag layers treat 0 as "not set" and fall back to the
+	// default (see loadFile/loadOverrides).
 	APIPort int `yaml:"api_port"`
 
 	// APIToken is the bearer token required for administrative
@@ -73,7 +76,9 @@ type File struct {
 	// GOSHISEN_API_TOKEN. Empty disables administrative mutations.
 	APIToken string `yaml:"api_token"`
 
-	// MetricsPort is the Prometheus metrics TCP port; 0 disables it.
+	// MetricsPort is the Prometheus metrics TCP port; default 9090
+	// (loopback). A value of 0 disables only via GOSHISEN_METRICS_PORT;
+	// file/flag layers treat 0 as "not set" (see loadFile/loadOverrides).
 	MetricsPort int `yaml:"metrics_port"`
 
 	// PolicyDir is the durable policy store directory (versioned policy
