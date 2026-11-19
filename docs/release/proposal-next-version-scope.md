@@ -1,6 +1,8 @@
 # Proposal — v0.2.6 scope (after v0.2.5)
 
-**Status: PROPOSED (S-005 investigation complete, 2026-11-18).**
+**Status: COMPLETED (v0.2.6 published 2026-11-19, S-005 fixed and
+post-publish verified).** Historic planning document; see
+`docs/release/v0.2.6-notes.md` and the S-005 advisory for the outcome.
 Base: main at `9a303e1` (post-PR #76; the v0.2.5 tag is `79927ca`).
 
 ## v0.2.5 status (previous scope, completed 2026-11-17)

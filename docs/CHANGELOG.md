@@ -1,11 +1,11 @@
 # Changelog
 
-Status and notable history for GoShiSen-Enforce. Per-release detail lives in `docs/release/` (e.g. `v0.2.4-notes.md`, `proposal-next-version-scope.md`).
+Status and notable history for GoShiSen-Enforce. Per-release detail lives in `docs/release/` (e.g. `v0.2.6-notes.md`, `proposal-next-version-scope.md`).
 
-## Release status (snapshot, 2026-11-17)
+## Release status (snapshot, 2026-11-19)
 
-- **v0.2.5** — latest release (published 2026-11-17): upgrade-hook packaging fix (issue #57). Release notes and assets: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.5).
-- **v0.2.4** — previous release: production-signed OpenWrt apk; signed CLI archives. Scope and release-run checklist: `docs/release/proposal-next-version-scope.md`.
+- **v0.2.6** — latest release (published 2026-11-19): S-005 toolchain-fix release (issue #78) — apk payload and both CLI archives built with go1.27.4. Release notes and assets: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.6).
+- **v0.2.5** — previous release (published 2026-11-17): upgrade-hook packaging fix (issue #57); apk payload embedded go1.27.1 (S-005, fixed in v0.2.6).
 
 ## Details moved out of the README
 
@@ -15,12 +15,12 @@ Status and notable history for GoShiSen-Enforce. Per-release detail lives in `do
 - Metrics inventory (12 families) and Grafana setup: `docs/release/metrics-grafana-validation.md`.
 - Repository layout: `docs/developer-guide.md`.
 
-## Audit fixes (2026-11-17, PR in review)
+## Audit fixes (shipped in v0.2.6, 2026-11-18)
 
 - **Strict port parsing (F-001):** policy `src_port`/`dst_port` matchers and `GOSHISEN_API_PORT`/`GOSHISEN_METRICS_PORT` env values must now be plain integers. Previously `fmt.Sscanf("%d")` silently accepted trailing garbage (`"80evil"` → 80), so a typo could change the enforced policy or the bound port instead of failing configuration.
 - **Backend error attribution (F-002):** receive-side NFQUEUE socket errors are now reported as `kind=receive` (matching the documented `goshisen_backend_errors_total` label set) instead of `kind=send`.
 
-## Security fixes (2026-11-17, PR in review)
+## Security fixes (shipped in v0.2.6, 2026-11-19)
 
 - **Release-tag injection guard (S-003):** the release workflow now
   validates the pushed tag name against `^v[0-9]+\.[0-9]+\.[0-9]+$` in
@@ -39,7 +39,8 @@ Status and notable history for GoShiSen-Enforce. Per-release detail lives in `do
   bumped from golang:1.25 (go1.25.14, 11 reachable stdlib vulns) to
   `golang:1.27.4@sha256:205c7636…`; all CI jobs install go1.27.4.
 - **apk payload gates (S-005):** the published v0.2.5 apk payload was
-  built with go1.27.1 → 11 reachable stdlib vulns (issue #78). Two
+  built with go1.27.1 → 11 reachable stdlib vulns (issue #78). Closed
+  in v0.2.6 (apk payload + both CLI archives built with go1.27.4). Two
   fail-closed signing-path gates now run in `apk-sign.yml` production
   mode before signing, plus CI regression jobs:
   - `scripts/check-apk-payload-go.sh` rejects any apk whose payload was

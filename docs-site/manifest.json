@@ -20,6 +20,11 @@
   "title": "Changelog"
  },
  {
+  "slug": "docs-audit-self-review-20261117",
+  "path": "../docs/audit-self-review-20261117.md",
+  "title": "Audit — self-review 2026-11-17"
+ },
+ {
   "slug": "docs-container-feasibility",
   "path": "../docs/container-feasibility.md",
   "title": "Container Feasibility Evaluation"
@@ -53,6 +58,11 @@
   "slug": "docs-release-notes-v0.2.0",
   "path": "../docs/release-notes-v0.2.0.md",
   "title": "GoShiSen-Enforce — v0.2.0 Release Notes (draft)"
+ },
+ {
+  "slug": "docs-security-assessment-20261117",
+  "path": "../docs/security-assessment-20261117.md",
+  "title": "Security assessment — 2026-11-17"
  },
  {
   "slug": "docs-user-guide",
@@ -153,6 +163,11 @@
   "slug": "docs-release-arm64-runtime-validation",
   "path": "../docs/release/arm64-runtime-validation.md",
   "title": "aarch64 runtime validation of OpenWrt r5 APK (PASS)"
+ },
+ {
+  "slug": "docs-release-arm64-v025-runtime-evidence",
+  "path": "../docs/release/arm64-v025-runtime-evidence.md",
+  "title": "Arm64 runtime verification — v0.2.5 release payload (PASS)"
  },
  {
   "slug": "docs-release-candidate-validation-evidence",
@@ -322,7 +337,7 @@
  {
   "slug": "docs-release-proposal-next-version-scope",
   "path": "../docs/release/proposal-next-version-scope.md",
-  "title": "Proposal — v0.2.5 scope (after v0.2.4)"
+  "title": "Proposal — v0.2.6 scope (after v0.2.5)"
  },
  {
   "slug": "docs-release-proposal-v0.2.3-version-alignment",
@@ -413,6 +428,21 @@
   "slug": "docs-release-v0.2.4-vm-smoke-evidence",
   "path": "../docs/release/v0.2.4-vm-smoke-evidence.md",
   "title": "v0.2.4 fresh-VM smoke evidence (production-signed apk)"
+ },
+ {
+  "slug": "docs-release-v0.2.5-postpublish-update",
+  "path": "../docs/release/v0.2.5-postpublish-update.md",
+  "title": "Update (2026-11-17) — v0.2.5 post-publish hardening"
+ },
+ {
+  "slug": "docs-release-v0.2.6-notes",
+  "path": "../docs/release/v0.2.6-notes.md",
+  "title": "GoShiSen-Enforce v0.2.6 — Release Notes"
+ },
+ {
+  "slug": "docs-release-v0.2.6-upgrade-e2e-evidence",
+  "path": "../docs/release/v0.2.6-upgrade-e2e-evidence.md",
+  "title": "v0.2.6 upgrade e2e evidence (issue #57 path)"
  },
  {
   "slug": "docs-release-v023-release-evidence",
