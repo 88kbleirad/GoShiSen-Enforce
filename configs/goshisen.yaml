@@ -22,7 +22,9 @@ log_level: info
 # Default: false.
 log_json: false
 
-# REST management API (localhost by default). api_port 0 disables it.
+# REST management API (localhost by default). Default 8080. NOTE: in
+# v0.2.6 a file/flag value of 0 is ignored and falls back to 8080; to
+# disable, set GOSHISEN_API_PORT=0 in the environment.
 # The token is required for policy changes; set it via this file or
 # GOSHISEN_API_TOKEN — deliberately NOT as a CLI flag (argv is visible
 # to other processes on the host). Leave empty to disable all admin
@@ -31,7 +33,8 @@ api_host: 127.0.0.1
 api_port: 8080
 api_token: ""
 
-# Prometheus metrics port; 0 disables.
+# Prometheus metrics port. Default 9090. NOTE: same caveat as api_port —
+# file/flag 0 is ignored; disable via GOSHISEN_METRICS_PORT=0.
 metrics_port: 9090
 
 # Kernel NFQUEUE queue length in packets (1..65535). A smaller queue

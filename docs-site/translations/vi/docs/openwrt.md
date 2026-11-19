@@ -111,8 +111,8 @@ lửa.
 | `log_level` | `info` | `debug`, `info`, `warn`, `error` |
 | `interface` | `br-lan` | netdev kernel dùng xác thực máy chủ (tên zone fw4 như `lan` bị từ chối) |
 | `policy_file` | `/etc/goshisen/policy.yaml` | chính sách YAML |
-| `api_port` | `0` | REST API tùy chọn (chỉ loopback) |
-| `metrics_port` | `0` | metrics Prometheus tùy chọn (chỉ loopback) |
+| `api_port` | `0`* | REST API (chỉ loopback). *Lưu ý: trong v0.2.6 giá trị `0` từ tệp/cờ bị bỏ qua và quay về 8080. Để thực sự tắt, giữ dịch vụ tắt (`enabled=0`) hoặc đặt `GOSHISEN_API_PORT=0` trong môi trường. |
+| `metrics_port` | `0`* | metrics Prometheus (chỉ loopback). *Tương tự: `0` từ tệp/cờ quay về 9090. Tắt qua `GOSHISEN_METRICS_PORT=0` trong môi trường. |
 | `queue_maxlen` | `1024` | độ dài hàng đợi kernel |
 | `offload_policy` | `warn` | phản hồi flow-offload: `warn` (log WARN + gauge), `refuse` (khởi động fail trước khi cài hook khi phát hiện offloading), `readiness` (thực thi nhưng không bao giờ sẵn sàng trong khi offloading hoạt động), `enforce` (chủ động tắt offloading và xác minh; fail closed nếu tắt thất bại hoặc trạng thái không biết) |
 | `allow_bypass` | `0` | cửa sổ chẩn đoán/phát triển, **chỉ** hợp lệ với `offload_policy=enforce`: `1` hạ enforce xuống warn (cảnh báo lớn). Không bao giờ mặc định, không bao giờ im lặng |

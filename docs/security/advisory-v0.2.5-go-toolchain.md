@@ -14,10 +14,15 @@
   and v0.2.2 ship CLI archives only). The fix lands in **v0.2.6**.
 - **Date of analysis:** 2026-11-18.
 - **Severity:** Low for the default configuration (both HTTP listeners
-  disabled in the shipped OpenWrt config; when enabled they bind
-  127.0.0.1 and the nearest exposure is a local user on the loopback
-  listener, with the API mutations requiring a bearer token). Elevated
-  to Medium if the API listener is misconfigured to a non-loopback
+  bind to 127.0.0.1 by default — API 8080, metrics 9090 — once the
+  service is enabled; the nearest exposure is a local user on the
+  loopback listener, with the API mutations requiring a bearer token).
+  The shipped OpenWrt config stores `api_port '0'`/`metrics_port '0'`,
+  but in v0.2.6 the daemon ignores a file/flag value of 0 and falls
+  back to the defaults; the only way to disable the listeners is
+  `GOSHISEN_API_PORT=0` / `GOSHISEN_METRICS_PORT=0` (or leaving the
+  service disabled via `enabled=0`). Elevated to Medium if the API
+  listener is misconfigured to a non-loopback
   `api_host` (see Workarounds). No outbound connections and no TLS
   exist, so the TLS/x509/client-side vulnerability classes are not
   reachable in any configuration.
@@ -101,9 +106,13 @@ Bind configurability (`internal/config/config.go`):
   configurable and passes validation**; the API then listens on the
   network.
 - `DefaultAPIPort = 8080`, `DefaultMetricsPort = 9090` (config.go:37-
-  38); `0` disables each server (app.go:295, 317). The shipped OpenWrt
-  config sets `option api_port '0'` and `option metrics_port '0'`
-  (openwrt/files/etc/config/goshisen).
+  38); each server is skipped when its resolved port is `0` (app.go:295,
+  317). The shipped OpenWrt config stores `option api_port '0'` and
+  `option metrics_port '0'` (openwrt/files/etc/config/goshisen), but in
+  v0.2.6 the file and flag layers treat `0` as "not set" and fall back
+  to the defaults (config.go:260, 268; cli.go:191, 194) — only the
+  environment layer (`GOSHISEN_API_PORT=0` / `GOSHISEN_METRICS_PORT=0`)
+  disables the listeners.
 - No TLS listener, no crypto/tls import, no http.Client, no net.Dial
   in shipped code (`cmd/`, `internal/`): `grep -rn --include='*.go'
   -E 'crypto/tls|http2|h2c|multipart|x509|http\.Client|http\.Get'
