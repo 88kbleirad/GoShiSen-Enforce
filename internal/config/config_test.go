@@ -589,3 +589,102 @@ queue_num: 65534
 		t.Fatalf("Load rejected queue_num 65534: %v", err)
 	}
 }
+
+// TestLoadFileZeroPortsDisable: an explicit `api_port: 0` /
+// `metrics_port: 0` in the config file must disable the listener. The
+// file layer used to skip zero values, so the shipped OpenWrt config
+// (`option api_port '0'`) fell back to 8080/9090 loopback.
+func TestLoadFileZeroPortsDisable(t *testing.T) {
+	p := writeTemp(t, "goshisen.yaml", `
+policy_file: /etc/goshisen/policy.yaml
+api_port: 0
+metrics_port: 0
+`)
+	o, err := Load(p, envStub(nil), Overrides{})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if o.APIPort != 0 || o.MetricsPort != 0 {
+		t.Fatalf("ports = %d/%d, want 0/0 (explicit 0 disables)", o.APIPort, o.MetricsPort)
+	}
+	if got := o.Source("api_port"); got != "file" {
+		t.Errorf("api_port source = %q, want file", got)
+	}
+	if got := o.Source("metrics_port"); got != "file" {
+		t.Errorf("metrics_port source = %q, want file", got)
+	}
+}
+
+// TestLoadFilePortPresence: only the ports the file mentions are applied.
+// An omitted port keeps the built-in default; an explicit non-zero port
+// wins over it.
+func TestLoadFilePortPresence(t *testing.T) {
+	cases := []struct {
+		name           string
+		file           string
+		wantAPI        int
+		wantMetrics    int
+		wantAPISource  string
+		wantMetaSource string
+	}{
+		{"unset", "policy_file: /etc/goshisen/policy.yaml\n", 8080, 9090, "default", "default"},
+		{"api zero only", "policy_file: /etc/goshisen/policy.yaml\napi_port: 0\n", 0, 9090, "file", "default"},
+		{"metrics zero only", "policy_file: /etc/goshisen/policy.yaml\nmetrics_port: 0\n", 8080, 0, "default", "file"},
+		{"explicit ports", "policy_file: /etc/goshisen/policy.yaml\napi_port: 9000\nmetrics_port: 9001\n", 9000, 9001, "file", "file"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p := writeTemp(t, "goshisen.yaml", c.file)
+			o, err := Load(p, envStub(nil), Overrides{})
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if o.APIPort != c.wantAPI || o.MetricsPort != c.wantMetrics {
+				t.Fatalf("ports = %d/%d, want %d/%d", o.APIPort, o.MetricsPort, c.wantAPI, c.wantMetrics)
+			}
+			if got := o.Source("api_port"); got != c.wantAPISource {
+				t.Errorf("api_port source = %q, want %q", got, c.wantAPISource)
+			}
+			if got := o.Source("metrics_port"); got != c.wantMetaSource {
+				t.Errorf("metrics_port source = %q, want %q", got, c.wantMetaSource)
+			}
+		})
+	}
+}
+
+// TestLoadFlagZeroPortDisables: --api-port 0 / --metrics-port 0 reach the
+// config layer as explicit overrides and must disable, not fall back.
+func TestLoadFlagZeroPortDisables(t *testing.T) {
+	zero := 0
+	o, err := Load("", policyEnv(nil), Overrides{APIPort: &zero, MetricsPort: &zero})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if o.APIPort != 0 || o.MetricsPort != 0 {
+		t.Fatalf("ports = %d/%d, want 0/0", o.APIPort, o.MetricsPort)
+	}
+	if o.Source("api_port") != "flag" || o.Source("metrics_port") != "flag" {
+		t.Errorf("sources = %q/%q, want flag/flag", o.Source("api_port"), o.Source("metrics_port"))
+	}
+	// A file value of 0 is overridden by a non-zero flag.
+	p := writeTemp(t, "goshisen.yaml", "policy_file: /etc/goshisen/policy.yaml\napi_port: 0\n")
+	port := 8081
+	o, err = Load(p, envStub(nil), Overrides{APIPort: &port})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if o.APIPort != 8081 {
+		t.Fatalf("APIPort = %d, want 8081 (flag beats file)", o.APIPort)
+	}
+}
+
+// TestLoadFilePortRejectsNonScalar keeps the strict decode: api_port
+// must be a scalar integer, not a list/mapping.
+func TestLoadFilePortRejectsNonScalar(t *testing.T) {
+	for _, body := range []string{"api_port: [8080]\n", "api_port:\n  port: 8080\n"} {
+		p := writeTemp(t, "goshisen.yaml", "policy_file: /etc/goshisen/policy.yaml\n"+body)
+		if _, err := Load(p, envStub(nil), Overrides{}); err == nil {
+			t.Fatalf("Load accepted api_port %q; want error", strings.TrimSpace(body))
+		}
+	}
+}
