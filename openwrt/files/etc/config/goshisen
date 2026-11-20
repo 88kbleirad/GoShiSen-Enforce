@@ -26,9 +26,14 @@ config goshisen 'main'
 	option policy_file '/etc/goshisen/policy.yaml'
 	# Optional management API port. An explicit 0 (this file's default)
 	# disables the API listener; 1..65535 enables it on loopback.
+	# NOTE (v0.2.5/v0.2.6 binaries): the daemon ignores a file/flag 0 —
+	# the listeners default to 8080/9090 loopback once the service is
+	# enabled; disable with GOSHISEN_API_PORT=0 or enabled=0. This file
+	# keeps '0' so the fixed daemon (post-v0.2.6) disables as intended.
 	option api_port '0'
 	# Optional Prometheus metrics port. An explicit 0 (this file's
-	# default) disables the metrics listener.
+	# default) disables the metrics listener. Same v0.2.5/v0.2.6
+	# caveat as api_port.
 	option metrics_port '0'
 	# Kernel NFQUEUE queue length.
 	option queue_maxlen '1024'
