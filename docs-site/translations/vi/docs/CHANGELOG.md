@@ -65,3 +65,12 @@ Trạng thái và lịch sử đáng chú ý của GoShiSen-Enforce. Chi tiết 
   `TestLoadFlagZeroPortDisables`, `TestLoadFilePortRejectsNonScalar`,
   `TestParsePortZeroFlags`, `TestParsePortInvalidValues`. Không thay
   đổi mức độ nghiêm trọng bảo mật (mặc định loopback-only).
+- **Fixture lab bật listener metrics tường minh:** ảnh lab QEMU
+  (`scripts/openwrt-image-prep.sh`) là người dùng duy nhất cần listener —
+  nó đọc bộ đếm phán quyết từ `127.0.0.1:9090/metrics` — nên giờ nó
+  ghi `metrics_port: $LAB_METRICS_PORT` (9090) thay vì dựa vào `0`
+  quay về mặc định; `api_port` vẫn là `0` (chính sách được áp dụng qua
+  SIGHUP). Cả hai script e2e đọc `${LAB_METRICS_PORT:-9090}` và thất
+  bại nhanh với `ENV: metrics listener unreachable` khi snapshot không
+  lấy được metrics, thay vì thông báo gây hiểu lầm "no daemon DROP
+  verdicts recorded". Kiểm thử: `TestProvisionLabMetricsPort`.

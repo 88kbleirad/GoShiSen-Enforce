@@ -122,7 +122,8 @@ snapshot() {
     local tag=$1
     vm "nft -a list chain inet goshisen forward > /tmp/v6_hook.txt; \
         cat /proc/net/netfilter/nfnetlink_queue > /tmp/v6_qs.txt; \
-        wget -q -O- http://127.0.0.1:9090/metrics > /tmp/v6_met.txt; \
+        wget -q -O- http://127.0.0.1:${LAB_METRICS_PORT:-9090}/metrics > /tmp/v6_met.txt; \
+        echo MET_RC=\$? > /tmp/v6_metrc.txt; \
         echo WROTE" >/dev/null
     # Read phase: emit the tagged lines. Every grep is guarded (|| true)
     # so a missing table/metrics cannot abort the snapshot; the kernel
@@ -133,9 +134,15 @@ snapshot() {
             echo @@MET; \
             grep -aE '^goshisen_packets_total' /tmp/v6_met.txt || true; \
             grep -aE '^goshisen_packets_by_state' /tmp/v6_met.txt || true; \
-            grep -aE '^goshisen_backend_errors' /tmp/v6_met.txt || true"
+            grep -aE '^goshisen_backend_errors' /tmp/v6_met.txt || true; \
+            echo @@METRC; cat /tmp/v6_metrc.txt"
     } > "$WORK/$tag.raw"
     [ -s "$WORK/$tag.raw" ] || fail "snapshot $tag produced no output"
+    # The verdict counters come from the metrics listener; `metrics_port:
+    # 0` disables it. Fail with an ENV diagnosis instead of the misleading
+    # "no daemon verdicts recorded" downstream.
+    grep -aq 'MET_RC=0' "$WORK/$tag.raw" \
+        || fail "ENV: metrics listener unreachable at 127.0.0.1:${LAB_METRICS_PORT:-9090} (metrics_port disabled?) — verdict counters unavailable"
 }
 
 snap_num() { # snap_num <tag> <queue> <field-name>

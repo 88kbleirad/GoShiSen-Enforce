@@ -91,4 +91,5 @@ is untouched. Regression tests: `TestCTFlagsTolerable`,
 - Serial console is the only VM channel (dropbear lacks host keys in the official image); the e2e only depends on `python3`/`curl`/`ip` on the host.
 - The test asserts verdict-count **deltas** (baseline after policy reload), so pre-existing traffic does not break identity checks.
 - Explicit `api_port: 0` / `metrics_port: 0` in the daemon config file disable the listeners (fixed after v0.2.6; v0.2.6 and earlier ignored file/flag zeros and fell back to 8080/9090).
+- The lab fixture (`scripts/openwrt-image-prep.sh`) therefore enables metrics explicitly (`metrics_port: $LAB_METRICS_PORT`, 9090) because the e2e reads verdict counters from `127.0.0.1:9090/metrics`; the API stays disabled (`api_port: 0`, policy is applied via SIGHUP). A snapshot whose metrics fetch fails now fails as `ENV: metrics listener unreachable` instead of "no daemon verdicts recorded".
 - PR/submission: branch `phase10-openwrt`, PR #3 open (see `docs/release/openwrt-ci-validation.md`); nothing merged or published here.

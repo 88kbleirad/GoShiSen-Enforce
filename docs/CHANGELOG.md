@@ -103,3 +103,13 @@ Status and notable history for GoShiSen-Enforce. Per-release detail lives in `do
   `TestLoadFlagZeroPortDisables`, `TestLoadFilePortRejectsNonScalar`,
   `TestParsePortZeroFlags`, `TestParsePortInvalidValues`. No security
   severity change (loopback-only defaults).
+- **Lab fixture enables the metrics listener explicitly:** the QEMU lab
+  image (`scripts/openwrt-image-prep.sh`) is the only consumer that needs
+  a listener — it reads verdict counters from `127.0.0.1:9090/metrics` —
+  so it now writes `metrics_port: $LAB_METRICS_PORT` (9090) instead of
+  relying on `0` falling back to the default; `api_port` stays `0`
+  (policy is applied via SIGHUP). Both e2e scripts read
+  `${LAB_METRICS_PORT:-9090}` and fail fast with
+  `ENV: metrics listener unreachable` when a snapshot cannot fetch
+  metrics, instead of the misleading "no daemon DROP verdicts recorded".
+  Guard: `TestProvisionLabMetricsPort`.

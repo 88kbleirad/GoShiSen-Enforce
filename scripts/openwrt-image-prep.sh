@@ -54,6 +54,12 @@ KMOD_NFNETLINK_SHA=5ba9879f171dbce8a9a998b609b30f7315134a2c859b42e707fd72b42c6a0
 KMOD_NFT_SHA=0fd1adc999e1037ecda7ed9a6101e28432b899239adab6a125e11f3dd2f68d16
 KMOD_CTNETLINK_SHA=a22d2782d2c7d83fc3c993db9d874a6aad5eb541c6da6461535efda19c2b92f4
 
+# Lab fixture: the metrics listener is the verdict-evidence channel of
+# the e2e scripts (they read 127.0.0.1:$LAB_METRICS_PORT/metrics), so the
+# provisioned daemon config enables it explicitly. The packaged OpenWrt
+# default keeps both listeners disabled — do not copy this value there.
+LAB_METRICS_PORT=9090
+
 # The official release index keeps the images directly under
 # targets/x86/64/ (there is no "generic/" subdirectory; that path
 # returns HTTP 404).
@@ -89,6 +95,7 @@ KMOD_NFNETLINK_SHA=$KMOD_NFNETLINK_SHA
 KMOD_NFT_SHA=$KMOD_NFT_SHA
 KMOD_CTNETLINK_SHA=$KMOD_CTNETLINK_SHA
 ROOTFS_PART=$ROOTFS_PART
+LAB_METRICS_PORT=$LAB_METRICS_PORT
 EOF
 }
 
@@ -199,7 +206,7 @@ hook_scope: openwrt
 log_level: debug
 interface: br-lan
 api_port: 0
-metrics_port: 0
+metrics_port: $LAB_METRICS_PORT
 EOF
 
     # 3. Packaged fail-closed policy.
