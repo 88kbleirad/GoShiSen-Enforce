@@ -138,7 +138,7 @@ nat:
 
 ## REST API
 
-The daemon exposes a management API (default `127.0.0.1:8080`). See `api/openapi.yaml` for the full spec.
+The daemon exposes a management API (default `127.0.0.1:8080`). See `api/openapi.yaml` for the full spec. The bind host is loopback-only: `api_host` must be `127.0.0.1`, any `127.x`, `::1`, or `localhost`; any other value makes the daemon refuse to start unless the operator opts in with `allow_non_loopback_api_host: true` (YAML/UCI), `GOSHISEN_ALLOW_NON_LOOPBACK_API_HOST=1` (env), or `--allow-non-loopback-api-host` (flag).
 
 | Endpoint | Auth | Purpose |
 | --- | --- | --- |
@@ -151,7 +151,7 @@ The daemon exposes a management API (default `127.0.0.1:8080`). See `api/openapi
 | `GET /readyz` | — | readiness (firewall fully up) |
 | `GET /metrics` | — | Prometheus metrics |
 
-- **Auth:** set `api_token` (config) or `GOSHISEN_API_TOKEN`. It is never accepted as a CLI flag. With no token set, administrative operations are refused (401).
+- **Auth:** set `api_token` (config) or `GOSHISEN_API_TOKEN`. It is never accepted as a CLI flag. With no token set, administrative operations are refused (401). The GET endpoints (`/v1/policy`, `/v1/policy/versions`, `/healthz`, `/readyz`, `/metrics`) are unauthenticated; `GET /v1/policy` and `GET /v1/policy/versions` disclose the full policy and its change history to anyone who can reach the listener (see the open issue on whether reads should require the token when configured).
 - **Concurrency:** applying a policy requires `base_version` equal to the current active version; otherwise `409 version_conflict`. Concurrent writers therefore cannot silently overwrite each other.
 - **Invalid policies:** rejected with `422 invalid_policy` before any state change; the active policy is preserved.
 - **Durability:** policies are stored as immutable versioned files with an atomically-updated active pointer; restart recovery reloads the active version. `policy_dir` configures the store. `SIGHUP` reloads the configured policy file through the same durable pipeline as the API (every reload becomes a new store version), so the daemon's policy and the store's active version never diverge.

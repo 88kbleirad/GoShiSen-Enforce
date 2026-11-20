@@ -194,3 +194,31 @@ tags, signing, and the apk-sign dispatch require **explicit per-run
 maintainer authorization**. The agent never creates/moves/deletes
 tags, never signs/publishes releases, never touches secrets/signing
 keys/the APK anchor, and never merges PRs.
+
+## v0.2.7 scope (proposal, 2026-11-20)
+
+Scheduled for the release after the published v0.2.6:
+
+1. **Port-zero semantics reach a published artifact** — the fix on `main`
+   since PR #89 (`137dd24`): file/flag `0` disables the listeners like
+   the environment variable already did. User-visible: a router whose
+   packaged UCI kept `api_port '0'` / `metrics_port '0'` stops exposing
+   both loopback listeners after upgrading (enable them explicitly with
+   `uci set goshisen.main.api_port='8080'` / `metrics_port='9090'`).
+2. **Init script always renders explicit port values** — absent/empty
+   UCI options become `0` (disabled) with a logread warning instead of
+   the old silent `api_port '' out of range` abort; invalid values abort
+   naming the option (fail-closed via the boot guard).
+3. **`api_host` loopback guard** — the API refuses to start on a
+   non-loopback host unless the operator opts in
+   (`allow_non_loopback_api_host` / `GOSHISEN_ALLOW_NON_LOOPBACK_API_HOST`
+   / `--allow-non-loopback-api-host`), so a typo can no longer expose the
+   unauthenticated GET endpoints to the network.
+4. **Metrics method hardening** — the standalone metrics listener
+   answers `405` to `CONNECT` and other non-`GET`/`HEAD` methods.
+5. **Docs** — `docs/release/v0.2.7-notes-draft.md` plus the listener
+   defaults correction already merged for v0.2.5/v0.2.6 users.
+
+Out of scope for v0.2.7: requiring the token for the read endpoints
+(tracked by its own issue with the compatibility analysis), LuCI, and
+non-x86_64 hardware runtime verification.
