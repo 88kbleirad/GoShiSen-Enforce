@@ -62,7 +62,15 @@ type File struct {
 	LogJSON bool `yaml:"log_json"`
 
 	// APIHost is the API bind host. Default 127.0.0.1 (localhost only).
+	// A non-loopback value is rejected unless AllowNonLoopbackAPIHost is
+	// set.
 	APIHost string `yaml:"api_host"`
+
+	// AllowNonLoopbackAPIHost opts into binding the API to a
+	// non-loopback address. Default false (loopback only): a non-loopback
+	// api_host exposes the administrative API to the network, so it must
+	// be requested explicitly.
+	AllowNonLoopbackAPIHost bool `yaml:"allow_non_loopback_api_host"`
 
 	// APIPort is the API TCP port; default 8080 (loopback) when no
 	// layer sets it. An explicit 0 — file, GOSHISEN_API_PORT, or
@@ -174,6 +182,9 @@ type Overrides struct {
 	MetricsPort *int
 	PolicyDir   *string
 	QueueMaxlen *int
+
+	// AllowNonLoopbackAPIHost opts into a non-loopback API bind.
+	AllowNonLoopbackAPIHost *bool
 }
 
 // Options is the resolved, validated runtime configuration.
@@ -238,19 +249,20 @@ func Load(configFile string, env func(string) (string, bool), ov Overrides) (*Op
 		},
 		ConfigFile: configFile,
 		Sources: map[string]string{
-			"interface":      "default",
-			"policy_file":    "default",
-			"log_level":      "default",
-			"log_json":       "default",
-			"api_host":       "default",
-			"api_port":       "default",
-			"api_token":      "default",
-			"metrics_port":   "default",
-			"policy_dir":     "default",
-			"queue_maxlen":   "default",
-			"queue_num":      "default",
-			"hook_scope":     "default",
-			"offload_policy": "default",
+			"interface":                   "default",
+			"policy_file":                 "default",
+			"log_level":                   "default",
+			"log_json":                    "default",
+			"api_host":                    "default",
+			"allow_non_loopback_api_host": "default",
+			"api_port":                    "default",
+			"api_token":                   "default",
+			"metrics_port":                "default",
+			"policy_dir":                  "default",
+			"queue_maxlen":                "default",
+			"queue_num":                   "default",
+			"hook_scope":                  "default",
+			"offload_policy":              "default",
 		},
 	}
 
@@ -339,6 +351,10 @@ func (o *Options) loadFile(path string) error {
 		o.AllowBypass = true
 		o.Sources["allow_bypass"] = "file"
 	}
+	if f.AllowNonLoopbackAPIHost {
+		o.AllowNonLoopbackAPIHost = true
+		o.Sources["allow_non_loopback_api_host"] = "file"
+	}
 	if f.QueueNum != 0 {
 		o.QueueNum = f.QueueNum
 		o.Sources["queue_num"] = "file"
@@ -380,6 +396,15 @@ func (o *Options) loadEnv(env func(string) (string, bool)) error {
 	if v, ok := get("API_HOST"); ok {
 		o.APIHost = v
 		o.Sources["api_host"] = "env"
+	}
+	if v, ok := get("ALLOW_NON_LOOPBACK_API_HOST"); ok {
+		b, err := parseBool(v)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%sALLOW_NON_LOOPBACK_API_HOST: %w", EnvPrefix, err))
+		} else {
+			o.AllowNonLoopbackAPIHost = b
+			o.Sources["allow_non_loopback_api_host"] = "env"
+		}
 	}
 	if v, ok := get("API_PORT"); ok {
 		p, err := parsePort(v)
@@ -457,6 +482,10 @@ func (o *Options) loadOverrides(ov Overrides) {
 		o.APIHost = *ov.APIHost
 		o.Sources["api_host"] = "flag"
 	}
+	if ov.AllowNonLoopbackAPIHost != nil {
+		o.AllowNonLoopbackAPIHost = *ov.AllowNonLoopbackAPIHost
+		o.Sources["allow_non_loopback_api_host"] = "flag"
+	}
 	if ov.APIPort != nil {
 		o.APIPort = *ov.APIPort
 		o.Sources["api_port"] = "flag"
@@ -487,7 +516,7 @@ func (o *Options) Source(field string) string {
 // for `goshisen config show`. The token is never rendered (not even its
 // source) to avoid leaking secret provenance in logs.
 func (o *Options) SourceSummary() string {
-	fields := []string{"interface", "policy_file", "log_level", "log_json", "api_host", "api_port", "metrics_port", "policy_dir", "queue_maxlen", "queue_num", "hook_scope"}
+	fields := []string{"interface", "policy_file", "log_level", "log_json", "api_host", "allow_non_loopback_api_host", "api_port", "metrics_port", "policy_dir", "queue_maxlen", "queue_num", "hook_scope"}
 	parts := make([]string, 0, len(fields))
 	for _, f := range fields {
 		parts = append(parts, f+"="+o.Source(f))
@@ -518,6 +547,11 @@ func (o *Options) validate() error {
 	}
 	if o.APIHost != "" && strings.ContainsAny(o.APIHost, " \t\n") {
 		errs = append(errs, fmt.Errorf("api_host %q must not contain whitespace", o.APIHost))
+	}
+	if !o.AllowNonLoopbackAPIHost && !isLoopbackAPIHost(o.APIHost) {
+		errs = append(errs, fmt.Errorf(
+			"api_host %q is not loopback; the API is bound to the network unless you opt in with allow_non_loopback_api_host: true (config file), %sALLOW_NON_LOOPBACK_API_HOST=1 (environment), or --allow-non-loopback-api-host (flag)",
+			o.APIHost, EnvPrefix))
 	}
 	if o.PolicyDir == "" {
 		errs = append(errs, fmt.Errorf("policy_dir is empty (set it with %sPOLICY_DIR, or in the config file)", EnvPrefix))
@@ -584,6 +618,29 @@ func isValidLogLevel(s string) bool {
 		return true
 	}
 	return false
+}
+
+// isLoopbackAPIHost reports whether host is a loopback address or the
+// loopback hostname. Accepted: empty (means the default 127.0.0.1),
+// any 127.0.0.0/8 address, ::1, and "localhost" (case-insensitive).
+// Anything else (another IP literal or a hostname) is not loopback; no
+// DNS resolution is performed.
+func isLoopbackAPIHost(host string) bool {
+	if host == "" {
+		return true
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	addr, err := netip.ParseAddr(host)
+	if err != nil {
+		// Not an IP literal. A hostname is not loopback (no DNS).
+		return false
+	}
+	if addr.Is4() {
+		return addr.As4()[0] == 127
+	}
+	return addr.IsLoopback()
 }
 
 // Check performs read-only validation against the host: the policy file
