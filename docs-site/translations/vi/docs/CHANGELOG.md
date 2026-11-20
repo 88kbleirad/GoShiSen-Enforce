@@ -47,3 +47,21 @@ Trạng thái và lịch sử đáng chú ý của GoShiSen-Enforce. Chi tiết 
   tắt (`enabled=0`). Không có thay đổi hành vi mã; mức độ nghiêm trọng
   vẫn là Low (mặc định) / Medium (`api_host` không-loopback).
   Bản vá mã để tôn trọng `0` tường minh dự kiến ở v0.2.7.
+
+## Chưa phát hành (sau v0.2.6)
+
+- **Giá trị `0` tường minh tắt listener HTTP (khắc phục lỗ hổng tài
+  liệu v0.2.6):** `api_port: 0` / `metrics_port: 0` trong tệp cấu hình
+  và `--api-port 0` / `--metrics-port 0` trên dòng lệnh giờ tắt
+  listener API / metrics thay vì bị coi là "chưa đặt" và quay về
+  8080/9090. Lớp tệp theo dõi sự hiện diện của khóa
+  (`File.UnmarshalYAML`); lớp cờ dùng `flag.Value` ghi nhận sự hiện
+  diện (`portFlag`, cũng từ chối giá trị ngoài phạm vi tại thời điểm
+  phân tích). Cổng chưa đặt vẫn giải quyết về mặc định loopback tích
+  hợp. Cấu hình OpenWrt được phân phối (`option api_port '0'`) giờ tắt
+  cả hai listener như mong muốn; `GOSHISEN_API_PORT=0` /
+  `GOSHISEN_METRICS_PORT=0` hoạt động như trước. Kiểm thử:
+  `TestLoadFileZeroPortsDisable`, `TestLoadFilePortPresence`,
+  `TestLoadFlagZeroPortDisables`, `TestLoadFilePortRejectsNonScalar`,
+  `TestParsePortZeroFlags`, `TestParsePortInvalidValues`. Không thay
+  đổi mức độ nghiêm trọng bảo mật (mặc định loopback-only).

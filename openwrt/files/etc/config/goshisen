@@ -24,13 +24,11 @@ config goshisen 'main'
 	option interface 'br-lan'
 	# Policy file (YAML; see docs/user-guide.md for the schema).
 	option policy_file '/etc/goshisen/policy.yaml'
-	# Optional management API port. NOTE: in v0.2.6 the daemon ignores a
-	# file/flag value of 0 (falls back to 8080, loopback). To truly
-	# disable, set GOSHISEN_API_PORT=0 in the environment.
+	# Optional management API port. An explicit 0 (this file's default)
+	# disables the API listener; 1..65535 enables it on loopback.
 	option api_port '0'
-	# Optional Prometheus metrics port. NOTE: same caveat as api_port —
-	# 0 in this file is ignored (falls back to 9090); disable via
-	# GOSHISEN_METRICS_PORT=0.
+	# Optional Prometheus metrics port. An explicit 0 (this file's
+	# default) disables the metrics listener.
 	option metrics_port '0'
 	# Kernel NFQUEUE queue length.
 	option queue_maxlen '1024'

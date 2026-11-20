@@ -90,5 +90,5 @@ is untouched. Regression tests: `TestCTFlagsTolerable`,
 
 - Serial console is the only VM channel (dropbear lacks host keys in the official image); the e2e only depends on `python3`/`curl`/`ip` on the host.
 - The test asserts verdict-count **deltas** (baseline after policy reload), so pre-existing traffic does not break identity checks.
-- `api_port: 0` / `metrics_port: 0` do not disable listeners (file loader skips zeros); defaults 8080/9090 remain. Not an enforcement defect; documented.
+- Explicit `api_port: 0` / `metrics_port: 0` in the daemon config file disable the listeners (fixed after v0.2.6; v0.2.6 and earlier ignored file/flag zeros and fell back to 8080/9090).
 - PR/submission: branch `phase10-openwrt`, PR #3 open (see `docs/release/openwrt-ci-validation.md`); nothing merged or published here.
