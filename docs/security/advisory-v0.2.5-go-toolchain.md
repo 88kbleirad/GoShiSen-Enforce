@@ -253,7 +253,7 @@ for the 11 S-005 IDs.
 | GO ID | package/symbol | call path from our code | precondition (attacker must control) | classification |
 | --- | --- | --- | --- | --- |
 | GO-2026-6859 | net/http (MaxBytesReader race) | `api.Server.Serve` → `http.Server.Serve` (server.go:143); `app.Daemon.serveMetrics` → `http.Server.Serve` (app.go:541) | an authenticated client (valid bearer token) sends an HTTP/1 POST with a body that exceeds `MaxBodyBytes` (16 KiB), so the handler's `readBody` (server.go:267, `http.MaxBytesReader`) races its own response-header write; `requireAuth` runs before `readBody`, so unauthenticated requests never read bodies; the metrics handler never reads bodies | **local user with API token** (loopback listener) / **remote with non-default `api_host`** |
-| GO-2026-6613 | net/http (CONNECT desync) | API server: `http.Server.Serve` (server.go:143); metrics server: `http.Server.Serve` (app.go:541) | a client sends an HTTP/1 CONNECT request; the server handler must reply 2xx to CONNECT. Verified: the API server answers 405/404 to CONNECT (method-specific mux — `TestConnectMethodNotAllowed`); the standalone metrics server's methodless `/metrics` handler answers **200** to a path-form CONNECT (the GO-2026-6613 precondition holds there — `TestMetricsServerConnectToMetricsPath`). The smuggling impact needs an intermediate proxy in front of the listener; the metrics listener is loopback-only and disabled by default, so no proxy sits in front | **not practically exploitable** (metrics listener loopback-only + disabled by default; no proxy in front; API never answers 2xx to CONNECT) |
+| GO-2026-6613 | net/http (CONNECT desync) | API server: `http.Server.Serve` (server.go:143); metrics server: `http.Server.Serve` (app.go:541) | a client sends an HTTP/1 CONNECT request; the server handler must reply 2xx to CONNECT. Verified: the API server answers 405/404 to CONNECT (method-specific mux — `TestConnectMethodNotAllowed`); the standalone metrics server's methodless `/metrics` handler answers **200** to a path-form CONNECT (the GO-2026-6613 precondition holds there — `TestMetricsServerConnectToMetricsPath`). The smuggling impact needs an intermediate proxy in front of the listener; the metrics listener is loopback-only (but **enabled** whenever the daemon runs — see "Measured listener defaults"), so no proxy sits in front | **not practically exploitable** (metrics listener loopback-only + disabled by default; no proxy in front; API never answers 2xx to CONNECT) |
 | GO-2026-6617 | net/http/internal/http2 (HPACK race) | `http.Server.Serve` → h2 only after TLS negotiation | TLS-negotiated h2 — no `tls.Config`, plaintext listener | **not reachable (no TLS)** |
 | GO-2026-6612 | net/http/internal/http2 (double flow refund) | `http.Server.Serve` h2 path | same | **not reachable (no TLS)** |
 | GO-2026-6611 | net/http/internal/http2 (SETTINGS CPU) | `http.Server.Serve` h2 path | same | **not reachable (no TLS)** |
@@ -276,24 +276,28 @@ Notes:
   `textproto.ReadMIMEHeader` on every request; the go1.27.1 server does
   not) — so the CLI archives are affected by the local-user class for
   6608 too.
-- Default configuration: both ports disabled (`0`) on OpenWrt
-  (`openwrt/files/etc/config/goshisen`); when enabled they bind
-  loopback only. A root user can enable them; a non-root local user can
-  connect to them if root enabled them.
+- Default configuration (corrected 2026-11-20; measured, see
+  "Measured listener defaults" below): the shipped OpenWrt config stores
+  `api_port '0'` / `metrics_port '0'`, but on every release up to and
+  including v0.2.6 the daemon ignores that file `0`, so both listeners
+  bind loopback as soon as the service is enabled. A non-root local user
+  can connect to them; mutations still require the bearer token.
 
 ## Plain verdict on exploitability
 
 **No remote exploit exists with the default configuration.** The
 daemon's only network surface is two plaintext HTTP servers on
-127.0.0.1 that are disabled by default on the OpenWrt package; it has
-no TLS and no outbound connections, so the h2/TLS/x509/client-side
-classes are unreachable by construction. The nearest-to-reachable
+127.0.0.1 that are **enabled whenever the daemon runs** — including on
+the OpenWrt package with its shipped config, whose `api_port '0'` /
+`metrics_port '0'` are ignored by the daemon on every release up to
+v0.2.6; it has no TLS and no outbound connections, so the
+h2/TLS/x509/client-side classes are unreachable by construction. The nearest-to-reachable
 class is **local users on the loopback HTTP listeners**: 6859 needs a
 valid API bearer token plus an oversized POST body (mutations are
 token-gated; unauthenticated GET endpoints never read bodies), and
 6613's precondition exists on the metrics server (methodless `/metrics`
 answers 200 to CONNECT) but requires a proxy in front for impact, which
-the loopback-only, disabled-by-default listener does not have. On the
+the loopback-only listener does not have. On the
 CLI archives (go1.25.14) 6608 is reachable on the unauthenticated
 HTTP/1 server header-parse path when a listener is enabled. A
 **non-default `api_host` config makes the API listener remotely
@@ -307,8 +311,11 @@ configuration** (code lines above show the loopback binds and the
 absence of TLS/client code) **but the loopback property is not closed
 by construction**: `api_host` is user-configurable to a non-loopback
 address and no config validation prevents it. The advisory therefore
-recommends leaving both ports disabled and treating a non-loopback
-`api_host` as a misconfiguration.
+recommends disabling the listeners explicitly
+(`GOSHISEN_API_PORT=0` / `GOSHISEN_METRICS_PORT=0`, or `api_port: 0` /
+`--api-port 0` after v0.2.6 — the UCI/YAML/flag `0` is ignored on
+≤ v0.2.6) and treating a non-loopback `api_host` as a
+misconfiguration.
 
 ## Fix version
 
@@ -325,8 +332,12 @@ recommends leaving both ports disabled and treating a non-loopback
 
 ## Workarounds (until v0.2.6)
 
-1. Keep `api_port` and `metrics_port` at **0 (disabled)** — the OpenWrt
-   default — or, if needed, leave `api_host` at `127.0.0.1`.
+1. On releases up to v0.2.6 the UCI option / YAML key / flag `0` does
+   **not** disable the listeners: set `GOSHISEN_API_PORT=0` and
+   `GOSHISEN_METRICS_PORT=0` in the service environment, or leave the
+   service disabled (`goshisen.main.enabled=0`), and always keep
+   `api_host` at `127.0.0.1`. After v0.2.6 the file/flag `0` disables
+   too (the shipped UCI config already sets both to `'0'`).
 2. Do not set `api_host` to a non-loopback address. The GET endpoints
    (`/healthz`, `/readyz`, `/metrics`) are **unauthenticated**; if the
    API must be enabled, keep it on loopback and reach it via an SSH
