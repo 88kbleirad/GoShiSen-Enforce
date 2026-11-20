@@ -113,8 +113,8 @@ enable it and does not touch the firewall.
 | `log_level` | `info` | `debug`, `info`, `warn`, `error` |
 | `interface` | `br-lan` | kernel netdev used for host validation (a fw4 zone name like `lan` is rejected) |
 | `policy_file` | `/etc/goshisen/policy.yaml` | policy YAML |
-| `api_port` | `0`* | REST API (loopback only). *Caution: in v0.2.6 a file/flag value of `0` is ignored and falls back to 8080. To disable, keep the service off (`enabled=0`) or set `GOSHISEN_API_PORT=0` in the environment. |
-| `metrics_port` | `0`* | Prometheus metrics (loopback only). *Same caveat: file/flag `0` falls back to 9090. Disable via `GOSHISEN_METRICS_PORT=0` in the environment. |
+| `api_port` | `0` | REST API (loopback only). An explicit `0` — this option, `GOSHISEN_API_PORT=0`, or `--api-port 0` — disables the API listener; an unset value keeps the built-in default 8080. |
+| `metrics_port` | `0` | Prometheus metrics (loopback only). An explicit `0` — this option, `GOSHISEN_METRICS_PORT=0`, or `--metrics-port 0` — disables the metrics listener; unset keeps the built-in default 9090. |
 | `queue_maxlen` | `1024` | kernel queue length |
 | `offload_policy` | `warn` | flow-offload response: `warn` (log WARN + gauge), `refuse` (startup fails before hook install when offloading is detected), `readiness` (enforce but never become ready while offloading is active), `enforce` (actively disable offloading and verify; fail closed if disable fails or state is unknown) |
 | `allow_bypass` | `0` | diagnostic/development escape hatch, **only** valid with `offload_policy=enforce`: `1` downgrades enforce to warn (loud warning). Never default, never silent |

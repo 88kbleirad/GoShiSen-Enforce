@@ -21,7 +21,9 @@
   but in v0.2.6 the daemon ignores a file/flag value of 0 and falls
   back to the defaults; the only way to disable the listeners is
   `GOSHISEN_API_PORT=0` / `GOSHISEN_METRICS_PORT=0` (or leaving the
-  service disabled via `enabled=0`). Elevated to Medium if the API
+  service disabled via `enabled=0`). (Fixed after v0.2.6: an explicit
+  0 in the config file, `--api-port 0`/`--metrics-port 0`, and the env
+  variables all disable the listener — see `docs/CHANGELOG.md`.) Elevated to Medium if the API
   listener is misconfigured to a non-loopback
   `api_host` (see Workarounds). No outbound connections and no TLS
   exist, so the TLS/x509/client-side vulnerability classes are not
@@ -112,7 +114,10 @@ Bind configurability (`internal/config/config.go`):
   v0.2.6 the file and flag layers treat `0` as "not set" and fall back
   to the defaults (config.go:260, 268; cli.go:191, 194) — only the
   environment layer (`GOSHISEN_API_PORT=0` / `GOSHISEN_METRICS_PORT=0`)
-  disables the listeners.
+  disables the listeners. Fixed after v0.2.6: the file layer tracks key
+  presence (`File.UnmarshalYAML`) and the flag layer uses a
+  presence-recording `flag.Value`, so file/flag `0` disables like the
+  environment layer.
 - No TLS listener, no crypto/tls import, no http.Client, no net.Dial
   in shipped code (`cmd/`, `internal/`): `grep -rn --include='*.go'
   -E 'crypto/tls|http2|h2c|multipart|x509|http\.Client|http\.Get'

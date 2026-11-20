@@ -128,3 +128,33 @@ func TestPrintVersion(t *testing.T) {
 		t.Errorf("version output %q does not match %q", buf.String(), Program+" "+Version)
 	}
 }
+
+// TestParsePortZeroFlags: an explicit --api-port 0 / --metrics-port 0
+// must be recorded as provided (so config.Load can disable the listener)
+// rather than dropped as "unset".
+func TestParsePortZeroFlags(t *testing.T) {
+	o, err := Parse([]string{"--api-port", "0", "--metrics-port", "0"}, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if o.Overrides.APIPort == nil || *o.Overrides.APIPort != 0 {
+		t.Errorf("Overrides.APIPort = %v, want 0", o.Overrides.APIPort)
+	}
+	if o.Overrides.MetricsPort == nil || *o.Overrides.MetricsPort != 0 {
+		t.Errorf("Overrides.MetricsPort = %v, want 0", o.Overrides.MetricsPort)
+	}
+}
+
+// TestParsePortInvalidValues: out-of-range / non-numeric port flags fail
+// at parse time.
+func TestParsePortInvalidValues(t *testing.T) {
+	for _, bad := range []string{"-1", "65536", "abc", "8080x"} {
+		var buf bytes.Buffer
+		if _, err := Parse([]string{"--api-port", bad}, &buf); err == nil {
+			t.Errorf("Parse --api-port %q succeeded, want error", bad)
+		}
+		if _, err := Parse([]string{"--metrics-port", bad}, &buf); err == nil {
+			t.Errorf("Parse --metrics-port %q succeeded, want error", bad)
+		}
+	}
+}

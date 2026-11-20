@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strconv"
 
 	"github.com/88kbleirad/GoShiSen-Enforce/internal/config"
 )
@@ -95,6 +96,26 @@ EXAMPLES:
     --protocol tcp --state new --src 10.0.0.1 --dst 10.0.0.2 --dest-port 22
 `
 
+// portFlag is an int flag that also records whether it was provided, so
+// an explicit --api-port 0 / --metrics-port 0 disables the listener
+// instead of being indistinguishable from "flag not given".
+type portFlag struct {
+	set bool
+	v   int
+}
+
+func (p *portFlag) String() string { return strconv.Itoa(p.v) }
+
+func (p *portFlag) Set(s string) error {
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 0 || n > 65535 {
+		return fmt.Errorf("invalid port %q (0..65535)", s)
+	}
+	p.v = n
+	p.set = true
+	return nil
+}
+
 // Options is the parsed CLI invocation.
 type Options struct {
 	ConfigFile string
@@ -135,7 +156,8 @@ func Parse(args []string, stderr io.Writer) (*Options, error) {
 
 	var cfgPath, iface, policyFile, logLevel string
 	var apiHost, policyDir string
-	var apiPort, metricsPort, queueMaxlen int
+	var apiPort, metricsPort portFlag
+	var queueMaxlen int
 	var logJSON bool
 	var simProto, simSrc, simDst, simSport, simDport string
 	fs.StringVar(&cfgPath, "config", "", "YAML configuration file")
@@ -145,8 +167,8 @@ func Parse(args []string, stderr io.Writer) (*Options, error) {
 	fs.StringVar(&logLevel, "log-level", "", "log level: debug, info, warn, error")
 	fs.BoolVar(&logJSON, "log-json", false, "emit structured JSON logs")
 	fs.StringVar(&apiHost, "api-host", "", "API bind host (default 127.0.0.1)")
-	fs.IntVar(&apiPort, "api-port", 0, "API port; 0 disables (default 8080)")
-	fs.IntVar(&metricsPort, "metrics-port", 0, "metrics port; 0 disables (default 9090)")
+	fs.Var(&apiPort, "api-port", "API port; 0 disables (default 8080)")
+	fs.Var(&metricsPort, "metrics-port", "metrics port; 0 disables (default 9090)")
 	fs.StringVar(&policyDir, "policy-dir", "", "durable policy store directory")
 	fs.IntVar(&queueMaxlen, "queue-maxlen", 0, "kernel NFQUEUE queue length in packets (default 1024)")
 	fs.StringVar(&simProto, "protocol", "", "simulated L4 protocol: tcp, udp, any (policy simulate)")
@@ -188,11 +210,11 @@ func Parse(args []string, stderr io.Writer) (*Options, error) {
 	if apiHost != "" {
 		opts.Overrides.APIHost = &apiHost
 	}
-	if apiPort != 0 {
-		opts.Overrides.APIPort = &apiPort
+	if apiPort.set {
+		opts.Overrides.APIPort = &apiPort.v
 	}
-	if metricsPort != 0 {
-		opts.Overrides.MetricsPort = &metricsPort
+	if metricsPort.set {
+		opts.Overrides.MetricsPort = &metricsPort.v
 	}
 	if policyDir != "" {
 		opts.Overrides.PolicyDir = &policyDir

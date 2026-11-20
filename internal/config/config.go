@@ -64,10 +64,9 @@ type File struct {
 	// APIHost is the API bind host. Default 127.0.0.1 (localhost only).
 	APIHost string `yaml:"api_host"`
 
-	// APIPort is the API TCP port; default 8080 (loopback). A value of
-	// 0 disables the API only when supplied via GOSHISEN_API_PORT; the
-	// file and flag layers treat 0 as "not set" and fall back to the
-	// default (see loadFile/loadOverrides).
+	// APIPort is the API TCP port; default 8080 (loopback) when no
+	// layer sets it. An explicit 0 — file, GOSHISEN_API_PORT, or
+	// --api-port — disables the API listener (see loadFile).
 	APIPort int `yaml:"api_port"`
 
 	// APIToken is the bearer token required for administrative
@@ -77,9 +76,17 @@ type File struct {
 	APIToken string `yaml:"api_token"`
 
 	// MetricsPort is the Prometheus metrics TCP port; default 9090
-	// (loopback). A value of 0 disables only via GOSHISEN_METRICS_PORT;
-	// file/flag layers treat 0 as "not set" (see loadFile/loadOverrides).
+	// (loopback) when no layer sets it. An explicit 0 — file,
+	// GOSHISEN_METRICS_PORT, or --metrics-port — disables the metrics
+	// listener (see loadFile).
 	MetricsPort int `yaml:"metrics_port"`
+
+	// apiPortSet/metricsPortSet record whether the config file explicitly
+	// set api_port/metrics_port. A resolved 0 disables the listener, so
+	// presence must be tracked (int zero cannot distinguish "0" from
+	// "absent"); set by UnmarshalYAML.
+	apiPortSet     bool
+	metricsPortSet bool
 
 	// PolicyDir is the durable policy store directory (versioned policy
 	// files + active pointer). Default "policy_store".
@@ -176,6 +183,41 @@ type Options struct {
 	Sources map[string]string
 }
 
+// UnmarshalYAML decodes the file schema and records which port keys were
+// explicitly present, so the load layer can honor an explicit 0
+// (disable). Unknown keys, and the known key spelled in a non-mapping
+// form, are rejected.
+func (f *File) UnmarshalYAML(node *yaml.Node) error {
+	type rawFile File
+	if node.Kind != yaml.MappingNode {
+		return fmt.Errorf("config file: expected a mapping of settings, got %s", node.ShortTag())
+	}
+	var raw rawFile
+	if err := node.Decode(&raw); err != nil {
+		return err
+	}
+	*f = File(raw)
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		key, val := node.Content[i], node.Content[i+1]
+		if key.Kind != yaml.ScalarNode {
+			return fmt.Errorf("config file: setting name must be a scalar, got %s", key.ShortTag())
+		}
+		switch key.Value {
+		case "api_port":
+			f.apiPortSet = true
+			if val.Kind != yaml.ScalarNode {
+				return fmt.Errorf("config file: api_port must be an integer, got %s", val.ShortTag())
+			}
+		case "metrics_port":
+			f.metricsPortSet = true
+			if val.Kind != yaml.ScalarNode {
+				return fmt.Errorf("config file: metrics_port must be an integer, got %s", val.ShortTag())
+			}
+		}
+	}
+	return nil
+}
+
 // Load merges the four configuration layers. configFile may be empty to
 // skip the file layer. env reads environment variables (normally
 // os.LookupEnv). It returns an error describing every invalid value found.
@@ -262,7 +304,7 @@ func (o *Options) loadFile(path string) error {
 		o.APIHost = f.APIHost
 		o.Sources["api_host"] = "file"
 	}
-	if f.APIPort != 0 {
+	if f.apiPortSet {
 		o.APIPort = f.APIPort
 		o.Sources["api_port"] = "file"
 	}
@@ -270,7 +312,7 @@ func (o *Options) loadFile(path string) error {
 		o.APIToken = f.APIToken
 		o.Sources["api_token"] = "file"
 	}
-	if f.MetricsPort != 0 {
+	if f.metricsPortSet {
 		o.MetricsPort = f.MetricsPort
 		o.Sources["metrics_port"] = "file"
 	}

@@ -85,3 +85,31 @@ Status and notable history for GoShiSen-Enforce. Per-release detail lives in `do
   leaving the service disabled (`enabled=0`). No code behavior changed;
   severity remains Low (default) / Medium (non-loopback `api_host`).
   A code fix to honor explicit `0` is planned for v0.2.7.
+
+## Unreleased (after v0.2.6)
+
+- **Explicit `0` disables the HTTP listeners (fixes the v0.2.6
+  docs-gap):** `api_port: 0` / `metrics_port: 0` in the config file and
+  `--api-port 0` / `--metrics-port 0` on the command line now disable
+  the API / metrics listener instead of being treated as "not set" and
+  falling back to 8080/9090. The file layer tracks key presence
+  (`File.UnmarshalYAML`); the flag layer uses a presence-recording
+  `flag.Value` (`portFlag`, which also rejects out-of-range values at
+  parse time). An unset port still resolves to the built-in loopback
+  default. The shipped OpenWrt config (`option api_port '0'`) now
+  disables both listeners as intended; `GOSHISEN_API_PORT=0` /
+  `GOSHISEN_METRICS_PORT=0` behave as before. Tests:
+  `TestLoadFileZeroPortsDisable`, `TestLoadFilePortPresence`,
+  `TestLoadFlagZeroPortDisables`, `TestLoadFilePortRejectsNonScalar`,
+  `TestParsePortZeroFlags`, `TestParsePortInvalidValues`. No security
+  severity change (loopback-only defaults).
+- **Lab fixture enables the metrics listener explicitly:** the QEMU lab
+  image (`scripts/openwrt-image-prep.sh`) is the only consumer that needs
+  a listener — it reads verdict counters from `127.0.0.1:9090/metrics` —
+  so it now writes `metrics_port: $LAB_METRICS_PORT` (9090) instead of
+  relying on `0` falling back to the default; `api_port` stays `0`
+  (policy is applied via SIGHUP). Both e2e scripts read
+  `${LAB_METRICS_PORT:-9090}` and fail fast with
+  `ENV: metrics listener unreachable` when a snapshot cannot fetch
+  metrics, instead of the misleading "no daemon DROP verdicts recorded".
+  Guard: `TestProvisionLabMetricsPort`.

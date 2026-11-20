@@ -134,3 +134,15 @@ func TestProvisionImageChecksum(t *testing.T) {
 		t.Errorf("PINNED_IMAGE = %q, want %q (official manifest)", got, official)
 	}
 }
+
+// TestProvisionLabMetricsPort asserts the lab fixture pins the metrics
+// listener to the port the e2e scripts read verdicts from, so the
+// harness never silently loses its evidence channel when the daemon's
+// file-layer `metrics_port: 0` now disables the listener (regression:
+// old 0 = fallback to 9090; after the port-zero fix, 0 = disabled).
+func TestProvisionLabMetricsPort(t *testing.T) {
+	cfg := provisionConfig(t)
+	if cfg["LAB_METRICS_PORT"] != "9090" {
+		t.Errorf("LAB_METRICS_PORT = %q, want 9090 (e2e verdict-evidence channel)", cfg["LAB_METRICS_PORT"])
+	}
+}
