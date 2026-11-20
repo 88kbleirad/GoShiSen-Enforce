@@ -517,7 +517,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 // serveMetrics exposes the Prometheus metrics on its own port.
 func (d *Daemon) serveMetrics(ctx context.Context, port int) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/metrics", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /metrics", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 		d.metrics.WritePrometheus(w)
 	})
