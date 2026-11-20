@@ -5,12 +5,20 @@
 #   uci commit goshisen
 #   /etc/init.d/goshisen enable
 #   /etc/init.d/goshisen start
+#
+# Listener ports: api_port / metrics_port are ALWAYS rendered into the
+# daemon config as explicit numbers. An absent or empty option is
+# treated as 0 = listener disabled (the init script logs a warning);
+# the packaged defaults below are 0, so "stick with the packaged file"
+# means both listeners are off. When you enable the service, decide
+# explicitly whether you want the loopback management listeners; if you
+# do, set a real port (e.g. api_port '8080', metrics_port '9090').
 
 config goshisen 'main'
 	# Master switch. When 0 the daemon is not started by procd.
 	option enabled '0'
 	# NFQUEUE queue number this daemon binds. Must not collide with
-	# any other NFQUEUE consumer on the device (range 0-65535).
+	# any other NFQUEUE consumer on the device (range 0-65534).
 	option queue_num '100'
 	# Hook scope: openwrt queues only traffic firewall4 has accepted on
 	# the forward path (priority 1, policy accept, no NAT chains).
@@ -24,6 +32,15 @@ config goshisen 'main'
 	option interface 'br-lan'
 	# Policy file (YAML; see docs/user-guide.md for the schema).
 	option policy_file '/etc/goshisen/policy.yaml'
+	# Management API bind host. Loopback only: 127.0.0.1, 127.x, ::1
+	# or localhost. The daemon REFUSES to start with a non-loopback
+	# api_host unless you explicitly opt in with
+	# allow_non_loopback_api_host '1' (risk: the API becomes reachable
+	# on the network; mutations still need the bearer token, but the
+	# GET endpoints are unauthenticated).
+	option api_host '127.0.0.1'
+	# Opt-in to allow a non-loopback api_host (see above). Keep unset.
+	# option allow_non_loopback_api_host '0'
 	# Optional management API port. An explicit 0 (this file's default)
 	# disables the API listener; 1..65535 enables it on loopback.
 	# NOTE (v0.2.5/v0.2.6 binaries): the daemon ignores a file/flag 0 —

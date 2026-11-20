@@ -6,7 +6,16 @@
 # /etc/init.d/goshisen enable` then start.
 #
 # The hook is installed only after the config validates; a failed
-# start leaves the firewall untouched (fail-closed by absence).
+# start leaves the firewall untouched (fail-closed by absence). When
+# the main service is enabled, the boot guard (goshisen-boot, START=12)
+# has already installed the fail-closed forward chain, so a start
+# failure means "forwarding stays blocked", never "forwarding opens".
+#
+# Ports: api_port / metrics_port are ALWAYS rendered explicitly. An
+# absent or empty UCI option is treated as 0 (= listener disabled) with
+# a logread warning; a non-numeric or out-of-range value aborts the
+# start with a message naming the option. Nothing is ever silently
+# started on a listener the config asked to disable.
 
 USE_PROCD=1
 
@@ -17,6 +26,51 @@ GOSHISEN_BIN=/usr/sbin/goshisen
 UCI_CONFIG_DIR=""
 CONFIG_PATH=/var/run/goshisen/config.yaml
 POLICY_PATH=""
+API_PORT=""
+METRICS_PORT=""
+
+# warn/error log to both syslog (logread) and the init stderr, so an
+# operator sees the same message interactively and after a boot.
+uci_warn() {
+	logger -t goshisen -p daemon.warn "$1"
+	echo "goshisen: $1" >&2
+}
+uci_err() {
+	logger -t goshisen -p daemon.err "$1"
+	echo "goshisen: $1" >&2
+}
+
+# normalize_port <option-name> <value>
+#
+# Prints the port to use on success. An absent/empty option yields 0
+# (listener disabled) plus a warning; a malformed value returns 1 after
+# logging which option is wrong. This is the ONLY place a port value is
+# interpreted, so validate_uci and render_config can never disagree.
+normalize_port() {
+	local opt="$1" val="$2" bare
+
+	if [ -z "$val" ]; then
+		uci_warn "$opt is not set; treating it as 0 (listener disabled)"
+		echo 0
+		return 0
+	fi
+
+	case "$val" in
+		*[!0-9]*)
+			uci_err "$opt '$val' is not a port (0-65535); refusing to start"
+			return 1
+			;;
+	esac
+
+	# Strip leading zeros so the arithmetic below is decimal, not octal.
+	bare=$(printf '%s' "$val" | sed 's/^0*//')
+	[ -n "$bare" ] || bare=0
+	if [ "$bare" -gt 65535 ]; then
+		uci_err "$opt '$val' is out of range 0-65535; refusing to start"
+		return 1
+	fi
+	echo "$bare"
+}
 
 # service_enabled returns 0 when UCI says the service is enabled
 # (goshisen.main.enabled=1). start/reload must refuse otherwise: the
@@ -32,54 +86,47 @@ service_enabled() {
 }
 
 validate_uci() {
-	local queue_num scope log_level iface policy api metrics qlen
+	local queue_num scope log_level policy
 
 	config_get queue_num main queue_num
 	[ -n "$queue_num" ] || {
-		echo "goshisen: queue_num is required" >&2
+		uci_err "queue_num is required"
 		return 1
 	}
-	[ "$queue_num" -ge 0 ] 2>/dev/null && [ "$queue_num" -le 65535 ] 2>/dev/null || {
-		echo "goshisen: queue_num $queue_num out of range 0-65535" >&2
+	[ "$queue_num" -ge 0 ] 2>/dev/null && [ "$queue_num" -le 65534 ] 2>/dev/null || {
+		uci_err "queue_num $queue_num out of range 0-65534"
 		return 1
 	}
 
 	config_get scope main hook_scope
 	case "$scope" in
 		""|openwrt|forward-all) ;;
-		*) echo "goshisen: unsupported hook_scope '$scope'" >&2; return 1 ;;
+		*) uci_err "unsupported hook_scope '$scope'"; return 1 ;;
 	esac
 
 	config_get log_level main log_level
 	case "$log_level" in
 		debug|info|warn|error) ;;
-		*) echo "goshisen: unsupported log_level '$log_level'" >&2; return 1 ;;
+		*) uci_err "unsupported log_level '$log_level'"; return 1 ;;
 	esac
 
 	config_get offload main offload_policy
 	case "$offload" in
 		""|warn|refuse|readiness|enforce) ;;
-		*) echo "goshisen: unsupported offload_policy '$offload'" >&2; return 1 ;;
+		*) uci_err "unsupported offload_policy '$offload'"; return 1 ;;
 	esac
 
 	config_get policy main policy_file
 	POLICY_PATH="$policy"
 	[ -n "$policy" ] && [ -f "$policy" ] || {
-		echo "goshisen: policy_file '$policy' does not exist" >&2
+		uci_err "policy_file '$policy' does not exist"
 		return 1
 	}
 
-	config_get api main api_port
-	[ -z "$api" ] || [ "$api" -ge 0 ] 2>/dev/null && [ "$api" -le 65535 ] 2>/dev/null || {
-		echo "goshisen: api_port '$api' out of range" >&2
-		return 1
-	}
-
-	config_get metrics main metrics_port
-	[ -z "$metrics" ] || [ "$metrics" -ge 0 ] 2>/dev/null && [ "$metrics" -le 65535 ] 2>/dev/null || {
-		echo "goshisen: metrics_port '$metrics' out of range" >&2
-		return 1
-	}
+	# Normalize both listener ports once, up front: a bad value must
+	# block the start instead of reaching the daemon's YAML.
+	API_PORT=$(normalize_port "api_port" "$(config_get main api_port)") || return 1
+	METRICS_PORT=$(normalize_port "metrics_port" "$(config_get main metrics_port)") || return 1
 
 	return 0
 }
@@ -87,13 +134,10 @@ validate_uci() {
 render_config() {
 	# Render the YAML the daemon reads from UCI values. Values are
 	# validated above; no shell metacharacters reach the daemon.
-	#
-	# api_port/metrics_port are always rendered verbatim. With a UCI
-	# value of '0' this produces an explicit `api_port: 0` — which the
-	# daemon honours only after v0.2.6 (releases ≤ v0.2.6 ignored a
-	# file 0 and fell back to 8080/9090 loopback). An *absent* UCI
-	# option renders an empty value that validate_uci rejects
-	# (`api_port '' out of range`), so the daemon is not started.
+	# api_port/metrics_port come from validate_uci (normalized, never
+	# empty), so the daemon always receives explicit integers: an
+	# explicit 0 disables the listener, an explicit port enables it on
+	# loopback.
 	mkdir -p /var/run/goshisen
 	{
 		echo "policy_file: $POLICY_PATH"
@@ -102,14 +146,20 @@ render_config() {
 		echo "hook_scope: $(config_get main hook_scope)"
 		echo "log_level: $(config_get main log_level)"
 		echo "offload_policy: $(config_get main offload_policy)"
-		# allow_bypass is a YAML boolean; UCI stores 0/1.
+		# allow_bypass / allow_non_loopback_api_host are YAML booleans;
+		# UCI stores 0/1.
 		case "$(config_get main allow_bypass)" in
 			1|on|true) echo "allow_bypass: true" ;;
 			*) echo "allow_bypass: false" ;;
 		esac
+		case "$(config_get main allow_non_loopback_api_host)" in
+			1|on|true) echo "allow_non_loopback_api_host: true" ;;
+			*) echo "allow_non_loopback_api_host: false" ;;
+		esac
 		echo "interface: $(config_get main interface)"
-		echo "api_port: $(config_get main api_port)"
-		echo "metrics_port: $(config_get main metrics_port)"
+		echo "api_host: $(config_get main api_host)"
+		echo "api_port: $API_PORT"
+		echo "metrics_port: $METRICS_PORT"
 	} > "$CONFIG_PATH"
 }
 
