@@ -66,6 +66,8 @@ FLAGS:
       --policy-file <path> Path to the YAML policy file
       --log-level <lvl>    debug, info, warn, error
       --log-json           Emit structured JSON logs
+      --allow-non-loopback-api-host
+                           Allow binding the API to a non-loopback host
       --queue-maxlen <n>  Kernel NFQUEUE queue length in packets (default 1024)
       --protocol <proto>   tcp, udp, or any (policy simulate; default any)
       --src <ip>           Simulated source IP (policy simulate; required)
@@ -83,6 +85,8 @@ ENVIRONMENT (prefix GOSHISEN_):
   GOSHISEN_POLICY_FILE same as --policy-file
   GOSHISEN_LOG_LEVEL   same as --log-level
   GOSHISEN_LOG_JSON    "true"/"false" (or 1/0, yes/no, on/off)
+  GOSHISEN_ALLOW_NON_LOOPBACK_API_HOST
+                       same as --allow-non-loopback-api-host
 
 EXAMPLES:
   goshisen --config /etc/goshisen/goshisen.yaml
@@ -158,7 +162,7 @@ func Parse(args []string, stderr io.Writer) (*Options, error) {
 	var apiHost, policyDir string
 	var apiPort, metricsPort portFlag
 	var queueMaxlen int
-	var logJSON bool
+	var logJSON, allowNonLoopbackAPIHost bool
 	var simProto, simSrc, simDst, simSport, simDport string
 	fs.StringVar(&cfgPath, "config", "", "YAML configuration file")
 	fs.StringVar(&cfgPath, "c", "", "YAML configuration file (alias)")
@@ -167,6 +171,7 @@ func Parse(args []string, stderr io.Writer) (*Options, error) {
 	fs.StringVar(&logLevel, "log-level", "", "log level: debug, info, warn, error")
 	fs.BoolVar(&logJSON, "log-json", false, "emit structured JSON logs")
 	fs.StringVar(&apiHost, "api-host", "", "API bind host (default 127.0.0.1)")
+	fs.BoolVar(&allowNonLoopbackAPIHost, "allow-non-loopback-api-host", false, "allow binding the API to a non-loopback host")
 	fs.Var(&apiPort, "api-port", "API port; 0 disables (default 8080)")
 	fs.Var(&metricsPort, "metrics-port", "metrics port; 0 disables (default 9090)")
 	fs.StringVar(&policyDir, "policy-dir", "", "durable policy store directory")
@@ -209,6 +214,9 @@ func Parse(args []string, stderr io.Writer) (*Options, error) {
 	}
 	if apiHost != "" {
 		opts.Overrides.APIHost = &apiHost
+	}
+	if allowNonLoopbackAPIHost {
+		opts.Overrides.AllowNonLoopbackAPIHost = &allowNonLoopbackAPIHost
 	}
 	if apiPort.set {
 		opts.Overrides.APIPort = &apiPort.v
