@@ -508,3 +508,45 @@ validate_uci
 		t.Errorf("without token: UCI config mode = %o, want 644 (untouched)", mode)
 	}
 }
+
+// TestInitRendersD1OptIns pins the UCI -> YAML rendering of the D1
+// hardening opt-ins: both are always rendered as explicit booleans
+// (default false), and 1/on/true enables them.
+func TestInitRendersD1OptIns(t *testing.T) {
+	mk := func(extra ...string) map[string]string {
+		m := map[string]string{
+			"enabled": "1", "queue_num": "100", "queue_maxlen": "1024",
+			"hook_scope": "openwrt", "log_level": "info",
+			"offload_policy": "warn", "policy_file": "/etc/goshisen/policy.yaml",
+			"interface": "br-lan", "api_port": "8080", "metrics_port": "9090",
+		}
+		for i := 0; i+1 < len(extra); i += 2 {
+			m[extra[i]] = extra[i+1]
+		}
+		return m
+	}
+	cases := []struct {
+		name                   string
+		uci                    map[string]string
+		wantReads, wantMetrics string
+	}{
+		{"absent -> explicit false", mk(), "false", "false"},
+		{"0 -> false", mk("require_token_for_reads", "0", "metrics_token_required", "0"), "false", "false"},
+		{"1 -> true", mk("require_token_for_reads", "1", "metrics_token_required", "1"), "true", "true"},
+		{"on/true spellings", mk("require_token_for_reads", "on", "metrics_token_required", "true"), "true", "true"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			yaml, errb, rc := renderPorts(t, c.uci)
+			if rc != 0 {
+				t.Fatalf("rc = %d, want 0 (stderr %s)", rc, errb)
+			}
+			if want := "require_token_for_reads: " + c.wantReads + "\n"; !strings.Contains(yaml, want) {
+				t.Errorf("rendered YAML missing %q:\n%s", want, yaml)
+			}
+			if want := "metrics_token_required: " + c.wantMetrics + "\n"; !strings.Contains(yaml, want) {
+				t.Errorf("rendered YAML missing %q:\n%s", want, yaml)
+			}
+		})
+	}
+}

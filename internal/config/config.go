@@ -86,6 +86,18 @@ type File struct {
 	// GOSHISEN_API_TOKEN. Empty disables administrative mutations.
 	APIToken string `yaml:"api_token"`
 
+	// RequireTokenForReads (opt-in, default false) additionally requires
+	// the bearer token for the policy read endpoints (GET /v1/policy,
+	// GET /v1/policy/versions). /healthz and /readyz stay open. This is
+	// a hardening opt-in: with a token configured but this unset, reads
+	// remain unauthenticated (historical behavior).
+	RequireTokenForReads bool `yaml:"require_token_for_reads"`
+
+	// MetricsTokenRequired (opt-in, default false) requires the bearer
+	// token for GET /metrics. Without it, metrics stay open (Prometheus
+	// scraping without auth).
+	MetricsTokenRequired bool `yaml:"metrics_token_required"`
+
 	// MetricsPort is the Prometheus metrics TCP port; default 9090
 	// (loopback) when no layer sets it. An explicit 0 — file,
 	// GOSHISEN_METRICS_PORT, or --metrics-port — disables the metrics
@@ -185,6 +197,11 @@ type Overrides struct {
 
 	// AllowNonLoopbackAPIHost opts into a non-loopback API bind.
 	AllowNonLoopbackAPIHost *bool
+
+	// RequireTokenForReads / MetricsTokenRequired opt into requiring the
+	// bearer token for the read endpoints / the metrics endpoint.
+	RequireTokenForReads *bool
+	MetricsTokenRequired *bool
 }
 
 // Options is the resolved, validated runtime configuration.
@@ -257,6 +274,8 @@ func Load(configFile string, env func(string) (string, bool), ov Overrides) (*Op
 			"allow_non_loopback_api_host": "default",
 			"api_port":                    "default",
 			"api_token":                   "default",
+			"require_token_for_reads":     "default",
+			"metrics_token_required":      "default",
 			"metrics_port":                "default",
 			"policy_dir":                  "default",
 			"queue_maxlen":                "default",
@@ -355,6 +374,14 @@ func (o *Options) loadFile(path string) error {
 		o.AllowNonLoopbackAPIHost = true
 		o.Sources["allow_non_loopback_api_host"] = "file"
 	}
+	if f.RequireTokenForReads {
+		o.RequireTokenForReads = true
+		o.Sources["require_token_for_reads"] = "file"
+	}
+	if f.MetricsTokenRequired {
+		o.MetricsTokenRequired = true
+		o.Sources["metrics_token_required"] = "file"
+	}
 	if f.QueueNum != 0 {
 		o.QueueNum = f.QueueNum
 		o.Sources["queue_num"] = "file"
@@ -404,6 +431,24 @@ func (o *Options) loadEnv(env func(string) (string, bool)) error {
 		} else {
 			o.AllowNonLoopbackAPIHost = b
 			o.Sources["allow_non_loopback_api_host"] = "env"
+		}
+	}
+	if v, ok := get("REQUIRE_TOKEN_FOR_READS"); ok {
+		b, err := parseBool(v)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%sREQUIRE_TOKEN_FOR_READS: %w", EnvPrefix, err))
+		} else {
+			o.RequireTokenForReads = b
+			o.Sources["require_token_for_reads"] = "env"
+		}
+	}
+	if v, ok := get("METRICS_TOKEN_REQUIRED"); ok {
+		b, err := parseBool(v)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%sMETRICS_TOKEN_REQUIRED: %w", EnvPrefix, err))
+		} else {
+			o.MetricsTokenRequired = b
+			o.Sources["metrics_token_required"] = "env"
 		}
 	}
 	if v, ok := get("API_PORT"); ok {
@@ -486,6 +531,14 @@ func (o *Options) loadOverrides(ov Overrides) {
 		o.AllowNonLoopbackAPIHost = *ov.AllowNonLoopbackAPIHost
 		o.Sources["allow_non_loopback_api_host"] = "flag"
 	}
+	if ov.RequireTokenForReads != nil {
+		o.RequireTokenForReads = *ov.RequireTokenForReads
+		o.Sources["require_token_for_reads"] = "flag"
+	}
+	if ov.MetricsTokenRequired != nil {
+		o.MetricsTokenRequired = *ov.MetricsTokenRequired
+		o.Sources["metrics_token_required"] = "flag"
+	}
 	if ov.APIPort != nil {
 		o.APIPort = *ov.APIPort
 		o.Sources["api_port"] = "flag"
@@ -516,7 +569,7 @@ func (o *Options) Source(field string) string {
 // for `goshisen config show`. The token is never rendered (not even its
 // source) to avoid leaking secret provenance in logs.
 func (o *Options) SourceSummary() string {
-	fields := []string{"interface", "policy_file", "log_level", "log_json", "api_host", "allow_non_loopback_api_host", "api_port", "metrics_port", "policy_dir", "queue_maxlen", "queue_num", "hook_scope"}
+	fields := []string{"interface", "policy_file", "log_level", "log_json", "api_host", "allow_non_loopback_api_host", "api_port", "metrics_port", "require_token_for_reads", "metrics_token_required", "policy_dir", "queue_maxlen", "queue_num", "hook_scope"}
 	parts := make([]string, 0, len(fields))
 	for _, f := range fields {
 		parts = append(parts, f+"="+o.Source(f))
@@ -544,6 +597,15 @@ func (o *Options) validate() error {
 	}
 	if o.APIPort != 0 && o.APIPort == o.MetricsPort {
 		errs = append(errs, fmt.Errorf("api_port and metrics_port must differ (both %d)", o.APIPort))
+	}
+	// The D1 hardening opt-ins only mean something with a token to check
+	// against; refuse a configuration that claims protection it cannot
+	// provide (fail-closed rather than a silent no-op).
+	if o.RequireTokenForReads && o.APIToken == "" {
+		errs = append(errs, errors.New("require_token_for_reads is set but api_token is empty; set api_token (config file) or GOSHISEN_API_TOKEN (environment), or drop the opt-in"))
+	}
+	if o.MetricsTokenRequired && o.APIToken == "" {
+		errs = append(errs, errors.New("metrics_token_required is set but api_token is empty; set api_token (config file) or GOSHISEN_API_TOKEN (environment), or drop the opt-in"))
 	}
 	if o.APIHost != "" && strings.ContainsAny(o.APIHost, " \t\n") {
 		errs = append(errs, fmt.Errorf("api_host %q must not contain whitespace", o.APIHost))

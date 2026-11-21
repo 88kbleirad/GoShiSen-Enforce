@@ -308,6 +308,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 			Log:     d.log,
 			Ready:   d.Ready,
 			Mu:      &d.reloadMu,
+
+			RequireTokenForReads: d.opts.RequireTokenForReads,
+			MetricsTokenRequired: d.opts.MetricsTokenRequired,
 		})
 		if err != nil {
 			return fmt.Errorf("api: %w", err)

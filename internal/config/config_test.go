@@ -799,3 +799,103 @@ func TestValidateLoopbackAPIHostErrMessage(t *testing.T) {
 		}
 	}
 }
+
+// TestD1OptInsLayers pins the D1 opt-in resolution across the file, env
+// and flag layers, and the fail-closed validation: an opt-in without a
+// token refuses to load instead of claiming protection it cannot give.
+func TestD1OptInsLayers(t *testing.T) {
+	base := func() string {
+		return writeTemp(t, "goshisen.yaml", `
+policy_dir: /var/lib/goshisen
+policy_file: /etc/goshisen/policy.yaml
+api_token: tok123
+`)
+	}
+
+	t.Run("defaults are off", func(t *testing.T) {
+		o, err := Load(base(), envStub(nil), Overrides{})
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if o.RequireTokenForReads || o.MetricsTokenRequired {
+			t.Errorf("opt-ins default on: reads=%v metrics=%v", o.RequireTokenForReads, o.MetricsTokenRequired)
+		}
+		if got := o.Source("require_token_for_reads"); got != "default" {
+			t.Errorf("source = %q, want default", got)
+		}
+	})
+
+	t.Run("file layer", func(t *testing.T) {
+		p := writeTemp(t, "goshisen.yaml", `
+policy_dir: /var/lib/goshisen
+policy_file: /etc/goshisen/policy.yaml
+api_token: tok123
+require_token_for_reads: true
+metrics_token_required: true
+`)
+		o, err := Load(p, envStub(nil), Overrides{})
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if !o.RequireTokenForReads || !o.MetricsTokenRequired {
+			t.Error("file layer did not enable the opt-ins")
+		}
+		if got := o.Source("metrics_token_required"); got != "file" {
+			t.Errorf("source = %q, want file", got)
+		}
+	})
+
+	t.Run("env layer", func(t *testing.T) {
+		env := envStub(map[string]string{
+			EnvPrefix + "REQUIRE_TOKEN_FOR_READS": "1",
+			EnvPrefix + "METRICS_TOKEN_REQUIRED":  "yes",
+		})
+		o, err := Load(base(), env, Overrides{})
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if !o.RequireTokenForReads || !o.MetricsTokenRequired {
+			t.Error("env layer did not enable the opt-ins")
+		}
+	})
+
+	t.Run("flag layer wins", func(t *testing.T) {
+		tr := true
+		o, err := Load(base(), envStub(nil), Overrides{RequireTokenForReads: &tr})
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if !o.RequireTokenForReads {
+			t.Error("flag did not enable the opt-in")
+		}
+		if got := o.Source("require_token_for_reads"); got != "flag" {
+			t.Errorf("source = %q, want flag", got)
+		}
+	})
+
+	t.Run("opt-in without token is an error", func(t *testing.T) {
+		p := writeTemp(t, "goshisen.yaml", `
+policy_dir: /var/lib/goshisen
+policy_file: /etc/goshisen/policy.yaml
+require_token_for_reads: true
+`)
+		if _, err := Load(p, envStub(nil), Overrides{}); err == nil {
+			t.Fatal("Load succeeded; want error for an opt-in without api_token")
+		}
+		p2 := writeTemp(t, "goshisen2.yaml", `
+policy_dir: /var/lib/goshisen
+policy_file: /etc/goshisen/policy.yaml
+metrics_token_required: true
+`)
+		if _, err := Load(p2, envStub(nil), Overrides{}); err == nil {
+			t.Fatal("Load succeeded; want error for metrics opt-in without api_token")
+		}
+	})
+
+	t.Run("invalid env bool is an error", func(t *testing.T) {
+		env := envStub(map[string]string{EnvPrefix + "REQUIRE_TOKEN_FOR_READS": "maybe"})
+		if _, err := Load(base(), env, Overrides{}); err == nil {
+			t.Fatal("Load succeeded; want error for a non-boolean env value")
+		}
+	})
+}
