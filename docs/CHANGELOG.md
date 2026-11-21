@@ -2,10 +2,10 @@
 
 Status and notable history for GoShiSen-Enforce. Per-release detail lives in `docs/release/` (e.g. `v0.2.6-notes.md`, `proposal-next-version-scope.md`).
 
-## Release status (snapshot, 2026-11-19)
+## Release status (snapshot, 2026-11-21)
 
-- **v0.2.6** — latest release (published 2026-11-19): S-005 toolchain-fix release (issue #78) — apk payload and both CLI archives built with go1.27.4. Release notes and assets: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.6).
-- **v0.2.5** — previous release (published 2026-11-17): upgrade-hook packaging fix (issue #57); apk payload embedded go1.27.1 (S-005, fixed in v0.2.6).
+- **v0.2.7** — latest release (published 2026-11-21): hardening release — port-zero semantics (v0.2.6 docs-gap), `api_host` loopback guard, metrics method hardening, listener-defaults docs correction. Release notes and assets: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.7).
+- **v0.2.6** — previous release (published 2026-11-19): S-005 toolchain-fix release (issue #78) — apk payload and both CLI archives built with go1.27.4.
 
 ## Details moved out of the README
 

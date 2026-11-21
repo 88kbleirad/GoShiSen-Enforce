@@ -245,6 +245,11 @@
   "title": "Stateful IPv6 e2e evidence — v0.2.4 (issue #5)"
  },
  {
+  "slug": "docs-release-listener-defaults-evidence-20261120",
+  "path": "../docs/release/listener-defaults-evidence-20261120.md",
+  "title": "Listener defaults — measured evidence (2026-11-20)"
+ },
+ {
   "slug": "docs-release-merge-closeout",
   "path": "../docs/release/merge-closeout.md",
   "title": "Merge PR #33 + post-merge verification (OpenWrt package r5)"
@@ -443,6 +448,16 @@
   "slug": "docs-release-v0.2.6-upgrade-e2e-evidence",
   "path": "../docs/release/v0.2.6-upgrade-e2e-evidence.md",
   "title": "v0.2.6 upgrade e2e evidence (issue #57 path)"
+ },
+ {
+  "slug": "docs-release-v0.2.7-notes",
+  "path": "../docs/release/v0.2.7-notes.md",
+  "title": "GoShiSen-Enforce v0.2.7 — Release Notes"
+ },
+ {
+  "slug": "docs-release-v0.2.7-upgrade-evidence",
+  "path": "../docs/release/v0.2.7-upgrade-evidence.md",
+  "title": "v0.2.7 upgrade/forwarding evidence (item 2c re-measurement) — 2026-11-21"
  },
  {
   "slug": "docs-release-v023-release-evidence",

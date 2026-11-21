@@ -197,6 +197,10 @@ keys/the APK anchor, and never merges PRs.
 
 ## v0.2.7 scope (proposal, 2026-11-20)
 
+**Status: COMPLETED (v0.2.7 published 2026-11-21; see**
+`docs/release/v0.2.7-notes.md` **for the outcome — all five items
+shipped, plus post-release hardening PR #102).**
+
 Scheduled for the release after the published v0.2.6:
 
 1. **Port-zero semantics reach a published artifact** — the fix on `main`

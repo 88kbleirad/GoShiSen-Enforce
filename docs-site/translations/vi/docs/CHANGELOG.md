@@ -2,10 +2,10 @@
 
 Trạng thái và lịch sử đáng chú ý của GoShiSen-Enforce. Chi tiết theo từng bản phát hành nằm trong `docs/release/` (vd: `v0.2.6-notes.md`, `proposal-next-version-scope.md`).
 
-## Trạng thái phát hành (ảnh chụp, 2026-11-19)
+## Trạng thái phát hành (ảnh chụp, 2026-11-21)
 
-- **v0.2.6** — bản phát hành mới nhất (đã công bố 2026-11-19): bản phát hành sửa toolchain S-005 (issue #78) — payload apk và cả hai kho lưu trữ CLI được build với go1.27.4. Ghi chú phát hành và asset: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.6).
-- **v0.2.5** — bản phát hành trước (đã công bố 2026-11-17): bản vá đóng gói upgrade-hook (issue #57); payload apk nhúng go1.27.1 (S-005, đã sửa trong v0.2.6).
+- **v0.2.7** — bản phát hành mới nhất (đã công bố 2026-11-21): bản phát hành làm cứng — ngữ nghĩa port-zero (khoảng trống tài liệu v0.2.6), bảo vệ vòng lặp `api_host`, làm cứng phương thức metrics, sửa tài liệu listener-defaults. Ghi chú phát hành và asset: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.7).
+- **v0.2.6** — bản phát hành trước (đã công bố 2026-11-19): bản phát hành sửa toolchain S-005 (issue #78) — payload apk và cả hai kho lưu trữ CLI được build với go1.27.4.
 
 ## Chi tiết đã chuyển ra khỏi README
 
