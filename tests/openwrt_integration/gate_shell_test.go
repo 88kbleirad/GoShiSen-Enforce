@@ -101,7 +101,7 @@ func TestShellVMSanitizer(t *testing.T) {
 		t.Fatalf("tr failed: %v", err)
 	}
 	san := strings.ReplaceAll(string(trOut), "\r", "")
-	if strings.ContainsAny(san, "\x00\xff\xfe\xfd") {
+	if strings.ContainsAny(san, "\x00\u00ff\u00fe\u00fd") {
 		t.Fatalf("sanitizer left invalid bytes: %q", san)
 	}
 	if !strings.Contains(san, "RELOAD_COUNT=1") {
