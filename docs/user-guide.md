@@ -178,6 +178,16 @@ curl -s -X POST -H "Authorization: Bearer $GOSHISEN_API_TOKEN" \
 
 Prometheus text metrics at `GET /metrics` (API) and on `metrics_port` (default 9090): packet verdicts by action/protocol/state, backend errors, verdict-latency histogram, active policy version. Labels are bounded enums — no IPs, ports, or flow IDs.
 
+**Upgrade note (v0.2.7):** on releases ≤ v0.2.6 an explicit `metrics_port` value of `0` was ignored (the listener ran on 9090 loopback whenever the daemon ran). Starting with v0.2.7 a `metrics_port: 0` (the packaged OpenWrt default) **disables** the metrics listener, so a Prometheus scrape target on `127.0.0.1:9090/metrics` (and any Grafana dashboard fed by it — `goshisen_packets_total`, `goshisen_queue_overflow_total`, `goshisen_flow_offload_state`, …) stops receiving data after upgrading until the port is set explicitly:
+
+```sh
+uci set goshisen.main.metrics_port='9090'   # OpenWrt
+# or in the daemon YAML: metrics_port: 9090
+/etc/init.d/goshisen restart
+```
+
+Set it **before** upgrading to keep the scrape target alive. The API listener has the same semantics (`api_port`); `GET /metrics` on the API port is unaffected by `metrics_port`.
+
 ## Flow-offload awareness
 
 nftables flow offloading (software or hardware) makes established flows skip the nftables ruleset entirely, so NFQUEUE never sees them — enforcement does not apply to those flows. The daemon detects this read-only (flowtables + `flow add @ft` / `flow offload` statements) every 10 s, logs a high-severity `WARN`, and exposes the `goshisen_flow_offload_active` gauge. It never modifies the user's firewall.

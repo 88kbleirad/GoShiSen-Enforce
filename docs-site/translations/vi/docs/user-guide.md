@@ -178,6 +178,16 @@ curl -s -X POST -H "Authorization: Bearer $GOSHISEN_API_TOKEN" \
 
 Metrics văn bản Prometheus tại `GET /metrics` (API) và trên `metrics_port` (mặc định 9090): verdict gói theo hành động/giao thức/trạng thái, lỗi backend, histogram độ trễ verdict, phiên bản chính sách đang hoạt động. Label là enum giới hạn — không có IP, cổng, hoặc flow ID.
 
+**Ghi chú nâng cấp (v0.2.7):** ở các bản ≤ v0.2.6, giá trị `metrics_port` tường minh là `0` bị bỏ qua (listener chạy trên 9090 loopback khi daemon chạy). Từ v0.2.7, `metrics_port: 0` (mặc định gói OpenWrt) **tắt** listener metrics, nên target scrape Prometheus trên `127.0.0.1:9090/metrics` (và dashboard Grafana dùng nó — `goshisen_packets_total`, `goshisen_queue_overflow_total`, `goshisen_flow_offload_state`, …) ngừng nhận dữ liệu sau khi nâng cấp cho đến khi cổng được đặt tường minh:
+
+```sh
+uci set goshisen.main.metrics_port='9090'   # OpenWrt
+# hoặc trong YAML daemon: metrics_port: 9090
+/etc/init.d/goshisen restart
+```
+
+Đặt nó **trước** khi nâng cấp để giữ target scrape sống. Listener API có cùng ngữ nghĩa (`api_port`); `GET /metrics` trên cổng API không bị ảnh hưởng bởi `metrics_port`.
+
 ## Nhận thức flow-offload
 
 Flow offloading nftables (phần mềm hoặc phần cứng) khiến luồng established bỏ qua toàn bộ ruleset nftables, nên NFQUEUE không bao giờ thấy chúng — thực thi không áp dụng cho các luồng đó. Daemon phát hiện điều này chỉ-đọc (flowtables + câu lệnh `flow add @ft` / `flow offload`) mỗi 10 s, ghi log `WARN` mức nghiêm trọng cao, và lộ gauge `goshisen_flow_offload_active`. Nó không bao giờ sửa tường lửa của người dùng.
