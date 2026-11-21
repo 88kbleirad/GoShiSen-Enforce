@@ -87,9 +87,11 @@ render_config
 cat "$CONFIG_PATH"
 `)
 	cfgPath := filepath.Join(t.TempDir(), "config.yaml")
+	uciCfg := filepath.Join(t.TempDir(), "goshisen-uci-config")
 	cmd.Env = append(os.Environ(),
 		"PATH=/usr/bin:/bin",
 		"TEST_CONFIG_PATH="+cfgPath,
+		"UCI_CONFIG_PATH="+uciCfg,
 	)
 	var out, errb strings.Builder
 	cmd.Stdout = &out
@@ -341,5 +343,168 @@ func TestInitRejectBadToken(t *testing.T) {
 		if strings.TrimSpace(yaml) != "" {
 			t.Errorf("token %q: reject still rendered a config: %q", tok, yaml)
 		}
+	}
+}
+
+// TestInitRenderConfigModeAtCreation guards the umask-077 fix: the
+// rendered config must be 600 from the moment it is created (not 644
+// until a later chmod). Also asserts the init script restores the
+// caller's umask afterwards.
+func TestInitRenderConfigModeAtCreation(t *testing.T) {
+	policy := filepath.Join(t.TempDir(), "policy.yaml")
+	if err := os.WriteFile(policy, []byte("version: 1\ndefault_action: DROP\nrules: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(t.TempDir(), "config.yaml")
+	script := initScriptPath(t)
+	data, err := os.ReadFile(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(data)
+	cmd := exec.Command("bash")
+	cmd.Stdin = strings.NewReader(`
+config_load() { :; }
+config_get() {
+	local var="" sec opt val=""
+	if [ "$#" -ge 3 ]; then
+		var="$1"; sec="$2"; opt="$3"
+	else
+		sec="$1"; opt="$2"
+	fi
+	case "$sec:$opt" in
+` + stubCases(map[string]string{
+		"api_token": "s3cret", "policy_file": policy,
+		"queue_num": "100", "hook_scope": "openwrt", "log_level": "info",
+		"offload_policy": "warn", "interface": "br-lan",
+		"api_port": "8080", "metrics_port": "9090",
+	}) + `
+	esac
+	if [ -n "$var" ]; then
+		eval "$var=\$val"
+	else
+		printf '%s\n' "$val"
+	fi
+}
+oci_err() { echo "goshisen: $*" >&2; }
+uci_warn() { echo "goshisen: $*" >&2; }
+logger() { :; }
+mkdir() { :; }
+` + body + `
+CONFIG_PATH="$TEST_CONFIG_PATH"
+validate_uci
+rc=$?
+if [ "$rc" -ne 0 ]; then exit "$rc"; fi
+owner_umask=$(umask)
+render_config
+restored_umask=$(umask)
+echo "OWNER_UMASK=$owner_umask RESTORED_UMASK=$restored_umask"
+`)
+	cmd.Env = append(os.Environ(), "PATH=/usr/bin:/bin", "TEST_CONFIG_PATH="+cfgPath)
+	var out, errb strings.Builder
+	cmd.Stdout = &out
+	cmd.Stderr = &errb
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("run init script: %v: %s", err, errb.String())
+	}
+	owner, restored := "", ""
+	for _, f := range strings.Fields(out.String()) {
+		if v, ok := strings.CutPrefix(f, "OWNER_UMASK="); ok {
+			owner = v
+		}
+		if v, ok := strings.CutPrefix(f, "RESTORED_UMASK="); ok {
+			restored = v
+		}
+	}
+	if owner == "" || restored != owner {
+		t.Errorf("umask not restored (owner=%q restored=%q): output=%q", owner, restored, out.String())
+	}
+	// The file must exist with mode 600.
+	st, err := os.Stat(cfgPath)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if got := st.Mode().Perm(); got != 0o600 {
+		t.Errorf("rendered config perms = %o, want 600", got)
+	}
+}
+
+// TestInitRestrictsUCIConfigMode pins the token-hygiene fix: when an
+// api_token is set, the UCI config file (which holds the token in
+// plaintext) is restricted to root. `uci commit` preserves the mode, so
+// this stays effective after later uci writes; it is best-effort (chmod
+// failure is ignored) and the rendered /var/run config stays 0600.
+func TestInitRestrictsUCIConfigMode(t *testing.T) {
+	policy := filepath.Join(t.TempDir(), "policy.yaml")
+	if err := os.WriteFile(policy, []byte("version: 1\ndefault_action: DROP\nrules: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(t.TempDir(), "config.yaml")
+
+	run := func(token string) (string, os.FileMode) {
+		t.Helper()
+		uciCfg := filepath.Join(t.TempDir(), "goshisen-uci")
+		if err := os.WriteFile(uciCfg, []byte("config goshisen 'main'\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		script := initScriptPath(t)
+		data, err := os.ReadFile(script)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command("bash")
+		cmd.Stdin = strings.NewReader(`
+config_load() { :; }
+config_get() {
+	local var="" sec opt val=""
+	if [ "$#" -ge 3 ]; then
+		var="$1"; sec="$2"; opt="$3"
+	else
+		sec="$1"; opt="$2"
+	fi
+	case "$sec:$opt" in
+` + stubCases(map[string]string{
+			"api_token": token, "policy_file": policy,
+			"queue_num": "100", "hook_scope": "openwrt", "log_level": "info",
+			"offload_policy": "warn", "interface": "br-lan",
+			"api_port": "8080", "metrics_port": "9090",
+		}) + `
+	esac
+	if [ -n "$var" ]; then
+		eval "$var=\$val"
+	else
+		printf '%s\n' "$val"
+	fi
+}
+oci_err() { echo "goshisen: $*" >&2; }
+uci_warn() { echo "goshisen: $*" >&2; }
+logger() { :; }
+mkdir() { :; }
+` + string(data) + `
+CONFIG_PATH="$TEST_CONFIG_PATH"
+validate_uci
+`)
+		cmd.Env = append(os.Environ(), "PATH=/usr/bin:/bin",
+			"TEST_CONFIG_PATH="+cfgPath, "UCI_CONFIG_PATH="+uciCfg)
+		var out, errb strings.Builder
+		cmd.Stdout = &out
+		cmd.Stderr = &errb
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("run init script: %v: %s", err, errb.String())
+		}
+		st, err := os.Stat(uciCfg)
+		if err != nil {
+			t.Fatalf("stat uci config: %v", err)
+		}
+		return errb.String(), st.Mode().Perm()
+	}
+
+	// Token set → the UCI file is restricted to root.
+	if _, mode := run("s3cret"); mode != 0o600 {
+		t.Errorf("with token: UCI config mode = %o, want 600", mode)
+	}
+	// No token → mode is left alone (no secret to protect).
+	if _, mode := run(""); mode != 0o644 {
+		t.Errorf("without token: UCI config mode = %o, want 644 (untouched)", mode)
 	}
 }
