@@ -205,6 +205,11 @@
   "title": "Errata — v0.2.3 release description (DRAFT, not yet applied)"
  },
  {
+  "slug": "docs-release-evidence-archive-manifest",
+  "path": "../docs/release/evidence-archive-manifest.md",
+  "title": "v0.2.7 post-release evidence archive (2026-11-21)"
+ },
+ {
   "slug": "docs-release-evidence-index",
   "path": "../docs/release/evidence-index.md",
   "title": "GoShiSen-Enforce — Evidence Index"
@@ -463,6 +468,11 @@
   "slug": "docs-release-v0.2.7-upgrade-evidence",
   "path": "../docs/release/v0.2.7-upgrade-evidence.md",
   "title": "v0.2.7 upgrade/forwarding evidence (item 2c re-measurement) — 2026-11-21"
+ },
+ {
+  "slug": "docs-release-v0.2.8-notes-draft",
+  "path": "../docs/release/v0.2.8-notes-draft.md",
+  "title": "GoShiSen-Enforce v0.2.8 — Release Notes (DRAFT)"
  },
  {
   "slug": "docs-release-v023-release-evidence",
