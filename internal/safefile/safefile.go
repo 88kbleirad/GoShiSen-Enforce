@@ -18,7 +18,6 @@ package safefile
 import (
 	"fmt"
 	"io"
-	"os"
 )
 
 // MaxBytes bounds a single configuration/policy read. The schemas are
@@ -28,19 +27,27 @@ const MaxBytes = 16 << 20
 
 // ReadBounded reads a regular file with a hard size cap. It returns an
 // error for a missing path, a non-regular file, or content over MaxBytes.
+//
+// The regular-file check is performed on the *open* descriptor
+// (f.Stat), not on a pre-open os.Stat: a pre-open stat plus a later open
+// leaves a TOCTOU window in which a path could be swapped for a FIFO,
+// making open() block forever. Opening first and validating the
+// descriptor closes that window. (Symlinks are followed: the target's
+// mode is what counts, which is the documented behavior for the config
+// and policy paths.)
 func ReadBounded(path string) ([]byte, error) {
-	st, err := os.Stat(path)
+	f, err := openNoBlock(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	st, err := f.Stat()
 	if err != nil {
 		return nil, err
 	}
 	if !st.Mode().IsRegular() {
 		return nil, fmt.Errorf("%s: not a regular file", path)
 	}
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
 	data, err := io.ReadAll(io.LimitReader(f, MaxBytes+1))
 	if err != nil {
 		return nil, err
