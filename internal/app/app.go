@@ -525,6 +525,13 @@ func (d *Daemon) serveMetrics(ctx context.Context, port int) {
 		Addr:              fmt.Sprintf("127.0.0.1:%d", port),
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
+		// Bounded like the API listener: a stalled client must not be
+		// able to hold a metrics connection (and its goroutine) open
+		// indefinitely. The listener is loopback-only, so the exposure
+		// is a local process, not the network.
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  30 * time.Second,
 	}
 	ln, err := net.Listen("tcp", srv.Addr)
 	if err != nil {
