@@ -163,6 +163,7 @@ func Parse(args []string, stderr io.Writer) (*Options, error) {
 	var apiPort, metricsPort portFlag
 	var queueMaxlen int
 	var logJSON, allowNonLoopbackAPIHost bool
+	var requireTokenForReads, metricsTokenRequired bool
 	var simProto, simSrc, simDst, simSport, simDport string
 	fs.StringVar(&cfgPath, "config", "", "YAML configuration file")
 	fs.StringVar(&cfgPath, "c", "", "YAML configuration file (alias)")
@@ -172,6 +173,8 @@ func Parse(args []string, stderr io.Writer) (*Options, error) {
 	fs.BoolVar(&logJSON, "log-json", false, "emit structured JSON logs")
 	fs.StringVar(&apiHost, "api-host", "", "API bind host (default 127.0.0.1)")
 	fs.BoolVar(&allowNonLoopbackAPIHost, "allow-non-loopback-api-host", false, "allow binding the API to a non-loopback host")
+	fs.BoolVar(&requireTokenForReads, "require-token-for-reads", false, "require the bearer token for GET /v1/policy and /v1/policy/versions (hardening opt-in)")
+	fs.BoolVar(&metricsTokenRequired, "metrics-token-required", false, "require the bearer token for GET /metrics (hardening opt-in)")
 	fs.Var(&apiPort, "api-port", "API port; 0 disables (default 8080)")
 	fs.Var(&metricsPort, "metrics-port", "metrics port; 0 disables (default 9090)")
 	fs.StringVar(&policyDir, "policy-dir", "", "durable policy store directory")
@@ -217,6 +220,12 @@ func Parse(args []string, stderr io.Writer) (*Options, error) {
 	}
 	if allowNonLoopbackAPIHost {
 		opts.Overrides.AllowNonLoopbackAPIHost = &allowNonLoopbackAPIHost
+	}
+	if requireTokenForReads {
+		opts.Overrides.RequireTokenForReads = &requireTokenForReads
+	}
+	if metricsTokenRequired {
+		opts.Overrides.MetricsTokenRequired = &metricsTokenRequired
 	}
 	if apiPort.set {
 		opts.Overrides.APIPort = &apiPort.v

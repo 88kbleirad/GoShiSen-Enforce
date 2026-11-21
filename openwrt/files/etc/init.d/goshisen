@@ -196,6 +196,17 @@ render_config() {
 		echo "api_host: $(config_get main api_host)"
 		echo "api_port: $API_PORT"
 		echo "metrics_port: $METRICS_PORT"
+		# D1 hardening opt-ins (UCI 0/1 -> YAML booleans). Default false:
+		# with a token configured the policy reads stay open unless the
+		# operator opts in (see docs/openwrt.md).
+		case "$(config_get main require_token_for_reads)" in
+			1|on|true) echo "require_token_for_reads: true" ;;
+			*) echo "require_token_for_reads: false" ;;
+		esac
+		case "$(config_get main metrics_token_required)" in
+			1|on|true) echo "metrics_token_required: true" ;;
+			*) echo "metrics_token_required: false" ;;
+		esac
 		# api_token is optional; when set it grants authenticated API
 		# mutations. The rendered config is chmod 600 below so the
 		# token is never world-readable on the device.

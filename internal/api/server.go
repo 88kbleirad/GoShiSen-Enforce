@@ -46,15 +46,19 @@ type Logger interface {
 
 // Server is the API server.
 type Server struct {
-	mu         *sync.Mutex // shared policy-mutation lock (nil → own)
-	token      string
-	store      *store.Store
-	king       *policy.King
-	metrics    *metrics.Registry
-	log        Logger
-	ready      func() bool
-	srv        *http.Server
-	actualAddr atomic.Value // string
+	mu    *sync.Mutex // shared policy-mutation lock (nil → own)
+	token string
+	// requireTokenForReads / metricsTokenRequired are opt-in hardening
+	// switches: they only take effect when a token is configured.
+	requireTokenForReads bool
+	metricsTokenRequired bool
+	store                *store.Store
+	king                 *policy.King
+	metrics              *metrics.Registry
+	log                  Logger
+	ready                func() bool
+	srv                  *http.Server
+	actualAddr           atomic.Value // string
 }
 
 // Options configures the server.
@@ -75,6 +79,15 @@ type Options struct {
 	// Ready reports whether the daemon is ready to serve traffic
 	// (policy active, hook installed, queue bound).
 	Ready func() bool
+	// RequireTokenForReads requires the bearer token for the policy read
+	// endpoints (GET /v1/policy, GET /v1/policy/versions) when a token is
+	// configured. /healthz and /readyz stay open. With no token
+	// configured, reads stay open (mutations are already refused).
+	RequireTokenForReads bool
+	// MetricsTokenRequired requires the bearer token for GET /metrics
+	// when a token is configured. Off by default so Prometheus scraping
+	// keeps working.
+	MetricsTokenRequired bool
 }
 
 // New builds the API server (it does not listen until Serve).
@@ -100,13 +113,15 @@ func New(o Options) (*Server, error) {
 		mu = &sync.Mutex{}
 	}
 	s := &Server{
-		mu:      mu,
-		token:   o.Token,
-		store:   o.Store,
-		king:    o.King,
-		metrics: o.Metrics,
-		log:     o.Log,
-		ready:   ready,
+		mu:                   mu,
+		token:                o.Token,
+		requireTokenForReads: o.RequireTokenForReads,
+		metricsTokenRequired: o.MetricsTokenRequired,
+		store:                o.Store,
+		king:                 o.King,
+		metrics:              o.Metrics,
+		log:                  o.Log,
+		ready:                ready,
 	}
 
 	mux := http.NewServeMux()
@@ -203,6 +218,17 @@ func (s *Server) authorized(r *http.Request) bool {
 	return constantTimeEqual(strings.TrimPrefix(auth, "Bearer "), s.token)
 }
 
+// requireReadAuth enforces authentication for a read endpoint when the
+// operator opted in (RequireTokenForReads / MetricsTokenRequired) AND a
+// token is configured. With no token configured the read stays open
+// (there is nothing to check against, and mutations are refused anyway).
+func (s *Server) requireReadAuth(w http.ResponseWriter, r *http.Request, action string, enabled bool) bool {
+	if !enabled || s.token == "" {
+		return true
+	}
+	return s.requireAuth(w, r, action)
+}
+
 // requireAuth enforces authentication for an administrative operation and
 // audit-logs the outcome. It returns false when the caller must stop.
 func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request, action string) bool {
@@ -283,7 +309,10 @@ func readBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 // Handlers
 // ---------------------------------------------------------------------------
 
-func (s *Server) handleGetPolicy(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleGetPolicy(w http.ResponseWriter, r *http.Request) {
+	if !s.requireReadAuth(w, r, "get_policy", s.requireTokenForReads) {
+		return
+	}
 	cur, err := s.store.Active()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "store_error", err.Error())
@@ -307,7 +336,10 @@ func (s *Server) handleGetPolicy(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-func (s *Server) handleListVersions(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleListVersions(w http.ResponseWriter, r *http.Request) {
+	if !s.requireReadAuth(w, r, "list_versions", s.requireTokenForReads) {
+		return
+	}
 	versions, err := s.store.List()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "store_error", err.Error())
@@ -503,7 +535,10 @@ func (s *Server) handleReady(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 
-func (s *Server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	if !s.requireReadAuth(w, r, "get_metrics", s.metricsTokenRequired) {
+		return
+	}
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 	s.metrics.WritePrometheus(w)
 }

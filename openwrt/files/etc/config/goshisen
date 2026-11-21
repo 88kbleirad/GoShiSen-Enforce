@@ -50,6 +50,14 @@ config goshisen 'main'
 	# the token is never world-readable on the device. Keep unset for
 	# read-only API access.
 	# option api_token ''
+	# D1 hardening opt-ins. When api_token is set, these require it for
+	# the read endpoints too. Default 0: GET /v1/policy and
+	# /v1/policy/versions stay open (historical behavior, useful for
+	# local tooling), and /metrics stays open for Prometheus. /healthz
+	# and /readyz always stay open. Setting either without api_token is
+	# a configuration error (the daemon refuses to start).
+	# option require_token_for_reads '0'
+	# option metrics_token_required '0'
 	# Optional management API port. An explicit 0 (this file's default)
 	# disables the API listener; 1..65535 enables it on loopback.
 	# NOTE (v0.2.5/v0.2.6 binaries): the daemon ignores a file/flag 0 —
