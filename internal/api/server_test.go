@@ -57,7 +57,6 @@ type fixture struct {
 	king  *policy.King
 	srv   *Server
 	log   *testLogger
-	port  int
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -235,7 +234,7 @@ func TestAPIConflict(t *testing.T) {
 		t.Errorf("error = %v", m["error"])
 	}
 	// Still v2.
-	code, m, _ = f.request("GET", "/v1/policy", "", false)
+	_, m, _ = f.request("GET", "/v1/policy", "", false)
 	if m["version"] != v2 {
 		t.Errorf("active = %v, want %s", m["version"], v2)
 	}
@@ -508,7 +507,7 @@ func TestAPIActivateVersion(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("activate: %d %v", code, m)
 	}
-	code, m, _ = f.request("GET", "/v1/policy", "", false)
+	_, m, _ = f.request("GET", "/v1/policy", "", false)
 	if m["version"] != v1 {
 		t.Errorf("active = %v, want %s", m["version"], v1)
 	}

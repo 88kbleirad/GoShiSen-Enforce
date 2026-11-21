@@ -27,7 +27,7 @@ import (
 // Netfilter netlink message type = (subsys_id << 8) | msg_type.
 
 func TestNFQUEUEMessageTypeEncoding(t *testing.T) {
-	if got := queueMsg(nfqnlMsgPacket); got != netlink.HeaderType(3<<8|0) {
+	if got := queueMsg(nfqnlMsgPacket); got != netlink.HeaderType(3<<8) {
 		t.Errorf("queueMsg(packet) = %#x, want %#x", got, netlink.HeaderType(3<<8))
 	}
 	if got := queueMsg(nfqnlMsgVerdict); got != netlink.HeaderType(3<<8|1) {

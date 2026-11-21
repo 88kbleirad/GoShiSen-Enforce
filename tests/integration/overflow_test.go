@@ -114,9 +114,8 @@ rules:
 	if code != 0 {
 		t.Fatalf("allowed TCP after overflow failed: %d %s", code, out)
 	}
-	code, out = runStateProbe(t, "connect", "udp", "10.99.1.2", "9999")
-	if code == 0 {
-		t.Fatal("denied UDP after overflow unexpectedly succeeded")
+	if code, out := runStateProbe(t, "connect", "udp", "10.99.1.2", "9999"); code == 0 {
+		t.Fatalf("denied UDP after overflow unexpectedly succeeded (%s)", out)
 	}
 }
 
