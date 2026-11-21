@@ -1,13 +1,41 @@
 # Proposal — v0.2.8 scope (after v0.2.7)
 
-**Status: DRAFT proposal (2026-11-21).** Written after the v0.2.7 release
-was published (2026-11-21) and its post-publish self-test loop (rounds 1–2)
-plus an anomaly sweep of the published CLI. Priority order is
-risk-weighted: **P1 = security/correctness**, **P2 = regression coverage
-that would have caught what the sweep found**, **P3 = platform/ops**.
+**Status: IN PROGRESS (updated 2026-11-21, after the post-v0.2.7 audit
+and D1/D2 implementation).** Written after the v0.2.7 release was
+published (2026-11-21) and its post-publish self-test loop (rounds 1–3:
+deps, static, race/fuzz, HTTP probes, release chain, CLI anomaly sweep).
+Priority order is risk-weighted: **P1 = security/correctness**,
+**P2 = regression coverage**, **P3 = platform/ops**.
 
-Base: `main` at `8d9388d` (docs post-publish) with the hardening fix
-PR #102 merged (`c0b8047`) and the bounded-read fix PR #104 open.
+Base: `main` at `f9ca4f3` (docs/changelog post-publish), plus the
+post-release hardening already merged (#102 store perms, #104 bounded
+reads, #105–#107 CI sweep/fuzz/staticcheck/govulncheck, #108 UCI
+api_token) and the open PRs listed below.
+
+## What is IN v0.2.8 (decided)
+
+| Item | State |
+| --- | --- |
+| Bounded reads for config/CLI/daemon/store (P1.1) | **merged** (#104); FIFO-swap TOCTOU closed in #112 |
+| UCI `api_token` (P1.2, issue #103) | **merged** (#108); file-permission follow-up in #109 |
+| D1 read-auth opt-ins (P1.3, issue #99) | **PR #110** (`require_token_for_reads`, `metrics_token_required`; opt-in, default off) |
+| D2 govulncheck modes + weekly sweep (P2/CI) | **PR #111** (warn-only on PRs; blocking in release gates; weekly dedup issue) |
+| Sweep/fuzz in CI, staticcheck baseline, govulncheck in CI (P2.5–P2.8) | **merged** (#105, #106, #107) |
+| `internal/store` tests (P2.7) | **merged** with #102/#104 (perms, non-regular files) |
+
+Still to land in v0.2.8 (maintainer decision): signed tags (P1.4) and
+F-02 (P3.10) require anchor/environment configuration on GitHub.
+
+## What moved to v0.2.9 (needs infrastructure, not code)
+
+| Item | Why it moves | Prerequisite |
+| --- | --- | --- |
+| arm64 hardware verification (P3.9) | TCG-only today; a real board or a self-hosted arm64 runner is needed | hardware/runner |
+| `scripts/release-run.sh` wrapper (P3.11) | the flow was re-run by hand this session; the wrapper should be written against a *release rehearsal*, not invented | one more release run to codify |
+| Upgrade e2e in CI (P3.12) | needs published v(N-1)+v(N) artifacts and a privileged runner budget | scheduled job budget |
+| F-02 environment scoping (P3.10) | maintainer-only GitHub settings (create/move secret, reviewers, branch policy) | maintainer action on #100 |
+| Signed tags + `GATE_TAG_SIGN_CHECK=1` (P1.4) | SSH `allowed_signers` must exist first | maintainer key setup |
+| Metrics for reload rejections / read-bounded (P3.13) | useful but not security-critical; keep scope tight for a hardening release | — |
 
 ## Where v0.2.7 left us (measured, not assumed)
 
