@@ -13,21 +13,39 @@
   scan table below (v0.2.0, v0.2.3, v0.2.4, v0.2.5 ship apks; v0.2.1
   and v0.2.2 ship CLI archives only). The fix lands in **v0.2.6**.
 - **Date of analysis:** 2026-11-18.
-- **Severity:** Low for the default configuration (both HTTP listeners
-  bind to 127.0.0.1 by default — API 8080, metrics 9090 — once the
-  service is enabled; the nearest exposure is a local user on the
-  loopback listener, with the API mutations requiring a bearer token).
-  The shipped OpenWrt config stores `api_port '0'`/`metrics_port '0'`,
-  but in v0.2.6 the daemon ignores a file/flag value of 0 and falls
-  back to the defaults; the only way to disable the listeners is
-  `GOSHISEN_API_PORT=0` / `GOSHISEN_METRICS_PORT=0` (or leaving the
-  service disabled via `enabled=0`). (Fixed after v0.2.6: an explicit
-  0 in the config file, `--api-port 0`/`--metrics-port 0`, and the env
-  variables all disable the listener — see `docs/CHANGELOG.md`.) Elevated to Medium if the API
-  listener is misconfigured to a non-loopback
-  `api_host` (see Workarounds). No outbound connections and no TLS
-  exist, so the TLS/x509/client-side vulnerability classes are not
-  reachable in any configuration.
+- **Severity:** Low for the default configuration. Measured default
+  states (OpenWrt 25.12.6 x86/64 QEMU, kernel 6.12.112; evidence in
+  the PR description for this correction):
+  - **CLI/daemon archives (v0.2.5, v0.2.6):** run with no config, no
+    env, no flags, both HTTP listeners are **enabled by default** on
+    loopback — API `127.0.0.1:8080`, metrics `127.0.0.1:9090`. An
+    explicit `0` via `GOSHISEN_API_PORT=0` /
+    `GOSHISEN_METRICS_PORT=0` disables them; a YAML `api_port: 0` /
+    `metrics_port: 0` or `--api-port 0` / `--metrics-port 0` is
+    **ignored** in v0.2.5/v0.2.6 (falls back to the defaults). After
+    v0.2.6 all three knob kinds disable (see `docs/CHANGELOG.md`).
+  - **OpenWrt package, fresh install (v0.2.5-r1, v0.2.6-r1):** the
+    packaged `/etc/config/goshisen` stores `api_port '0'` /
+    `metrics_port '0'`. With the service enabled, the daemon ignores
+    the file `0` in v0.2.5/v0.2.6 and listens on `127.0.0.1:8080` /
+    `127.0.0.1:9090`; the only disable knobs are
+    `GOSHISEN_API_PORT=0` / `GOSHISEN_METRICS_PORT=0` or leaving the
+    service disabled (`enabled=0`). In the v0.2.7 line the file `0`
+    disables (the config was already shipping the zeros).
+  - **OpenWrt upgrade with an old config:** a pre-v0.2.3 config
+    lacking `api_port`/`metrics_port` renders `api_port:` with no
+    value; the v0.2.5/v0.2.6 init script then writes an empty value
+    that fails its own validation (`api_port '' out of range`) and
+    the service **does not start** (fail-closed by absence, no
+    listener). A config with `api_port ''` behaves identically.
+    `option api_port '0'` (the shipped form) starts the daemon with
+    loopback listeners **enabled** on v0.2.5/v0.2.6.
+  - Nearest exposure in all cases: a **local user on the loopback
+    listener**; API mutations require a bearer token. Elevated to
+    Medium if the API listener is misconfigured to a non-loopback
+    `api_host` (see Workarounds). No outbound connections and no TLS
+    exist, so the TLS/x509/client-side vulnerability classes are not
+    reachable in any configuration.
 
 ## Affected versions and toolchains (evidence)
 
@@ -107,17 +125,23 @@ Bind configurability (`internal/config/config.go`):
   whitespace (config.go:469-470) — **a non-loopback bind is
   configurable and passes validation**; the API then listens on the
   network.
-- `DefaultAPIPort = 8080`, `DefaultMetricsPort = 9090` (config.go:37-
-  38); each server is skipped when its resolved port is `0` (app.go:295,
-  317). The shipped OpenWrt config stores `option api_port '0'` and
-  `option metrics_port '0'` (openwrt/files/etc/config/goshisen), but in
-  v0.2.6 the file and flag layers treat `0` as "not set" and fall back
-  to the defaults (config.go:260, 268; cli.go:191, 194) — only the
-  environment layer (`GOSHISEN_API_PORT=0` / `GOSHISEN_METRICS_PORT=0`)
-  disables the listeners. Fixed after v0.2.6: the file layer tracks key
-  presence (`File.UnmarshalYAML`) and the flag layer uses a
-  presence-recording `flag.Value`, so file/flag `0` disables like the
-  environment layer.
+- `DefaultAPIPort = 8080`, `DefaultMetricsPort = 9090` (config.go:36-
+  37); each server is skipped when its **resolved** port is `0`
+  (app.go:295, 317). In every release up to and including v0.2.6 the
+  file and flag layers treated `0` as "not set" and fell back to the
+  defaults (v0.2.5 tag: config.go:260, 268; cli.go:191, 194; identical
+  code at the v0.2.6 tag), so the shipped `option api_port '0'` /
+  `option metrics_port '0'` (openwrt/files/etc/config/goshisen)
+  disabled nothing — measured on OpenWrt 25.12.6, see "Measured
+  listener defaults" below. Only the environment layer
+  (`GOSHISEN_API_PORT=0` / `GOSHISEN_METRICS_PORT=0`) disabled a
+  listener there. After the v0.2.6 tag (unreleased as of 2026-11-20)
+  the file layer tracks key presence (`File.UnmarshalYAML`) and the
+  flag layer uses a presence-recording `flag.Value` (`portFlag`), so a
+  file/flag `0` disables like the environment layer; a YAML key
+  present with an empty value is also an explicit `0`. YAML `api_port`
+  must be a scalar: an empty string (`api_port: ""`) is a config error
+  and the daemon refuses to start.
 - No TLS listener, no crypto/tls import, no http.Client, no net.Dial
   in shipped code (`cmd/`, `internal/`): `grep -rn --include='*.go'
   -E 'crypto/tls|http2|h2c|multipart|x509|http\.Client|http\.Get'
@@ -125,6 +149,54 @@ Bind configurability (`internal/config/config.go`):
   sockets are two `netlink.Dial(unix.NETLINK_NETFILTER, nil)` netlink
   sockets (internal/packet/capture.go:259, 263) — kernel AF_NETLINK,
   not network peers.
+
+## Measured listener defaults (2026-11-20)
+
+Every row below was measured, not read: OpenWrt 25.12.6 x86/64 QEMU
+(kernel `6.12.112`), listeners recorded with `netstat -ltnp` inside the
+guest after `sleep 7`, sockets probed with raw HTTP over `nc`
+(`GET /healthz`, `GET /readyz`, `GET /metrics`, `GET /v1/policy`,
+`POST /v1/policy` without a token, metrics on `:9090`).
+
+| Scenario | Artifact (sha256 of the binary) | Rendered daemon command line | Listening sockets | Probes |
+| --- | --- | --- | --- | --- |
+| CLI archive, no config/env/flags | v0.2.5 `95b9fc3e…` | `goshisen-v025 --policy-file … --interface lo` | `127.0.0.1:8080`, `127.0.0.1:9090` | healthz 200, `/metrics` 200, POST `/v1/policy` 401 |
+| CLI archive, no config/env/flags | v0.2.6 `eb457689…` | `goshisen-v026 --policy-file … --interface lo` | `127.0.0.1:8080`, `127.0.0.1:9090` | same |
+| CLI archive, `GOSHISEN_API_PORT=0` + `GOSHISEN_METRICS_PORT=0` | v0.2.5 / v0.2.6 | – | none | all refused |
+| CLI archive, YAML `api_port: 0` / `metrics_port: 0` | v0.2.5 / v0.2.6 | `--config file0.yaml` | `127.0.0.1:8080`, `127.0.0.1:9090` (**`0` ignored**) | healthz 200 … |
+| CLI archive, YAML `api_port:` / `metrics_port:` (empty) | v0.2.5 / v0.2.6 | `--config filenull.yaml` | `127.0.0.1:8080`, `127.0.0.1:9090` (`0` ignored) | healthz 200 … |
+| CLI archive, `--api-port 0` / `--metrics-port 0` | v0.2.5 / v0.2.6 | `… --api-port 0 --metrics-port 0` | `127.0.0.1:8080`, `127.0.0.1:9090` (**`0` ignored**) | healthz 200 … |
+| CLI archive, YAML `api_port: ""` | v0.2.5 / v0.2.6 | `--config emptystr.yaml` | none (daemon refuses to start: YAML type error) | – |
+| CLI archive, file `0` + env `9101`/`0` | v0.2.5 / v0.2.6 | `--config file0.yaml` + env | `127.0.0.1:9101` only (env wins) | – |
+| CLI archive, file `9100` + env `0` + `--metrics-port 0` | v0.2.5 / v0.2.6 | … | `127.0.0.1:9091` only (env `0` wins; flag `0` ignored) | – |
+| CLI archive, file `0` + `--api-port 9102 --metrics-port 0` | v0.2.5 / v0.2.6 | … | `127.0.0.1:9102` + `127.0.0.1:9090` (flag `0` ignored) | – |
+| OpenWrt fresh install, packaged config, `enabled=1` | apk 0.2.5-r1, payload `c117a9aa…` | `/usr/sbin/goshisen --config /var/run/goshisen/config.yaml` (`api_port: 0`, `metrics_port: 0`) | `127.0.0.1:8080`, `127.0.0.1:9090` | healthz 200, `/metrics` 200, POST 401 |
+| OpenWrt fresh install, packaged config, `enabled=1` | apk 0.2.6-r1, payload `4ebf71b0…` | same | `127.0.0.1:8080`, `127.0.0.1:9090` | same |
+| OpenWrt fresh install v0.2.0-r2 / v0.2.3-r1 (unsigned `--allow-untrusted` / signed), enabled | payloads `a00e4a52…` / `57aef2cf…` | same | `127.0.0.1:8080`, `127.0.0.1:9090` | same |
+| OpenWrt upgrade 0.2.3-r1 → 0.2.6-r1 **while running** (postinst restart, config preserved) | payload `4ebf71b0…` | same | `127.0.0.1:8080`, `127.0.0.1:9090` | healthz 200, POST 401 |
+| OpenWrt config with `api_port`/`metrics_port` **absent** or **empty** | apk 0.2.5-r1 / 0.2.6-r1 | (no daemon started) | none — init script rejects: `goshisen: api_port '' out of range` | – |
+| OpenWrt without `/etc/config/goshisen` | apk 0.2.6-r1 | (no daemon started) | none — `goshisen: service is disabled (goshisen.main.enabled=0)` | – |
+
+Precedence measured with `goshisen config show`: `defaults < file < env
+< flags` (`api_port: 9102 (from flag)` with file 9100 + env 0 above it).
+Knobs that disable a listener:
+
+| Knob | Disables on ≤ v0.2.6 | Disables after v0.2.6 (main) |
+| --- | --- | --- |
+| UCI `option api_port '0'` / `metrics_port '0'` (rendered into the YAML) | **no** (file `0` ignored) | yes |
+| YAML `api_port: 0` / `metrics_port: 0` (also an empty value) | **no** | yes |
+| `--api-port 0` / `--metrics-port 0` | **no** | yes |
+| `GOSHISEN_API_PORT=0` / `GOSHISEN_METRICS_PORT=0` | yes | yes |
+| `goshisen.main.enabled=0` (service never starts, so no socket) | yes | yes |
+
+Consequence for the package: on ≤ v0.2.6 an *enabled* service always ends
+up with both listeners on loopback, and the UCI option cannot turn them
+off; the only UCI-level remedy is not starting the daemon. The package
+cannot enable anything without the operator enabling the service
+(`enabled '0'` shipped, no procd autostart), so this is not a
+silent-listen case — but it is a documented-default case that does not
+hold, tracked as its own issue with a proposed init-script fix (render
+explicit port values, default `0`).
 
 ## Vulnerability summary
 
@@ -181,7 +253,7 @@ for the 11 S-005 IDs.
 | GO ID | package/symbol | call path from our code | precondition (attacker must control) | classification |
 | --- | --- | --- | --- | --- |
 | GO-2026-6859 | net/http (MaxBytesReader race) | `api.Server.Serve` → `http.Server.Serve` (server.go:143); `app.Daemon.serveMetrics` → `http.Server.Serve` (app.go:541) | an authenticated client (valid bearer token) sends an HTTP/1 POST with a body that exceeds `MaxBodyBytes` (16 KiB), so the handler's `readBody` (server.go:267, `http.MaxBytesReader`) races its own response-header write; `requireAuth` runs before `readBody`, so unauthenticated requests never read bodies; the metrics handler never reads bodies | **local user with API token** (loopback listener) / **remote with non-default `api_host`** |
-| GO-2026-6613 | net/http (CONNECT desync) | API server: `http.Server.Serve` (server.go:143); metrics server: `http.Server.Serve` (app.go:541) | a client sends an HTTP/1 CONNECT request; the server handler must reply 2xx to CONNECT. Verified: the API server answers 405/404 to CONNECT (method-specific mux — `TestConnectMethodNotAllowed`); the standalone metrics server's methodless `/metrics` handler answers **200** to a path-form CONNECT (the GO-2026-6613 precondition holds there — `TestMetricsServerConnectToMetricsPath`). The smuggling impact needs an intermediate proxy in front of the listener; the metrics listener is loopback-only and disabled by default, so no proxy sits in front | **not practically exploitable** (metrics listener loopback-only + disabled by default; no proxy in front; API never answers 2xx to CONNECT) |
+| GO-2026-6613 | net/http (CONNECT desync) | API server: `http.Server.Serve` (server.go:143); metrics server: `http.Server.Serve` (app.go:541) | a client sends an HTTP/1 CONNECT request; the server handler must reply 2xx to CONNECT. Verified: the API server answers 405/404 to CONNECT (method-specific mux — `TestConnectMethodNotAllowed`); the standalone metrics server's methodless `/metrics` handler answers **200** to a path-form CONNECT (the GO-2026-6613 precondition holds there — `TestMetricsServerConnectToMetricsPath`). The smuggling impact needs an intermediate proxy in front of the listener; the metrics listener is loopback-only (but **enabled** whenever the daemon runs — see "Measured listener defaults"), so no proxy sits in front | **not practically exploitable** (metrics listener loopback-only + disabled by default; no proxy in front; API never answers 2xx to CONNECT) |
 | GO-2026-6617 | net/http/internal/http2 (HPACK race) | `http.Server.Serve` → h2 only after TLS negotiation | TLS-negotiated h2 — no `tls.Config`, plaintext listener | **not reachable (no TLS)** |
 | GO-2026-6612 | net/http/internal/http2 (double flow refund) | `http.Server.Serve` h2 path | same | **not reachable (no TLS)** |
 | GO-2026-6611 | net/http/internal/http2 (SETTINGS CPU) | `http.Server.Serve` h2 path | same | **not reachable (no TLS)** |
@@ -204,24 +276,28 @@ Notes:
   `textproto.ReadMIMEHeader` on every request; the go1.27.1 server does
   not) — so the CLI archives are affected by the local-user class for
   6608 too.
-- Default configuration: both ports disabled (`0`) on OpenWrt
-  (`openwrt/files/etc/config/goshisen`); when enabled they bind
-  loopback only. A root user can enable them; a non-root local user can
-  connect to them if root enabled them.
+- Default configuration (corrected 2026-11-20; measured, see
+  "Measured listener defaults" below): the shipped OpenWrt config stores
+  `api_port '0'` / `metrics_port '0'`, but on every release up to and
+  including v0.2.6 the daemon ignores that file `0`, so both listeners
+  bind loopback as soon as the service is enabled. A non-root local user
+  can connect to them; mutations still require the bearer token.
 
 ## Plain verdict on exploitability
 
 **No remote exploit exists with the default configuration.** The
 daemon's only network surface is two plaintext HTTP servers on
-127.0.0.1 that are disabled by default on the OpenWrt package; it has
-no TLS and no outbound connections, so the h2/TLS/x509/client-side
-classes are unreachable by construction. The nearest-to-reachable
+127.0.0.1 that are **enabled whenever the daemon runs** — including on
+the OpenWrt package with its shipped config, whose `api_port '0'` /
+`metrics_port '0'` are ignored by the daemon on every release up to
+v0.2.6; it has no TLS and no outbound connections, so the
+h2/TLS/x509/client-side classes are unreachable by construction. The nearest-to-reachable
 class is **local users on the loopback HTTP listeners**: 6859 needs a
 valid API bearer token plus an oversized POST body (mutations are
 token-gated; unauthenticated GET endpoints never read bodies), and
 6613's precondition exists on the metrics server (methodless `/metrics`
 answers 200 to CONNECT) but requires a proxy in front for impact, which
-the loopback-only, disabled-by-default listener does not have. On the
+the loopback-only listener does not have. On the
 CLI archives (go1.25.14) 6608 is reachable on the unauthenticated
 HTTP/1 server header-parse path when a listener is enabled. A
 **non-default `api_host` config makes the API listener remotely
@@ -235,8 +311,11 @@ configuration** (code lines above show the loopback binds and the
 absence of TLS/client code) **but the loopback property is not closed
 by construction**: `api_host` is user-configurable to a non-loopback
 address and no config validation prevents it. The advisory therefore
-recommends leaving both ports disabled and treating a non-loopback
-`api_host` as a misconfiguration.
+recommends disabling the listeners explicitly
+(`GOSHISEN_API_PORT=0` / `GOSHISEN_METRICS_PORT=0`, or `api_port: 0` /
+`--api-port 0` after v0.2.6 — the UCI/YAML/flag `0` is ignored on
+≤ v0.2.6) and treating a non-loopback `api_host` as a
+misconfiguration.
 
 ## Fix version
 
@@ -253,8 +332,12 @@ recommends leaving both ports disabled and treating a non-loopback
 
 ## Workarounds (until v0.2.6)
 
-1. Keep `api_port` and `metrics_port` at **0 (disabled)** — the OpenWrt
-   default — or, if needed, leave `api_host` at `127.0.0.1`.
+1. On releases up to v0.2.6 the UCI option / YAML key / flag `0` does
+   **not** disable the listeners: set `GOSHISEN_API_PORT=0` and
+   `GOSHISEN_METRICS_PORT=0` in the service environment, or leave the
+   service disabled (`goshisen.main.enabled=0`), and always keep
+   `api_host` at `127.0.0.1`. After v0.2.6 the file/flag `0` disables
+   too (the shipped UCI config already sets both to `'0'`).
 2. Do not set `api_host` to a non-loopback address. The GET endpoints
    (`/healthz`, `/readyz`, `/metrics`) are **unauthenticated**; if the
    API must be enabled, keep it on loopback and reach it via an SSH

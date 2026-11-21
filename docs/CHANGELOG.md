@@ -71,7 +71,7 @@ Status and notable history for GoShiSen-Enforce. Per-release detail lives in `do
   be `queue to 65536`, outside the u16 range); config now rejects it with
   a clear message.
 
-## Corrections (post-v0.2.6 docs, 2026-11-19)
+## Corrections (post-v0.2.6 docs, 2026-11-19; re-verified 2026-11-20)
 
 - **HTTP listener defaults (docs correction):** the v0.2.6 notes, the
   v0.2.5 security advisory and the OpenWrt docs said the HTTP listeners
@@ -84,7 +84,27 @@ Status and notable history for GoShiSen-Enforce. Per-release detail lives in `do
   today is `GOSHISEN_API_PORT=0` / `GOSHISEN_METRICS_PORT=0`, or
   leaving the service disabled (`enabled=0`). No code behavior changed;
   severity remains Low (default) / Medium (non-loopback `api_host`).
-  A code fix to honor explicit `0` is planned for v0.2.7.
+  A code fix to honor explicit `0` is present on `main` after the
+  v0.2.6 tag and is planned to ship in **v0.2.7**; no published
+  artifact contains it yet.
+- **Listener defaults measured (2026-11-20), CLI archive included:**
+  the same correction applies to the v0.2.5/v0.2.6 **CLI archives**,
+  which had been described only as "loopback-only". Measured with no
+  config/env/flags they listen on `127.0.0.1:8080` + `127.0.0.1:9090`;
+  YAML `api_port: 0`, an empty YAML value and `--api-port 0` are
+  ignored there, while `GOSHISEN_API_PORT=0` disables. OpenWrt: a fresh
+  install of the signed 0.2.5-r1 / 0.2.6-r1 apk with the packaged
+  config, and an in-place upgrade 0.2.3-r1 → 0.2.6-r1 while running,
+  both end with the two loopback listeners up; a config without the
+  options (or with them empty) aborts in the init script
+  (`api_port '' out of range`) with no listener. Precedence confirmed
+  with `goshisen config show`: defaults < file < env < flags. Evidence
+  table: `docs/security/advisory-v0.2.5-go-toolchain.md` § "Measured
+  listener defaults"; contract tests:
+  `tests/package/listener_defaults_contract_test.go`.
+  The code fix that honors an explicit `0` is present on `main` after
+  the v0.2.6 tag but is **not in any published artifact yet**
+  (v0.2.7 candidate).
 
 ## Unreleased (after v0.2.6)
 

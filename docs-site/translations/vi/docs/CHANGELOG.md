@@ -33,7 +33,7 @@ Trạng thái và lịch sử đáng chú ý của GoShiSen-Enforce. Chi tiết 
 - **Toolchain ghim go1.27.4 (S-001):** 11 lỗ hổng thư viện chuẩn có thể tiếp cận (net/http Range-header DoS, chạy đua MaxBytesReader, chạy đua HPACK http2, crypto/x509) dưới go1.27.1 đã đóng; `golang.org/x/net` v0.62.0 và `golang.org/x/sys` v0.49.0. Chỉ thị `go` giờ là `go 1.26.0` (yêu cầu Go ≥ 1.26; CI cài trực tiếp go1.27.4).
 - **queue_num giới hạn 0..65534 (S-002):** queue_num 65535 từng được chấp nhận nhưng không bao giờ cài được (quy tắc queue IPv6 tại queue_num+1 sẽ thành `queue to 65536`, ngoài phạm vi u16); cấu hình giờ từ chối nó kèm thông báo rõ ràng.
 
-## Hiệu chỉnh (tài liệu hậu v0.2.6, 2026-11-19)
+## Hiệu chỉnh (tài liệu hậu v0.2.6, 2026-11-19; tái xác minh 2026-11-20)
 
 - **Mặc định listener HTTP (hiệu chỉnh tài liệu):** ghi chú v0.2.6,
   cảnh báo bảo mật v0.2.5 và tài liệu OpenWrt từng nói các listener
@@ -47,6 +47,23 @@ Trạng thái và lịch sử đáng chú ý của GoShiSen-Enforce. Chi tiết 
   tắt (`enabled=0`). Không có thay đổi hành vi mã; mức độ nghiêm trọng
   vẫn là Low (mặc định) / Medium (`api_host` không-loopback).
   Bản vá mã để tôn trọng `0` tường minh dự kiến ở v0.2.7.
+- **Mặc định listener đo được (2026-11-20), có cả kho lưu trữ CLI:**
+  cùng hiệu chỉnh áp dụng cho **kho lưu trữ CLI** v0.2.5/v0.2.6,
+  trước đây chỉ được mô tả là "chỉ loopback". Đo được khi không có
+  cấu hình/env/cờ, chúng lắng nghe trên `127.0.0.1:8080` +
+  `127.0.0.1:9090`; YAML `api_port: 0`, giá trị YAML trống và
+  `--api-port 0` bị bỏ qua ở đó, trong khi `GOSHISEN_API_PORT=0` tắt.
+  OpenWrt: cài đặt mới gói apk 0.2.5-r1 / 0.2.6-r1 đã ký với cấu
+  hình đi kèm, và nâng cấp tại chỗ 0.2.3-r1 → 0.2.6-r1 trong khi đang
+  chạy, cả hai đều kết thúc với hai listener loopback hoạt động; cấu
+  hình không có các tùy chọn (hoặc để trống) hủy bỏ trong script init
+  (`api_port '' out of range`) mà không có listener. Thứ tự ưu tiên
+  được xác nhận bằng `goshisen config show`: mặc định < tệp < env <
+  cờ. Bảng bằng chứng: `docs/security/advisory-v0.2.5-go-toolchain.md`
+  § "Measured listener defaults"; kiểm thử hợp đồng:
+  `tests/package/listener_defaults_contract_test.go`. Bản vá mã tôn
+  trọng `0` tường minh có trên `main` sau thẻ v0.2.6 nhưng **chưa có
+  trong bất kỳ artifact nào đã công bố** (ứng viên v0.2.7).
 
 ## Chưa phát hành (sau v0.2.6)
 
