@@ -162,7 +162,7 @@ jobs:
           fi
 
   robustness:
-    name: CLI anomaly sweep + config fuzz
+    name: CLI anomaly sweep + config fuzz + lint gates
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -177,6 +177,14 @@ jobs:
           for f in FuzzConfigQueueRanges FuzzConfigPorts FuzzConfigMisc; do
             go test ./internal/config/ -fuzz="^$f$" -fuzztime=30s -run '^$'
           done
+      - name: Install staticcheck (pinned, reviewed)
+        run: go install honnef.co/go/tools/cmd/staticcheck@v0.8.2
+      - name: Staticcheck (must be empty baseline)
+        run: $(go env GOPATH)/bin/staticcheck ./...
+      - name: Install govulncheck (pinned, reviewed)
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+      - name: govulncheck source mode
+        run: $(go env GOPATH)/bin/govulncheck -mode=source ./...
 
   package:
     name: package + verify release archives
