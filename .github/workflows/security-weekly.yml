@@ -1,0 +1,131 @@
+name: security-weekly
+
+# D2 policy: dependency/CVE scanning is advisory on pull requests
+# (annotation only - see the ci.yml `robustness` job) and BLOCKING in the
+# release paths (release.yml S-005 binary-mode gates, apk sign gates,
+# release-pin-gate --tag with GATE_S005_CHECKS=1). This workflow is the
+# third leg: an unattended weekly sweep that reports findings as a single
+# deduplicated issue so a new advisory in a dependency cannot go
+# unnoticed between releases.
+#
+# Deduplication: the issue title carries the marker "[security-scan]".
+# If an open issue with that marker exists, the report is appended as a
+# comment instead of opening another issue.
+on:
+  schedule:
+    # Mondays 06:17 UTC (off the top of the hour: less runner contention).
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  scan:
+    name: govulncheck + staticcheck + gosec sweep
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: "1.27.4"
+          cache: true
+
+      - name: Install scanners (pinned, reviewed)
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+          go install honnef.co/go/tools/cmd/staticcheck@v0.8.2
+          go install github.com/securego/gosec/v2/cmd/gosec@v2.22.4
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: govulncheck (source mode, text)
+        run: |
+          set -o pipefail
+          govulncheck -mode=source ./... 2>&1 | tee "$RUNNER_TEMP/govulncheck.txt" | tail -n 40
+          # Record the exit status without failing the step: the report
+          # decides whether an issue needs to be opened.
+          echo "govulncheck_exit=${PIPESTATUS[0]}" >> "$GITHUB_ENV"
+
+      - name: staticcheck (text)
+        run: |
+          set -o pipefail
+          staticcheck ./... 2>&1 | tee "$RUNNER_TEMP/staticcheck.txt" | tail -n 40
+          echo "staticcheck_exit=${PIPESTATUS[0]}" >> "$GITHUB_ENV"
+
+      - name: gosec (text, advisory triage upstream)
+        run: |
+          set -o pipefail
+          gosec -quiet ./... 2>&1 | tee "$RUNNER_TEMP/gosec.txt" | tail -n 20
+          echo "gosec_exit=${PIPESTATUS[0]}" >> "$GITHUB_ENV"
+
+      - name: Build the report
+        id: report
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/report.md"
+          {
+            echo "Weekly security sweep on \`${GITHUB_SHA:0:12}\` (run [${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}))."
+            echo ""
+            echo "| Scanner | Result |"
+            echo "| --- | --- |"
+            echo "| govulncheck (source) | exit ${govulncheck_exit:-0} |"
+            echo "| staticcheck | exit ${staticcheck_exit:-0} |"
+            echo "| gosec | exit ${gosec_exit:-0} |"
+            echo ""
+            for f in govulncheck staticcheck gosec; do
+              if [ -s "$RUNNER_TEMP/$f.txt" ]; then
+                echo "<details><summary>$f output</summary>"
+                echo ""
+                echo '```'
+                tail -n 120 "$RUNNER_TEMP/$f.txt"
+                echo '```'
+                echo ""
+                echo "</details>"
+                echo ""
+              fi
+            done
+          } > "$report"
+          # "Findings" = any scanner exited non-zero.
+          if [ "${govulncheck_exit:-0}" != "0" ] || [ "${staticcheck_exit:-0}" != "0" ] || [ "${gosec_exit:-0}" != "0" ]; then
+            echo "findings=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "findings=0" >> "$GITHUB_OUTPUT"
+          fi
+          cp "$report" "$RUNNER_TEMP/report-final.md"
+
+      - name: Report findings (deduplicated issue)
+        if: steps.report.outputs.findings == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          marker="[security-scan]"
+          report="$RUNNER_TEMP/report-final.md"
+          existing="$(gh issue list --state open --search "in:title \"$marker\" repo:${GITHUB_REPOSITORY}" \
+            --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            echo "Appending to existing issue #$existing"
+            {
+              echo ""
+              echo "---"
+              echo ""
+              cat "$report"
+            } >> "$RUNNER_TEMP/comment.md"
+            gh issue comment "$existing" --body-file "$RUNNER_TEMP/comment.md"
+          else
+            echo "Opening a new issue"
+            {
+              echo "The weekly security sweep reported findings. Advisory on PRs (D2); blocking only in the release gates."
+              echo ""
+              cat "$report"
+              echo ""
+              echo "Close this issue when the findings are triaged or fixed; the next sweep appends to the issue while it stays open."
+            } > "$RUNNER_TEMP/issue.md"
+            gh issue create --title "$marker weekly security sweep reported findings" \
+              --body-file "$RUNNER_TEMP/issue.md"
+          fi
+
+      - name: No findings
+        if: steps.report.outputs.findings == '0'
+        run: "echo 'Weekly security sweep: govulncheck, staticcheck and gosec report no findings.'"
