@@ -160,7 +160,20 @@ render_config() {
 		echo "api_host: $(config_get main api_host)"
 		echo "api_port: $API_PORT"
 		echo "metrics_port: $METRICS_PORT"
+		# api_token is optional; when set it grants authenticated API
+		# mutations. The rendered config is chmod 600 below so the
+		# token is never world-readable on the device.
+		TOKEN=$(config_get main api_token)
+		if [ -n "$TOKEN" ]; then
+			echo "api_token: $TOKEN"
+		fi
 	} > "$CONFIG_PATH"
+	chmod 600 "$CONFIG_PATH"
+	# A listener without a token is read-only: mutations answer 401. Say
+	# so at start instead of letting an operator discover it from a 401.
+	if [ "$API_PORT" != "0" ] && [ -z "$TOKEN" ]; then
+		uci_warn "api_port is $API_PORT but api_token is not set; API mutations will be refused (401), reads stay open"
+	fi
 }
 
 start_service() {
