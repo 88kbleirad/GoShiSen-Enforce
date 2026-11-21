@@ -11,13 +11,20 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=goshisen
-PKG_VERSION:=0.2.6
+PKG_VERSION:=0.2.7
 # Package version is independent of the CLI release, but for this release
-# it is aligned with the CLI tag (v0.2.4). The daemon source is pinned by
-# PKG_SOURCE_VERSION below (the v0.2.4 tag commit). PKG_RELEASE=1
-# restarts the package release counter for the new PKG_VERSION
-# (0.2.4-r1 > 0.2.3-r1 under apk ordering).
+# it is aligned with the CLI tag (v0.2.7). The daemon source is pinned by
+# PKG_SOURCE_VERSION below (the v0.2.7 tag commit; set by the post-tag
+# pin PR after the tag exists — a tag cannot contain its own hash).
+# PKG_RELEASE=1 restarts the package release counter for the new
+# PKG_VERSION (0.2.7-r1 > 0.2.6-r1 under apk ordering).
 PKG_RELEASE:=1
+# NOTE: PKG_SOURCE_VERSION / PKG_MIRROR_HASH are deliberately NOT bumped
+# in this pre-tag PR. They are the POST-tag pin PR's job (pin = the
+# v0.2.7 tag commit + derived mirror hash), so that the tagged commit's
+# Makefile already carries PKG_VERSION:=0.2.7 (F-01 pre-tag gate). Until
+# then they keep the v0.2.6 pin (af96e895…) so any SDK build from this
+# checkout stays buildable.
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/88kbleirad/GoShiSen-Enforce.git
