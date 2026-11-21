@@ -66,7 +66,10 @@ type File struct {
 
 	// APIPort is the API TCP port; default 8080 (loopback) when no
 	// layer sets it. An explicit 0 — file, GOSHISEN_API_PORT, or
-	// --api-port — disables the API listener (see loadFile).
+	// --api-port — disables the API listener (see loadFile). Releases up
+	// to and including v0.2.6 ignored a file/flag 0 and fell back to
+	// 8080; the presence tracking below is the fix (unreleased in the
+	// v0.2.6 tag, on main afterwards).
 	APIPort int `yaml:"api_port"`
 
 	// APIToken is the bearer token required for administrative
@@ -78,7 +81,7 @@ type File struct {
 	// MetricsPort is the Prometheus metrics TCP port; default 9090
 	// (loopback) when no layer sets it. An explicit 0 — file,
 	// GOSHISEN_METRICS_PORT, or --metrics-port — disables the metrics
-	// listener (see loadFile).
+	// listener (see loadFile). Same ≤ v0.2.6 caveat as APIPort.
 	MetricsPort int `yaml:"metrics_port"`
 
 	// apiPortSet/metricsPortSet record whether the config file explicitly

@@ -110,6 +110,19 @@ define Package/goshisen/postinst
 	fi
 endef
 
+define Package/goshisen/postinst-notify-listener-defaults
+# (proposal, NOT merged — F-02 listener-defaults upgrade notice)
+# A router upgrading from <= v0.2.6 with the packaged `option api_port
+# '0'` / `metrics_port '0'` had BOTH loopback listeners listening
+# (those releases ignored a file/flag 0). v0.2.7 kills them. One-time
+# notice on the first post-upgrade start:
+#   - `apk` postinst on PKG_UPGRADE=1 writes /var/run/goshisen/.upgraded-to-027;
+#   - the init script's start() logs a daemon.warn once (marker file)
+#     when it renders both ports 0: listeners are off; to re-enable
+#     set `uci set goshisen.main.api_port='8080'` and
+#     `metrics_port='9090'` (+ restart).
+endef
+
 define Package/goshisen/prerm
 	# On uninstall OR downgrade the app-owned nftables table must be
 	# removed and the package-owned rc.d symlinks cleaned unconditionally
