@@ -55,7 +55,7 @@ Boolean chấp nhận `true/false`, `1/0`, `yes/no`, `on/off`. Mẫu: `configs/g
 
 ## Metrics
 
-Định dạng văn bản Prometheus 0.0.4: `GET /metrics` trên máy chủ API (`127.0.0.1:8080`) hoặc `--metrics-port` riêng (mặc định 9090, chỉ localhost, không xác thực). Chỉ label bản số giới hạn. Danh mục metric và thiết lập Grafana: `docs/release/metrics-grafana-validation.md`.
+Định dạng văn bản Prometheus 0.0.4: `GET /metrics` trên máy chủ API (`127.0.0.1:8080`) hoặc `--metrics-port` riêng (mặc định 9090, chỉ localhost, không xác thực). Lưu ý: trên các bản phát hành ≤ v0.2.6, giá trị tắt `0` chỉ được tôn trọng qua `GOSHISEN_API_PORT=0` / `GOSHISEN_METRICS_PORT=0` (tệp/cờ `0` bị bỏ qua và quay về mặc định); sau v0.2.6 mọi lớp đều tôn trọng `0` tường minh. Chỉ label bản số giới hạn. Danh mục metric và thiết lập Grafana: `docs/release/metrics-grafana-validation.md`.
 
 ## Kiểm thử
 

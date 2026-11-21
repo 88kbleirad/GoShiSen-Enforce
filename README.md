@@ -55,7 +55,7 @@ Booleans accept `true/false`, `1/0`, `yes/no`, `on/off`. Samples: `configs/goshi
 
 ## Metrics
 
-Prometheus text format 0.0.4: `GET /metrics` on the API server (`127.0.0.1:8080`) or a dedicated `--metrics-port` (default 9090, localhost only, no auth). Bounded-cardinality labels only. Metric inventory and Grafana setup: `docs/release/metrics-grafana-validation.md`.
+Prometheus text format 0.0.4: `GET /metrics` on the API server (`127.0.0.1:8080`) or a dedicated `--metrics-port` (default 9090, localhost only, no auth). Note: on releases ≤ v0.2.6 the `0` disable value is honoured only via `GOSHISEN_API_PORT=0` / `GOSHISEN_METRICS_PORT=0` (a file/flag `0` is ignored and falls back to the defaults); after v0.2.6 all layers honour an explicit `0`. Bounded-cardinality labels only. Metric inventory and Grafana setup: `docs/release/metrics-grafana-validation.md`.
 
 ## Testing
 

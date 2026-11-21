@@ -103,6 +103,25 @@ Dependencies: `kmod-nfnetlink-queue`, `kmod-nft-queue`,
 **The service is disabled by default.** Installing the package does not
 enable it and does not touch the firewall.
 
+**Listener defaults (measured, not assumed).** The daemon's built-in
+defaults are API `127.0.0.1:8080` and metrics `127.0.0.1:9090`, and
+they are **on** whenever the daemon runs: measured on OpenWrt 25.12.6
+x86/64 (kernel 6.12.112) for a fresh install of the signed 0.2.5-r1 and
+the 0.2.6-r1 apk with the packaged config untouched, and for an upgrade
+0.2.3-r1 → 0.2.6-r1 while running — in every case `netstat -ltnp` shows
+`127.0.0.1:8080` and `127.0.0.1:9090` owned by `goshisen` (GET
+`/healthz` → 200, GET `/metrics` → 200, `POST /v1/policy` without a
+token → 401). Releases ≤ v0.2.6 **ignore** the packaged
+`option api_port '0'` / `option metrics_port '0'` (the file layer
+treated `0` as "not set"), so the UCI option cannot turn the listeners
+off there; use `GOSHISEN_API_PORT=0` / `GOSHISEN_METRICS_PORT=0` in the
+service environment, or leave `goshisen.main.enabled=0`. A config
+without those options (or with them empty) makes the init script abort
+before starting the daemon (`goshisen: api_port '' out of range`), so
+those cases end with no listener at all. Full evidence:
+`docs/security/advisory-v0.2.5-go-toolchain.md` § "Measured listener
+defaults".
+
 ## UCI configuration (`/etc/config/goshisen`)
 
 | Option | Default | Meaning |
@@ -113,8 +132,8 @@ enable it and does not touch the firewall.
 | `log_level` | `info` | `debug`, `info`, `warn`, `error` |
 | `interface` | `br-lan` | kernel netdev used for host validation (a fw4 zone name like `lan` is rejected) |
 | `policy_file` | `/etc/goshisen/policy.yaml` | policy YAML |
-| `api_port` | `0` | REST API (loopback only). An explicit `0` — this option, `GOSHISEN_API_PORT=0`, or `--api-port 0` — disables the API listener; an unset value keeps the built-in default 8080. |
-| `metrics_port` | `0` | Prometheus metrics (loopback only). An explicit `0` — this option, `GOSHISEN_METRICS_PORT=0`, or `--metrics-port 0` — disables the metrics listener; unset keeps the built-in default 9090. |
+| `api_port` | `0` | REST API (loopback only). An explicit `0` — this option, `GOSHISEN_API_PORT=0`, or `--api-port 0` — disables the API listener; an unset value keeps the built-in default 8080. ⚠️ Releases ≤ v0.2.6 ignore a file/flag `0` (falls back to 8080); there only `GOSHISEN_API_PORT=0` / `enabled=0` disable. |
+| `metrics_port` | `0` | Prometheus metrics (loopback only). An explicit `0` — this option, `GOSHISEN_METRICS_PORT=0`, or `--metrics-port 0` — disables the metrics listener; unset keeps the built-in default 9090. ⚠️ Same ≤ v0.2.6 caveat as `api_port`. |
 | `queue_maxlen` | `1024` | kernel queue length |
 | `offload_policy` | `warn` | flow-offload response: `warn` (log WARN + gauge), `refuse` (startup fails before hook install when offloading is detected), `readiness` (enforce but never become ready while offloading is active), `enforce` (actively disable offloading and verify; fail closed if disable fails or state is unknown) |
 | `allow_bypass` | `0` | diagnostic/development escape hatch, **only** valid with `offload_policy=enforce`: `1` downgrades enforce to warn (loud warning). Never default, never silent |
