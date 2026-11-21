@@ -27,13 +27,21 @@ with gates. **v0.2.6 is the fix version.**
   6608 textproto, 6607 tls, 6605 http client) have no call trace — the
   daemon has no TLS, no h2, no `http.Client`, no multipart (listener
   inventory in the advisory).
-- Default OpenWrt config: both listeners **disabled** (`api_port 0`,
-  `metrics_port 0`, rendered by the init script without `api_host` so
-  the packaged bind is loopback by construction); the metrics host is
-  hardcoded 127.0.0.1; `api_host` is configurable in the daemon YAML —
-  a non-loopback `api_host` exposes the API to the network (only
-  whitespace validation), so remote reachability exists only under
-  that non-default config.
+- Default OpenWrt config: both listeners **bind loopback** and are
+  **enabled whenever the daemon runs** — measured 2026-11-20 on OpenWrt
+  25.12.6 (kernel 6.12.112): a fresh install of the signed 0.2.5-r1 /
+  0.2.6-r1 apk and an in-place 0.2.3-r1 → 0.2.6-r1 upgrade both show
+  `127.0.0.1:8080` + `127.0.0.1:9090`. The packaged `api_port 0` /
+  `metrics_port 0` are rendered into the YAML but **ignored** by the
+  daemon in ≤ v0.2.6 (the file layer treated `0` as "not set"); only
+  `GOSHISEN_API_PORT=0` / `GOSHISEN_METRICS_PORT=0` or `enabled=0`
+  disable. The metrics host is hardcoded 127.0.0.1; `api_host` is
+  configurable in the daemon YAML — a non-loopback `api_host` exposes
+  the API to the network (only whitespace validation), so remote
+  reachability exists only under that non-default config. Evidence and
+  per-scenario table: `docs/security/advisory-v0.2.5-go-toolchain.md`
+  § "Measured listener defaults" (this paragraph originally said the
+  listeners were "disabled"; that was wrong).
 - Verdict: **not remotely exploitable in the default configuration**;
   locally reachable DoS (HTTP/1 server races/desync) when a listener
   is enabled; TLS/x509/h2/client IDs are not reachable by construction
@@ -164,8 +172,10 @@ payload.
 - v0.2.6 ships the apk payload **and** both CLI archives built with
   go1.27.4 (payload enforced by the sign-time gates; CLI archives by
   the release.yml `go-version: 1.27.4` pin), closing all 11 IDs.
-- Workarounds for v0.2.5 and earlier: keep `api_port`/`metrics_port`
-  disabled or loopback-only; never set a non-loopback `api_host`.
+- Workarounds for v0.2.5 and earlier: `api_port`/`metrics_port` `0`
+  does not disable on those releases — set `GOSHISEN_API_PORT=0` /
+  `GOSHISEN_METRICS_PORT=0` in the service environment or keep
+  `goshisen.main.enabled=0`; never set a non-loopback `api_host`.
 
 ## Remaining out of scope for v0.2.6
 

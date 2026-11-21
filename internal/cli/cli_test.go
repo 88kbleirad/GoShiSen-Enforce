@@ -158,3 +158,23 @@ func TestParsePortInvalidValues(t *testing.T) {
 		}
 	}
 }
+
+// TestParseAllowNonLoopbackAPIHostFlag: --allow-non-loopback-api-host
+// records the override; omitting it leaves the override nil.
+func TestParseAllowNonLoopbackAPIHostFlag(t *testing.T) {
+	o, err := Parse([]string{"--allow-non-loopback-api-host"}, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if o.Overrides.AllowNonLoopbackAPIHost == nil || !*o.Overrides.AllowNonLoopbackAPIHost {
+		t.Errorf("Overrides.AllowNonLoopbackAPIHost = %v, want true", o.Overrides.AllowNonLoopbackAPIHost)
+	}
+
+	o, err = Parse([]string{"--api-host", "10.0.0.1"}, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if o.Overrides.AllowNonLoopbackAPIHost != nil {
+		t.Errorf("Overrides.AllowNonLoopbackAPIHost = %v, want nil when flag absent", *o.Overrides.AllowNonLoopbackAPIHost)
+	}
+}
