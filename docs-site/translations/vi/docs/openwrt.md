@@ -101,6 +101,25 @@ Phụ thuộc: `kmod-nfnetlink-queue`, `kmod-nft-queue`,
 **Dịch vụ tắt mặc định.** Cài gói không bật nó và không động vào tường
 lửa.
 
+**Mặc định listener (đo được, không giả định).** Mặc định tích hợp của
+daemon là API `127.0.0.1:8080` và metrics `127.0.0.1:9090`, và chúng
+**bật** bất cứ khi nào daemon chạy: đo trên OpenWrt 25.12.6 x86/64
+(kernel 6.12.112) cho cài đặt mới gói apk 0.2.5-r1 và 0.2.6-r1 đã ký
+với cấu hình đi kèm không đổi, và cho nâng cấp 0.2.3-r1 → 0.2.6-r1
+trong khi đang chạy — trong mọi trường hợp `netstat -ltnp` cho thấy
+`127.0.0.1:8080` và `127.0.0.1:9090` do `goshisen` sở hữu (GET
+`/healthz` → 200, GET `/metrics` → 200, `POST /v1/policy` không token →
+401). Các bản phát hành ≤ v0.2.6 **bỏ qua** `option api_port '0'` /
+`option metrics_port '0'` đi kèm (lớp tệp coi `0` là "chưa đặt"), nên
+tùy chọn UCI không thể tắt listener ở đó; dùng `GOSHISEN_API_PORT=0` /
+`GOSHISEN_METRICS_PORT=0` trong môi trường dịch vụ, hoặc để
+`goshisen.main.enabled=0`. Cấu hình không có các tùy chọn đó (hoặc để
+trống) làm script init hủy bỏ trước khi khởi động daemon
+(`goshisen: api_port '' out of range`), nên các trường hợp đó kết thúc
+mà không có listener nào. Bằng chứng đầy đủ:
+`docs/security/advisory-v0.2.5-go-toolchain.md` § "Measured listener
+defaults".
+
 ## Cấu hình UCI (`/etc/config/goshisen`)
 
 | Tùy chọn | Mặc định | Ý nghĩa |
@@ -111,8 +130,8 @@ lửa.
 | `log_level` | `info` | `debug`, `info`, `warn`, `error` |
 | `interface` | `br-lan` | netdev kernel dùng xác thực máy chủ (tên zone fw4 như `lan` bị từ chối) |
 | `policy_file` | `/etc/goshisen/policy.yaml` | chính sách YAML |
-| `api_port` | `0` | REST API (chỉ loopback). Giá trị `0` tường minh — tùy chọn này, `GOSHISEN_API_PORT=0`, hoặc `--api-port 0` — tắt listener API; giá trị chưa đặt giữ mặc định tích hợp 8080. |
-| `metrics_port` | `0` | metrics Prometheus (chỉ loopback). Giá trị `0` tường minh — tùy chọn này, `GOSHISEN_METRICS_PORT=0`, hoặc `--metrics-port 0` — tắt listener metrics; chưa đặt giữ mặc định tích hợp 9090. |
+| `api_port` | `0` | REST API (chỉ loopback). Giá trị `0` tường minh — tùy chọn này, `GOSHISEN_API_PORT=0`, hoặc `--api-port 0` — tắt listener API; giá trị chưa đặt giữ mặc định tích hợp 8080. ⚠️ Các bản phát hành ≤ v0.2.6 bỏ qua tệp/cờ `0` (quay về 8080); ở đó chỉ `GOSHISEN_API_PORT=0` / `enabled=0` tắt. |
+| `metrics_port` | `0` | metrics Prometheus (chỉ loopback). Giá trị `0` tường minh — tùy chọn này, `GOSHISEN_METRICS_PORT=0`, hoặc `--metrics-port 0` — tắt listener metrics; chưa đặt giữ mặc định tích hợp 9090. ⚠️ Cùng cảnh báo ≤ v0.2.6 như `api_port`. |
 | `queue_maxlen` | `1024` | độ dài hàng đợi kernel |
 | `offload_policy` | `warn` | phản hồi flow-offload: `warn` (log WARN + gauge), `refuse` (khởi động fail trước khi cài hook khi phát hiện offloading), `readiness` (thực thi nhưng không bao giờ sẵn sàng trong khi offloading hoạt động), `enforce` (chủ động tắt offloading và xác minh; fail closed nếu tắt thất bại hoặc trạng thái không biết) |
 | `allow_bypass` | `0` | cửa sổ chẩn đoán/phát triển, **chỉ** hợp lệ với `offload_policy=enforce`: `1` hạ enforce xuống warn (cảnh báo lớn). Không bao giờ mặc định, không bao giờ im lặng |

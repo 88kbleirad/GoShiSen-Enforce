@@ -87,6 +87,13 @@ validate_uci() {
 render_config() {
 	# Render the YAML the daemon reads from UCI values. Values are
 	# validated above; no shell metacharacters reach the daemon.
+	#
+	# api_port/metrics_port are always rendered verbatim. With a UCI
+	# value of '0' this produces an explicit `api_port: 0` — which the
+	# daemon honours only after v0.2.6 (releases ≤ v0.2.6 ignored a
+	# file 0 and fell back to 8080/9090 loopback). An *absent* UCI
+	# option renders an empty value that validate_uci rejects
+	# (`api_port '' out of range`), so the daemon is not started.
 	mkdir -p /var/run/goshisen
 	{
 		echo "policy_file: $POLICY_PATH"
