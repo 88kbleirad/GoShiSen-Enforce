@@ -312,3 +312,34 @@ render_config
 		}
 	})
 }
+
+// TestInitRejectBadToken pins the fail-closed api_token validation: a
+// token with whitespace/control characters must abort the start naming
+// the option (it would corrupt the rendered YAML otherwise).
+func TestInitRejectBadToken(t *testing.T) {
+	mk := func(extra ...string) map[string]string {
+		m := map[string]string{
+			"enabled": "1", "queue_num": "100", "queue_maxlen": "1024",
+			"hook_scope": "openwrt", "log_level": "info",
+			"offload_policy": "warn", "policy_file": "/etc/goshisen/policy.yaml",
+			"interface": "br-lan", "api_port": "8080",
+			"metrics_port": "9090",
+		}
+		for i := 0; i+1 < len(extra); i += 2 {
+			m[extra[i]] = extra[i+1]
+		}
+		return m
+	}
+	for _, tok := range []string{"has space", "colon:sep", "hash#tag", "quote\"q", "brace{", "semi;"} {
+		yaml, errb, rc := renderPorts(t, mk("api_token", tok))
+		if rc != 1 {
+			t.Errorf("token %q: rc = %d, want 1 (yaml=%q err=%q)", tok, rc, yaml, errb)
+		}
+		if !strings.Contains(errb, "api_token") {
+			t.Errorf("token %q: stderr does not name api_token: %q", tok, errb)
+		}
+		if strings.TrimSpace(yaml) != "" {
+			t.Errorf("token %q: reject still rendered a config: %q", tok, yaml)
+		}
+	}
+}
