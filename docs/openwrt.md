@@ -203,6 +203,24 @@ Verify with `goshisen_packets_by_state_total{state="invalid"}`.
 The hook is intentionally left in place when the daemon stops, so
 forwarding stays blocked (fail-closed) rather than silently allowed.
 
+**Config missing (`/etc/config/goshisen` absent/deleted) blocks
+forwarding.** The init script treats a missing config as "service
+disabled" and refuses to start; the hook that is already installed (boot
+guard, or the previous daemon's table left on stop) **stays in place**,
+so LAN→WAN continues to be blocked until either:
+
+- the config is restored (`apk reinstall goshisen` re-ships the packaged
+  `/etc/config/goshisen` if you removed it; a real factory reset of the
+  router's UCI does the same), then `uci set goshisen.main.enabled='1'`,
+  `uci commit`, `/etc/init.d/goshisen start`, or
+- `goshisen hook cleanup` is run explicitly (removes the app-owned
+  `inet goshisen` table; firewall4 alone then governs forwarding).
+
+Router-local access (serial console, SSH to the router, LuCI) is never
+blocked by the forward hook, so these commands remain reachable — even
+from the WAN side, the router's own management plane is not queued,
+so the operator can always recover remotely.
+
 Recovery options, in order:
 
 ```sh
@@ -217,9 +235,6 @@ uci set goshisen.main.enabled='0'; uci commit goshisen
 /etc/init.d/goshisen stop
 /etc/init.d/goshisen disable
 ```
-
-Router-local access (serial console, SSH to the router, LuCI) is never
-blocked by the forward hook, so these commands remain reachable.
 
 ## Upgrade and removal
 

@@ -200,6 +200,23 @@ Xác minh với `goshisen_packets_by_state_total{state="invalid"}`.
 Hook được cố ý để nguyên khi daemon dừng, nên việc forward vẫn bị chặn
 (fail-closed) thay vì được phép im lặng.
 
+**Thiếu cấu hình (`/etc/config/goshisen` không tồn tại/bị xoá) chặn
+forward.** Script init xem cấu hình thiếu là "dịch vụ tắt" và từ chối
+khởi động; hook đã được cài (boot guard, hoặc bảng của daemon trước để
+lại khi dừng) **vẫn ở nguyên**, nên LAN→WAN tiếp tục bị chặn cho đến khi:
+
+- cấu hình được khôi phục (`apk reinstall goshisen` cài lại tệp
+  `/etc/config/goshisen` đi kèm nếu bạn xoá nó; reset factory UCI cũng
+  tương tự), sau đó `uci set goshisen.main.enabled='1'`, `uci commit`,
+  `/etc/init.d/goshisen start`; hoặc
+- chạy tường minh `goshisen hook cleanup` (gỡ bảng `inet goshisen` do
+  ứng dụng sở hữu; khi đó chỉ firewall4 điều hành forward).
+
+Truy cập router-local (serial console, SSH tới router, LuCI) không bao
+giờ bị chặn bởi hook forward, nên các lệnh này vẫn truy cập được — kể cả
+từ phía WAN, mặt phẳng quản lý của router không bị xếp hàng, nên người
+vận hành luôn phục hồi được từ xa.
+
 Các lựa chọn phục hồi, theo thứ tự:
 
 ```sh
@@ -214,9 +231,6 @@ uci set goshisen.main.enabled='0'; uci commit goshisen
 /etc/init.d/goshisen stop
 /etc/init.d/goshisen disable
 ```
-
-Truy cập router-local (serial console, SSH tới router, LuCI) không bao
-giờ bị chặn bởi hook forward, nên các lệnh này vẫn truy cập được.
 
 ## Nâng cấp và gỡ bỏ
 
