@@ -7,6 +7,12 @@ Trạng thái và lịch sử đáng chú ý của GoShiSen-Enforce. Chi tiết 
 - **v0.2.7** — bản phát hành mới nhất (đã công bố 2026-11-21): bản phát hành làm cứng — ngữ nghĩa port-zero (khoảng trống tài liệu v0.2.6), bảo vệ vòng lặp `api_host`, làm cứng phương thức metrics, sửa tài liệu listener-defaults. Ghi chú phát hành và asset: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.7).
 - **v0.2.6** — bản phát hành trước (đã công bố 2026-11-19): bản phát hành sửa toolchain S-005 (issue #78) — payload apk và cả hai kho lưu trữ CLI được build với go1.27.4.
 
+## Làm cứng sau v0.2.7 (đã merge 2026-11-21, bản phát hành tiếp theo)
+
+- **Đọc file có giới hạn (#104):** đọc config/policy/store giờ từ chối file không-thường trước khi mở và giới hạn 16 MiB — đường dẫn policy trỏ vào /dev/urandom trước đây treo vô hạn (bộ nhớ ~1 GiB/s).
+- **CI mạnh hơn (#105–#107):** sweep bất thường CLI 257 case và các mục tiêu fuzz config đã được đưa vào repo và chạy trong CI, cùng staticcheck (baseline rỗng) và govulncheck source mode.
+- **UCI api_token (#108, đóng #103):** cấu hình OpenWrt giờ đặt được token API; config daemon được render có chmod 600 và charset token bị giới hạn (A-Za-z0-9._-); init script cảnh báo khi listener API bật mà không có token.
+
 ## Chi tiết đã chuyển ra khỏi README
 
 - Bộ tích hợp: 21 kịch bản netns (e2e, state, NAT, crash, overflow trong `tests/integration/`), gated bằng root, chạy với `sudo make integration`; CI chạy toàn bộ bộ trên runner GitHub (21/21 PASS, không có skip bắt buộc).

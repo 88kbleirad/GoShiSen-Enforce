@@ -7,6 +7,19 @@ Status and notable history for GoShiSen-Enforce. Per-release detail lives in `do
 - **v0.2.7** — latest release (published 2026-11-21): hardening release — port-zero semantics (v0.2.6 docs-gap), `api_host` loopback guard, metrics method hardening, listener-defaults docs correction. Release notes and assets: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.7).
 - **v0.2.6** — previous release (published 2026-11-19): S-005 toolchain-fix release (issue #78) — apk payload and both CLI archives built with go1.27.4.
 
+## Post-v0.2.7 hardening (merged 2026-11-21, next release)
+
+- **Bounded file reads (#104):** config/policy/store reads now reject
+  non-regular files before opening and cap at 16 MiB — a policy path
+  pointing at /dev/urandom previously hung forever (memory ~1 GiB/s).
+- **CI robustness (#105–#107):** the 257-case CLI anomaly sweep and the
+  config fuzz targets are committed and run in CI, alongside staticcheck
+  (empty baseline) and govulncheck source mode.
+- **UCI api_token (#108, closes #103):** OpenWrt config can now set the
+  API token; the rendered daemon config is chmod 600 and the token
+  charset is restricted (A-Za-z0-9._-); the init script warns when the
+  API listener is enabled without a token.
+
 ## Details moved out of the README
 
 - Integration suite: 21 netns scenarios (e2e, state, NAT, crash, overflow in `tests/integration/`), root-gated, run with `sudo make integration`; CI runs the full suite on GitHub-hosted runners (21/21 PASS, zero mandatory skips).
