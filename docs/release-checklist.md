@@ -145,6 +145,18 @@ Run in order. Every item must pass before tagging.
   committed trust anchor (`docs/trust/allowed_signers` or GPG key);
   record the raw verification output + fingerprint in the release
   evidence doc. Not an active requirement until the key is configured.
+- [ ] **Pre-tag pin/version gate (F-01, v0.2.7+):** BEFORE creating the
+  tag, on the commit that will be tagged, run
+  `scripts/release-pretag-check.sh --tag v<ver>`; it must PASS
+  (`PKG_VERSION` == tag version, `PKG_RELEASE` set, working tree exactly
+  a commit). The v0.2.6 tag shipped `PKG_VERSION:=0.2.5` and needed a
+  post-tag fix because nothing checked this before tagging; a tag cannot
+  contain its own hash, so the Makefile on main must carry the release
+  version *before* the tag (v0.2.7+ uses two Makefile touches: a pre-tag
+  version bump, then the post-tag source pin + mirror hash). Guarded in
+  CI by the `release-pretag-gate (F-01)` job
+  (`tests/ci/release-pretag-check-test.sh` fixtures: wrong version,
+  missing release, dirty tree, missing Makefile).
 - [ ] **Pin/version agreement gate (v0.2.4+, issue #49):** after
   tagging, commit the Makefile-only follow-up (pin = the tag commit SHA,
   `PKG_VERSION` = tag version) and run

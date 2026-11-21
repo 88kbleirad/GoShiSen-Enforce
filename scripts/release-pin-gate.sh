@@ -21,6 +21,10 @@
 # tagged, and label agreement, so the published artifact is traceable
 # to a single source tree.
 #
+# The claim this gate defers — "the tagged commit itself carries
+# PKG_VERSION == the tag version" — is enforced BEFORE tagging by
+# scripts/release-pretag-check.sh (F-01 gate).
+#
 # Usage:
 #   scripts/release-pin-gate.sh \
 #     --apk goshisen-0.2.4-r1.apk \

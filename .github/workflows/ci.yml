@@ -78,6 +78,27 @@ jobs:
       - name: Metacharacter tag fixtures must be rejected before use
         run: bash tests/ci/validate-release-tag-test.sh
 
+  release-pretag-gate:
+    # F-01 regression gate: the commit being tagged must ALREADY carry a
+    # matching openwrt/Makefile (PKG_VERSION == tag version, PKG_RELEASE
+    # set). The v0.2.6 tag shipped PKG_VERSION:=0.2.5 and was fixed only
+    # by a post-tag pin PR; the fixture harness below pins that case.
+    # Runs on every push/PR, and on a tag push it gates the real tag.
+    name: release-pretag-gate (F-01)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Pre-tag gate fixtures must reject wrong version, missing release and a dirty tree
+        run: bash tests/ci/release-pretag-check-test.sh
+      - name: Checked-out tree must agree with its own PKG_VERSION
+        run: |
+          pkg_version="$(sed -nE 's/^PKG_VERSION[[:space:]]*:=?[[:space:]]*(.*)/\1/p' openwrt/Makefile | head -n1)"
+          [ -n "$pkg_version" ] || { echo "FAIL: PKG_VERSION not found in openwrt/Makefile" >&2; exit 1; }
+          bash scripts/release-pretag-check.sh --tag "v$pkg_version"
+      - name: Tagged commit must carry a matching PKG_VERSION
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: bash scripts/release-pretag-check.sh --tag "$GITHUB_REF_NAME"
+
   apk-payload-go-gate:
     # S-005 regression gate: the apk payload's embedded Go toolchain
     # must be >= 1.27.4 (the pinned CI/release version) — the released
