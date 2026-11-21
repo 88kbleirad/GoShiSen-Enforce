@@ -15,7 +15,7 @@ import (
 //
 // "empty" cases encode the documented empty-string semantics: an env
 // var set to the empty string is treated as unset (the env layer skips
-// it), while a YAML key present with no scalar (``api_port:``) is
+// it), while a YAML key present with no scalar (“api_port:“) is
 // presence — an explicit 0 — and a YAML empty *string*
 // (`api_port: ""`) is a type error.
 func TestPortLayerMatrix(t *testing.T) {
