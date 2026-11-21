@@ -183,8 +183,30 @@ jobs:
         run: $(go env GOPATH)/bin/staticcheck ./...
       - name: Install govulncheck (pinned, reviewed)
         run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
-      - name: govulncheck source mode
-        run: $(go env GOPATH)/bin/govulncheck -mode=source ./...
+      - name: govulncheck source mode (warn-only on PRs, D2)
+        # D2 policy: dependency CVEs are advisory on PRs (annotation, no
+        # failure - a PR must not be blocked by a CVE in a dependency it
+        # did not choose) and BLOCKING in the release paths:
+        #   * release.yml  -> S-005 binary-mode gates on the CLI archives
+        #   * apk signing  -> check-apk-payload-govuln.sh / release-pin-gate
+        #   * .github/workflows/security-weekly.yml -> scheduled report
+        run: |
+          set -o pipefail
+          out="$(mktemp)"
+          if $(go env GOPATH)/bin/govulncheck -mode=source ./... >"$out" 2>&1; then
+            echo "govulncheck: no findings"
+            exit 0
+          fi
+          echo "::warning::govulncheck reported findings (advisory on PRs; the release gates block)"
+          {
+            echo "### govulncheck (source mode) findings"
+            echo ""
+            echo '```'
+            tail -n 60 "$out"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          sed -n 's/^/govulncheck: /p' "$out" | tail -n 40
+          exit 0
 
   package:
     name: package + verify release archives
