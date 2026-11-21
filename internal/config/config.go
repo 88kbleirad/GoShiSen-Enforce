@@ -283,7 +283,7 @@ func Load(configFile string, env func(string) (string, bool), ov Overrides) (*Op
 }
 
 func (o *Options) loadFile(path string) error {
-	data, err := os.ReadFile(path)
+	data, err := ReadFileBounded(path)
 	if err != nil {
 		return fmt.Errorf("config file %s: %w", path, err)
 	}

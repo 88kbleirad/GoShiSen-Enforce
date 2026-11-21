@@ -562,7 +562,7 @@ func (d *Daemon) MetricsAddr() string {
 // loadPolicy reads and compiles the configured policy file. The policy
 // is applied only after it compiles cleanly.
 func (d *Daemon) loadPolicy() (*policy.Snapshot, error) {
-	data, err := os.ReadFile(d.opts.PolicyFile)
+	data, err := config.ReadFileBounded(d.opts.PolicyFile)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", d.opts.PolicyFile, err)
 	}
@@ -619,7 +619,7 @@ func (d *Daemon) publish(snap *policy.Snapshot, data []byte, source string) (str
 // policy active (fail-closed: nothing is published half-applied).
 func (d *Daemon) reloadFromFile() {
 	d.log.Info("policy reload requested (SIGHUP)")
-	data, err := os.ReadFile(d.opts.PolicyFile)
+	data, err := config.ReadFileBounded(d.opts.PolicyFile)
 	if err != nil {
 		d.log.Warn("policy reload rejected; keeping previous policy", "error", err)
 		d.metrics.ObservePolicyUpdate(metrics.PolicyUpdateFailure)

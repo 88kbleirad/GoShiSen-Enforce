@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/88kbleirad/GoShiSen-Enforce/internal/safefile"
 )
 
 // ActivePointer is the on-disk "which policy is active" record.
@@ -151,7 +153,7 @@ func (s *Store) SetActive(version string) error {
 
 // Active returns the active version ("", empty if none).
 func (s *Store) Active() (string, error) {
-	data, err := os.ReadFile(filepath.Join(s.dir, "active.json"))
+	data, err := safefile.ReadBounded(filepath.Join(s.dir, "active.json"))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return "", nil
@@ -170,7 +172,7 @@ func (s *Store) ReadPolicy(version string) ([]byte, error) {
 	if err := ValidateVersion(version); err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(s.VersionPath(version))
+	data, err := safefile.ReadBounded(s.VersionPath(version))
 	if err != nil {
 		return nil, fmt.Errorf("store: read policy %q: %w", version, err)
 	}

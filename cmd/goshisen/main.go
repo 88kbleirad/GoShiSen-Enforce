@@ -168,7 +168,7 @@ func runPolicy(opts *cli.Options) error {
 		return fmt.Errorf("policy: no policy file (use --policy-file)")
 	}
 
-	raw, err := os.ReadFile(polFile)
+	raw, err := config.ReadFileBounded(polFile)
 	if err != nil {
 		return fmt.Errorf("policy: read %s: %w", polFile, err)
 	}
