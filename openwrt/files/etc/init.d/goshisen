@@ -24,6 +24,9 @@ STOP=10
 
 GOSHISEN_BIN=/usr/sbin/goshisen
 UCI_CONFIG_DIR=""
+# UCI_CONFIG_PATH is the file holding the token; overridable so the
+# contract tests can assert the chmod without touching /etc/config.
+UCI_CONFIG_PATH="${UCI_CONFIG_PATH:-/etc/config/goshisen}"
 CONFIG_PATH=/var/run/goshisen/config.yaml
 POLICY_PATH=""
 API_PORT=""
@@ -144,6 +147,15 @@ validate_uci() {
 			;;
 	esac
 
+	# The UCI config itself holds the token in plaintext. OpenWrt's
+	# uci commit preserves the file mode, so restrict it to root to keep
+	# the token away from other local users. This is best-effort: a
+	# future uci rewrite that resets the mode would re-open it, so the
+	# rendered /var/run config (0600) remains the source of truth.
+	if [ -n "$token" ]; then
+		chmod 600 "$UCI_CONFIG_PATH" 2>/dev/null || true
+	fi
+
 	return 0
 }
 
@@ -155,6 +167,14 @@ render_config() {
 	# explicit 0 disables the listener, an explicit port enables it on
 	# loopback.
 	mkdir -p /var/run/goshisen
+	# Create the rendered config with mode 600 from the first instant: a
+	# redirect inherits the current umask (OpenWrt default 022 → 644),
+	# so the token would be world-readable in the window before the
+	# chmod below. The chmod stays as a second line of defense. The
+	# previous umask is restored afterwards so the rest of the service
+	# start is unaffected.
+	_old_umask=$(umask)
+	umask 077
 	{
 		echo "policy_file: $POLICY_PATH"
 		echo "queue_num: $(config_get main queue_num)"
@@ -185,6 +205,7 @@ render_config() {
 		fi
 	} > "$CONFIG_PATH"
 	chmod 600 "$CONFIG_PATH"
+	umask "$_old_umask"
 	# A listener without a token is read-only: mutations answer 401. Say
 	# so at start instead of letting an operator discover it from a 401.
 	if [ "$API_PORT" != "0" ] && [ -z "$TOKEN" ]; then
