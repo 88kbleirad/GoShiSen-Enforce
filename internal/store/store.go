@@ -35,7 +35,7 @@ func Open(dir string) (*Store, error) {
 	if dir == "" {
 		return nil, errors.New("store: empty directory")
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("store: create dir %s: %w", dir, err)
 	}
 	return &Store{dir: dir}, nil
@@ -105,7 +105,7 @@ func (s *Store) WritePolicy(version string, data []byte) error {
 		return fmt.Errorf("store: policy %q already exists", version)
 	}
 	tmp := path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return fmt.Errorf("store: create temp: %w", err)
 	}
@@ -223,7 +223,7 @@ func (s *Store) NextVersion() (string, error) {
 
 func atomicWrite(path string, data []byte) error {
 	tmp := path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return fmt.Errorf("store: create temp: %w", err)
 	}

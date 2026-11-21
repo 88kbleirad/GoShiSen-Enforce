@@ -136,39 +136,16 @@ func parseAttrs(b []byte, fn func(typ uint16, payload []byte) bool) {
 	}
 }
 
-// packetAttrsFetcher fetches one attribute from a stream. It returns the
-// payload and true when found, false otherwise. Parsing is inlined in
-// the hot path instead of walking the stream with a closure.
-type packetAttrsFetcher func(typ uint16) ([]byte, bool)
-
-// newPacketAttrsFetcher returns a fetcher over the given attribute
-// stream. It parses the stream once per fetch; a fresh fetcher should be
-// created for each message.
-func newPacketAttrsFetcher(b []byte) packetAttrsFetcher {
-	return func(typ uint16) ([]byte, bool) {
-		for len(b) >= 4 {
-			l := int(binary.NativeEndian.Uint16(b[0:]))
-			if l < 4 || l > len(b) {
-				return nil, false
-			}
-			if t := binary.NativeEndian.Uint16(b[2:]); t == typ {
-				return b[4:l], true
-			}
-			al := (l + 3) &^ 3
-			if al > len(b) {
-				return nil, false
-			}
-			b = b[al:]
-		}
-		return nil, false
-	}
-}
-
 // verdictBufPool reuses the per-verdict netlink message buffer. The
 // kernel copies the contents on send, so the buffer can be reused for
-// every verdict without a data race.
+// every verdict without a data race. The pool stores a pointer to the
+// slice so a Get/Put pair does not box (and re-allocate) the slice
+// header on every verdict.
 var verdictBufPool = sync.Pool{
-	New: func() any { return make([]byte, 0, 20) },
+	New: func() any {
+		b := make([]byte, 0, 20)
+		return &b
+	},
 }
 
 // Stats exposes backend counters.
@@ -650,7 +627,8 @@ func (b *Backend) sendVerdict(family uint8, pktID uint32, verdict int) error {
 	// Reuse a pooled buffer for the verdict message. The kernel copies
 	// the data on send, so reuse is race-free. Layout: nfgenmsg(4) +
 	// verdict header attr (len/type(4) + 8-byte payload, aligned).
-	buf := verdictBufPool.Get().([]byte)[:0]
+	bufp := verdictBufPool.Get().(*[]byte)
+	buf := (*bufp)[:0]
 	buf = append(buf, family, 0)
 	buf = binary.BigEndian.AppendUint16(buf, queue)
 	buf = binary.NativeEndian.AppendUint16(buf, 12) // nla_len: 4+8
@@ -665,7 +643,8 @@ func (b *Backend) sendVerdict(family uint8, pktID uint32, verdict int) error {
 		Data: buf,
 	}
 	_, err := c.Send(m)
-	verdictBufPool.Put(buf[:0])
+	*bufp = buf[:0]
+	verdictBufPool.Put(bufp)
 	return err
 }
 
