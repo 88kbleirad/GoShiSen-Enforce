@@ -688,3 +688,114 @@ func TestLoadFilePortRejectsNonScalar(t *testing.T) {
 		}
 	}
 }
+
+// TestValidateLoopbackAPIHost: loopback values (empty default, 127/8,
+// ::1, localhost case-insensitive) always pass; nothing else does.
+func TestValidateLoopbackAPIHost(t *testing.T) {
+	accepted := []string{"", "127.0.0.1", "127.0.0.2", "127.0.0.255", "::1", "localhost", "LOCALHOST"}
+	rejected := []string{"0.0.0.0", "::", "10.0.0.1", "2001:db8::1", "example.com", "127.0.0.1.example"}
+	for _, host := range accepted {
+		if _, err := Load("", policyEnv(nil), Overrides{APIHost: &host}); err != nil {
+			t.Errorf("Load loopback host %q: %v", host, err)
+		}
+	}
+	for _, host := range rejected {
+		if _, err := Load("", policyEnv(nil), Overrides{APIHost: &host}); err == nil {
+			t.Errorf("Load accepted non-loopback host %q without opt-in", host)
+		}
+	}
+}
+
+// TestValidateLoopbackAPIHostOptIn: every rejected host is accepted when
+// the opt-in comes from (a) the YAML file, (b) the environment, (c) the
+// flag Overrides.
+func TestValidateLoopbackAPIHostOptIn(t *testing.T) {
+	rejected := []string{"0.0.0.0", "::", "10.0.0.1", "2001:db8::1", "example.com"}
+	for _, host := range rejected {
+		// (a) YAML file.
+		p := writeTemp(t, "goshisen.yaml", "policy_file: /etc/goshisen/policy.yaml\n"+
+			"api_host: "+strconv.Quote(host)+"\nallow_non_loopback_api_host: true\n")
+		if _, err := Load(p, policyEnv(nil), Overrides{}); err != nil {
+			t.Errorf("host %q via YAML opt-in: %v", host, err)
+		}
+
+		// (b) environment.
+		env := policyEnv(map[string]string{
+			EnvPrefix + "API_HOST":                    host,
+			EnvPrefix + "ALLOW_NON_LOOPBACK_API_HOST": "1",
+		})
+		if _, err := Load("", env, Overrides{}); err != nil {
+			t.Errorf("host %q via env opt-in: %v", host, err)
+		}
+
+		// (c) flag Overrides.
+		trueVal := true
+		ov := Overrides{APIHost: &host, AllowNonLoopbackAPIHost: &trueVal}
+		if _, err := Load("", policyEnv(nil), ov); err != nil {
+			t.Errorf("host %q via flag opt-in: %v", host, err)
+		}
+	}
+
+	// The opt-in itself is recorded in Sources for each layer.
+	trueVal := true
+	if o, err := Load("", policyEnv(nil), Overrides{APIHost: strPtr("10.0.0.1"), AllowNonLoopbackAPIHost: &trueVal}); err != nil {
+		t.Fatalf("Load flag opt-in: %v", err)
+	} else if o.Source("allow_non_loopback_api_host") != "flag" {
+		t.Errorf("flag opt-in source = %q, want flag", o.Source("allow_non_loopback_api_host"))
+	}
+	if o, err := Load("", policyEnv(map[string]string{EnvPrefix + "ALLOW_NON_LOOPBACK_API_HOST": "on"}), Overrides{}); err != nil {
+		t.Fatalf("Load env opt-in: %v", err)
+	} else if o.Source("allow_non_loopback_api_host") != "env" {
+		t.Errorf("env opt-in source = %q, want env", o.Source("allow_non_loopback_api_host"))
+	}
+	p := writeTemp(t, "goshisen.yaml", "policy_file: /etc/goshisen/policy.yaml\nallow_non_loopback_api_host: true\n")
+	if o, err := Load(p, policyEnv(nil), Overrides{}); err != nil {
+		t.Fatalf("Load file opt-in: %v", err)
+	} else if o.Source("allow_non_loopback_api_host") != "file" {
+		t.Errorf("file opt-in source = %q, want file", o.Source("allow_non_loopback_api_host"))
+	}
+}
+
+// TestValidateLoopbackAPIHostEnvBool: the env opt-in accepts the same
+// bool spellings as other bool env vars, and rejects garbage.
+func TestValidateLoopbackAPIHostEnvBool(t *testing.T) {
+	for _, v := range []string{"1", "true", "yes", "on", "TRUE", "On"} {
+		env := policyEnv(map[string]string{
+			EnvPrefix + "API_HOST":                    "10.0.0.1",
+			EnvPrefix + "ALLOW_NON_LOOPBACK_API_HOST": v,
+		})
+		if _, err := Load("", env, Overrides{}); err != nil {
+			t.Errorf("env opt-in %q: %v", v, err)
+		}
+	}
+	for _, v := range []string{"0", "false", "no", "off"} {
+		env := policyEnv(map[string]string{
+			EnvPrefix + "API_HOST":                    "10.0.0.1",
+			EnvPrefix + "ALLOW_NON_LOOPBACK_API_HOST": v,
+		})
+		if _, err := Load("", env, Overrides{}); err == nil {
+			t.Errorf("env opt-in %q on non-loopback host accepted, want error", v)
+		}
+	}
+	if _, err := Load("", policyEnv(map[string]string{EnvPrefix + "ALLOW_NON_LOOPBACK_API_HOST": "bogus"}), Overrides{}); err == nil {
+		t.Error("Load accepted bogus bool env value")
+	}
+}
+
+// TestValidateLoopbackAPIHostErrMessage: the rejection message names all
+// three opt-in mechanisms.
+func TestValidateLoopbackAPIHostErrMessage(t *testing.T) {
+	_, err := Load("", policyEnv(nil), Overrides{APIHost: strPtr("10.0.0.1")})
+	if err == nil {
+		t.Fatal("Load accepted non-loopback host")
+	}
+	for _, want := range []string{
+		"allow_non_loopback_api_host: true",
+		"GOSHISEN_ALLOW_NON_LOOPBACK_API_HOST=1",
+		"--allow-non-loopback-api-host",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err, want)
+		}
+	}
+}

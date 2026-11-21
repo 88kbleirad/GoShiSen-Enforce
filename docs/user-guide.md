@@ -138,7 +138,7 @@ nat:
 
 ## REST API
 
-The daemon exposes a management API (default `127.0.0.1:8080`). See `api/openapi.yaml` for the full spec.
+The daemon exposes a management API (default `127.0.0.1:8080`). See `api/openapi.yaml` for the full spec. The bind host is loopback-only: `api_host` must be `127.0.0.1`, any `127.x`, `::1`, or `localhost`; any other value makes the daemon refuse to start unless the operator opts in with `allow_non_loopback_api_host: true` (YAML/UCI), `GOSHISEN_ALLOW_NON_LOOPBACK_API_HOST=1` (env), or `--allow-non-loopback-api-host` (flag).
 
 | Endpoint | Auth | Purpose |
 | --- | --- | --- |
@@ -151,7 +151,7 @@ The daemon exposes a management API (default `127.0.0.1:8080`). See `api/openapi
 | `GET /readyz` | — | readiness (firewall fully up) |
 | `GET /metrics` | — | Prometheus metrics |
 
-- **Auth:** set `api_token` (config) or `GOSHISEN_API_TOKEN`. It is never accepted as a CLI flag. With no token set, administrative operations are refused (401).
+- **Auth:** set `api_token` (config) or `GOSHISEN_API_TOKEN`. It is never accepted as a CLI flag. With no token set, administrative operations are refused (401). The GET endpoints (`/v1/policy`, `/v1/policy/versions`, `/healthz`, `/readyz`, `/metrics`) are unauthenticated; `GET /v1/policy` and `GET /v1/policy/versions` disclose the full policy and its change history to anyone who can reach the listener (see the open issue on whether reads should require the token when configured).
 - **Concurrency:** applying a policy requires `base_version` equal to the current active version; otherwise `409 version_conflict`. Concurrent writers therefore cannot silently overwrite each other.
 - **Invalid policies:** rejected with `422 invalid_policy` before any state change; the active policy is preserved.
 - **Durability:** policies are stored as immutable versioned files with an atomically-updated active pointer; restart recovery reloads the active version. `policy_dir` configures the store. `SIGHUP` reloads the configured policy file through the same durable pipeline as the API (every reload becomes a new store version), so the daemon's policy and the store's active version never diverge.
@@ -177,6 +177,16 @@ curl -s -X POST -H "Authorization: Bearer $GOSHISEN_API_TOKEN" \
 ## Metrics
 
 Prometheus text metrics at `GET /metrics` (API) and on `metrics_port` (default 9090): packet verdicts by action/protocol/state, backend errors, verdict-latency histogram, active policy version. Labels are bounded enums — no IPs, ports, or flow IDs.
+
+**Upgrade note (v0.2.7):** on releases ≤ v0.2.6 an explicit `metrics_port` value of `0` was ignored (the listener ran on 9090 loopback whenever the daemon ran). Starting with v0.2.7 a `metrics_port: 0` (the packaged OpenWrt default) **disables** the metrics listener, so a Prometheus scrape target on `127.0.0.1:9090/metrics` (and any Grafana dashboard fed by it — `goshisen_packets_total`, `goshisen_queue_overflow_total`, `goshisen_flow_offload_state`, …) stops receiving data after upgrading until the port is set explicitly:
+
+```sh
+uci set goshisen.main.metrics_port='9090'   # OpenWrt
+# or in the daemon YAML: metrics_port: 9090
+/etc/init.d/goshisen restart
+```
+
+Set it **before** upgrading to keep the scrape target alive. The API listener has the same semantics (`api_port`); `GET /metrics` on the API port is unaffected by `metrics_port`.
 
 ## Flow-offload awareness
 

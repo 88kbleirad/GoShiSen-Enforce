@@ -852,15 +852,15 @@ func TestWatchFlowOffloadEnforceReattemptsDisable(t *testing.T) {
 }
 
 // TestMetricsServerConnectToMetricsPath verifies the standalone metrics
-// server's behavior for an HTTP/1 CONNECT request to its methodless
-// /metrics handler (GO-2026-6613 precondition check, advisory evidence).
-// The handler is registered without a method, so CONNECT /metrics matches
-// it and receives 200; the connection then continues to serve HTTP on the
-// same connection (the GO-2026-6613 "server continues to read and serve
-// requests" condition). This is an observation of the shipped handler, not
-// an exploit: the metrics listener is loopback-only and disabled by
-// default, and no proxy sits in front of it, so the request-smuggling
-// impact of GO-2026-6613 is not realized.
+// server's behavior for an HTTP/1 CONNECT request to its /metrics route
+// (GO-2026-6613 precondition check, advisory evidence). The handler is
+// registered for GET only (Go 1.22+ method pattern), so a CONNECT to the
+// path-form /metrics no longer matches and the mux answers 405; the
+// GO-2026-6613 "server continues to read and serve requests" condition no
+// longer holds. Normal scraping is unaffected: GET (and HEAD, which the
+// mux routes to the GET handler) still answer 200. This is an observation
+// of the shipped handler, not an exploit: the metrics listener is
+// loopback-only and disabled by default, and no proxy sits in front of it.
 func TestMetricsServerConnectToMetricsPath(t *testing.T) {
 	d := &Daemon{
 		log:     slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -877,7 +877,7 @@ func TestMetricsServerConnectToMetricsPath(t *testing.T) {
 		time.Sleep(2 * time.Millisecond)
 	}
 
-	// CONNECT path-form to /metrics: the methodless handler answers 200.
+	// CONNECT path-form to /metrics: the GET-only handler answers 405.
 	conn, err := net.DialTimeout("tcp", d.MetricsAddr(), 5*time.Second)
 	if err != nil {
 		t.Fatal(err)
@@ -890,8 +890,81 @@ func TestMetricsServerConnectToMetricsPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CONNECT /metrics: %v", err)
 	}
-	if !strings.Contains(line, "200") {
-		t.Fatalf("CONNECT /metrics: expected 200, got %s", strings.TrimSpace(line))
+	if !strings.Contains(line, "405") {
+		t.Fatalf("CONNECT /metrics: expected 405, got %s", strings.TrimSpace(line))
+	}
+
+	// GET /metrics: 200, text/plain.
+	getConn, err := net.DialTimeout("tcp", d.MetricsAddr(), 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer getConn.Close()
+	fmt.Fprintf(getConn, "GET /metrics HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", d.MetricsAddr())
+	getConn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	getBr := bufio.NewReader(getConn)
+	statusLine, err := getBr.ReadString('\n')
+	if err != nil {
+		t.Fatalf("GET /metrics: %v", err)
+	}
+	if !strings.Contains(statusLine, "200") {
+		t.Fatalf("GET /metrics: expected 200, got %s", strings.TrimSpace(statusLine))
+	}
+	var contentType string
+	for {
+		h, err := getBr.ReadString('\n')
+		if err != nil {
+			t.Fatalf("GET /metrics read headers: %v", err)
+		}
+		if strings.TrimSpace(h) == "" {
+			break
+		}
+		if strings.HasPrefix(strings.ToLower(h), "content-type:") {
+			contentType = strings.TrimSpace(strings.TrimPrefix(h, "Content-Type: "))
+		}
+	}
+	if !strings.HasPrefix(contentType, "text/plain") {
+		t.Fatalf("GET /metrics: expected Content-Type text/plain, got %q", contentType)
+	}
+	body, err := io.ReadAll(getBr)
+	if err != nil {
+		t.Fatalf("GET /metrics read body: %v", err)
+	}
+	if len(body) == 0 {
+		t.Fatal("GET /metrics: expected non-empty body")
+	}
+
+	// HEAD /metrics: 200, no body.
+	headConn, err := net.DialTimeout("tcp", d.MetricsAddr(), 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer headConn.Close()
+	fmt.Fprintf(headConn, "HEAD /metrics HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", d.MetricsAddr())
+	headConn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	headBr := bufio.NewReader(headConn)
+	headLine, err := headBr.ReadString('\n')
+	if err != nil {
+		t.Fatalf("HEAD /metrics: %v", err)
+	}
+	if !strings.Contains(headLine, "200") {
+		t.Fatalf("HEAD /metrics: expected 200, got %s", strings.TrimSpace(headLine))
+	}
+	for {
+		h, err := headBr.ReadString('\n')
+		if err != nil {
+			t.Fatalf("HEAD /metrics read headers: %v", err)
+		}
+		if strings.TrimSpace(h) == "" {
+			break
+		}
+	}
+	headBody, err := io.ReadAll(headBr)
+	if err != nil {
+		t.Fatalf("HEAD /metrics read body: %v", err)
+	}
+	if len(headBody) != 0 {
+		t.Fatalf("HEAD /metrics: expected no body, got %d bytes", len(headBody))
 	}
 
 	// CONNECT authority-form to an unknown host: no route -> 404, never 2xx.

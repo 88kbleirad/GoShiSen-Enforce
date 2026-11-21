@@ -25,12 +25,16 @@ log_json: false
 # REST management API (localhost by default). Default 8080. An explicit
 # 0 in this file (or GOSHISEN_API_PORT=0 / --api-port 0) disables the
 # API listener.
+# api_host is loopback-only: 127.0.0.1, any 127.x, ::1, or localhost.
+# A non-loopback host makes the daemon refuse to start unless the opt-in
+# below is set (the API GET endpoints are unauthenticated).
+api_host: 127.0.0.1
+# Opt-in for a non-loopback api_host. Default false.
+# allow_non_loopback_api_host: false
 # The token is required for policy changes; set it via this file or
 # GOSHISEN_API_TOKEN — deliberately NOT as a CLI flag (argv is visible
 # to other processes on the host). Leave empty to disable all admin
 # mutations (recommended unless you need the API to change policy).
-api_host: 127.0.0.1
-api_port: 8080
 api_token: ""
 
 # Prometheus metrics port. Default 9090. An explicit 0 in this file (or

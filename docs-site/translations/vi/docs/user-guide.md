@@ -138,7 +138,7 @@ nat:
 
 ## REST API
 
-Daemon lộ API quản lý (mặc định `127.0.0.1:8080`). Xem `api/openapi.yaml` để biết đặc tả đầy đủ.
+Daemon lộ API quản lý (mặc định `127.0.0.1:8080`). Xem `api/openapi.yaml` để biết đặc tả đầy đủ. Máy chủ bind chỉ loopback: `api_host` phải là `127.0.0.1`, bất kỳ `127.x`, `::1`, hoặc `localhost`; bất kỳ giá trị nào khác khiến daemon từ chối khởi động trừ khi người vận hành opt-in với `allow_non_loopback_api_host: true` (YAML/UCI), `GOSHISEN_ALLOW_NON_LOOPBACK_API_HOST=1` (env), hoặc `--allow-non-loopback-api-host` (cờ).
 
 | Endpoint | Auth | Mục đích |
 | --- | --- | --- |
@@ -151,7 +151,7 @@ Daemon lộ API quản lý (mặc định `127.0.0.1:8080`). Xem `api/openapi.ya
 | `GET /readyz` | — | sẵn sàng (tường lửa hoàn toàn up) |
 | `GET /metrics` | — | metrics Prometheus |
 
-- **Auth:** đặt `api_token` (cấu hình) hoặc `GOSHISEN_API_TOKEN`. Nó không bao giờ được chấp nhận như cờ CLI. Khi không có token, thao tác quản trị bị từ chối (401).
+- **Auth:** đặt `api_token` (cấu hình) hoặc `GOSHISEN_API_TOKEN`. Nó không bao giờ được chấp nhận như cờ CLI. Khi không có token, thao tác quản trị bị từ chối (401). Các endpoint GET (`/v1/policy`, `/v1/policy/versions`, `/healthz`, `/readyz`, `/metrics`) không cần xác thực; `GET /v1/policy` và `GET /v1/policy/versions` tiết lộ toàn bộ chính sách và lịch sử thay đổi của nó cho bất kỳ ai có thể tiếp cận listener (xem issue đang mở về việc liệu các thao tác đọc có nên yêu cầu token khi đã cấu hình hay không).
 - **Đồng thời:** áp dụng chính sách yêu cầu `base_version` bằng phiên bản đang hoạt động; ngược lại `409 version_conflict`. Do đó các writer đồng thời không thể âm thầm ghi đè lẫn nhau.
 - **Chính sách không hợp lệ:** bị từ chối với `422 invalid_policy` trước mọi thay đổi trạng thái; chính sách đang hoạt động được giữ nguyên.
 - **Bền vững:** chính sách được lưu thành các tệp phiên bản bất biến với con trỏ active cập nhật nguyên tử; phục hồi khi khởi động lại lại nạp phiên bản đang hoạt động. `policy_dir` cấu hình kho. `SIGHUP` nạp lại tệp chính sách đã cấu hình qua cùng pipeline bền vững như API (mỗi lần nạp lại thành một phiên bản kho mới), nên chính sách của daemon và phiên bản active của kho không bao giờ lệch nhau.
@@ -177,6 +177,16 @@ curl -s -X POST -H "Authorization: Bearer $GOSHISEN_API_TOKEN" \
 ## Metrics
 
 Metrics văn bản Prometheus tại `GET /metrics` (API) và trên `metrics_port` (mặc định 9090): verdict gói theo hành động/giao thức/trạng thái, lỗi backend, histogram độ trễ verdict, phiên bản chính sách đang hoạt động. Label là enum giới hạn — không có IP, cổng, hoặc flow ID.
+
+**Ghi chú nâng cấp (v0.2.7):** ở các bản ≤ v0.2.6, giá trị `metrics_port` tường minh là `0` bị bỏ qua (listener chạy trên 9090 loopback khi daemon chạy). Từ v0.2.7, `metrics_port: 0` (mặc định gói OpenWrt) **tắt** listener metrics, nên target scrape Prometheus trên `127.0.0.1:9090/metrics` (và dashboard Grafana dùng nó — `goshisen_packets_total`, `goshisen_queue_overflow_total`, `goshisen_flow_offload_state`, …) ngừng nhận dữ liệu sau khi nâng cấp cho đến khi cổng được đặt tường minh:
+
+```sh
+uci set goshisen.main.metrics_port='9090'   # OpenWrt
+# hoặc trong YAML daemon: metrics_port: 9090
+/etc/init.d/goshisen restart
+```
+
+Đặt nó **trước** khi nâng cấp để giữ target scrape sống. Listener API có cùng ngữ nghĩa (`api_port`); `GET /metrics` trên cổng API không bị ảnh hưởng bởi `metrics_port`.
 
 ## Nhận thức flow-offload
 

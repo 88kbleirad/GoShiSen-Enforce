@@ -101,6 +101,25 @@ Phụ thuộc: `kmod-nfnetlink-queue`, `kmod-nft-queue`,
 **Dịch vụ tắt mặc định.** Cài gói không bật nó và không động vào tường
 lửa.
 
+**Mặc định listener (đo được, không giả định).** Mặc định tích hợp của
+daemon là API `127.0.0.1:8080` và metrics `127.0.0.1:9090`, và chúng
+**bật** bất cứ khi nào daemon chạy: đo trên OpenWrt 25.12.6 x86/64
+(kernel 6.12.112) cho cài đặt mới gói apk 0.2.5-r1 và 0.2.6-r1 đã ký
+với cấu hình đi kèm không đổi, và cho nâng cấp 0.2.3-r1 → 0.2.6-r1
+trong khi đang chạy — trong mọi trường hợp `netstat -ltnp` cho thấy
+`127.0.0.1:8080` và `127.0.0.1:9090` do `goshisen` sở hữu (GET
+`/healthz` → 200, GET `/metrics` → 200, `POST /v1/policy` không token →
+401). Các bản phát hành ≤ v0.2.6 **bỏ qua** `option api_port '0'` /
+`option metrics_port '0'` đi kèm (lớp tệp coi `0` là "chưa đặt"), nên
+tùy chọn UCI không thể tắt listener ở đó; dùng `GOSHISEN_API_PORT=0` /
+`GOSHISEN_METRICS_PORT=0` trong môi trường dịch vụ, hoặc để
+`goshisen.main.enabled=0`. Cấu hình không có các tùy chọn đó (hoặc để
+trống) làm script init hủy bỏ trước khi khởi động daemon
+(`goshisen: api_port '' out of range`), nên các trường hợp đó kết thúc
+mà không có listener nào. Bằng chứng đầy đủ:
+`docs/security/advisory-v0.2.5-go-toolchain.md` § "Measured listener
+defaults".
+
 ## Cấu hình UCI (`/etc/config/goshisen`)
 
 | Tùy chọn | Mặc định | Ý nghĩa |
@@ -111,8 +130,10 @@ lửa.
 | `log_level` | `info` | `debug`, `info`, `warn`, `error` |
 | `interface` | `br-lan` | netdev kernel dùng xác thực máy chủ (tên zone fw4 như `lan` bị từ chối) |
 | `policy_file` | `/etc/goshisen/policy.yaml` | chính sách YAML |
-| `api_port` | `0` | REST API (chỉ loopback). Giá trị `0` tường minh — tùy chọn này, `GOSHISEN_API_PORT=0`, hoặc `--api-port 0` — tắt listener API; giá trị chưa đặt giữ mặc định tích hợp 8080. |
-| `metrics_port` | `0` | metrics Prometheus (chỉ loopback). Giá trị `0` tường minh — tùy chọn này, `GOSHISEN_METRICS_PORT=0`, hoặc `--metrics-port 0` — tắt listener metrics; chưa đặt giữ mặc định tích hợp 9090. |
+| `api_host` | `127.0.0.1` | máy chủ bind API quản lý; chỉ loopback (`127.0.0.1`, bất kỳ `127.x`, `::1`, `localhost`). Daemon từ chối khởi động với máy chủ không-loopback trừ khi `allow_non_loopback_api_host` được bật (xem bên dưới). |
+| `api_port` | `0` | REST API (chỉ loopback). Giá trị `0` tường minh — tùy chọn này, `GOSHISEN_API_PORT=0`, hoặc `--api-port 0` — tắt listener API; giá trị chưa đặt giữ mặc định tích hợp 8080. Script init render tùy chọn một cách tường minh và coi tùy chọn vắng mặt/rỗng là `0` (tắt) kèm cảnh báo logread; giá trị không hợp lệ làm hủy bỏ việc khởi động và nêu tên tùy chọn. ⚠️ Các bản phát hành ≤ v0.2.6 bỏ qua tệp/cờ `0` (quay về 8080); ở đó chỉ `GOSHISEN_API_PORT=0` / `enabled=0` tắt. |
+| `metrics_port` | `0` | metrics Prometheus (chỉ loopback). Ngữ nghĩa `0` tường minh/vắng mặt-rỗng giống `api_port`; chưa đặt giữ mặc định tích hợp 9090. ⚠️ Cùng cảnh báo ≤ v0.2.6 như `api_port`. |
+| `allow_non_loopback_api_host` | chưa đặt (`0`) | opt-in cho phép `api_host` không-loopback. Bật nó lộ các endpoint GET của API (không xác thực) ra mạng — hãy tắt trừ khi đường mạng đáng tin cậy và được tường lửa. Cùng một núm xoay với `allow_non_loopback_api_host` (YAML), `GOSHISEN_ALLOW_NON_LOOPBACK_API_HOST` (env) và `--allow-non-loopback-api-host` (cờ). |
 | `queue_maxlen` | `1024` | độ dài hàng đợi kernel |
 | `offload_policy` | `warn` | phản hồi flow-offload: `warn` (log WARN + gauge), `refuse` (khởi động fail trước khi cài hook khi phát hiện offloading), `readiness` (thực thi nhưng không bao giờ sẵn sàng trong khi offloading hoạt động), `enforce` (chủ động tắt offloading và xác minh; fail closed nếu tắt thất bại hoặc trạng thái không biết) |
 | `allow_bypass` | `0` | cửa sổ chẩn đoán/phát triển, **chỉ** hợp lệ với `offload_policy=enforce`: `1` hạ enforce xuống warn (cảnh báo lớn). Không bao giờ mặc định, không bao giờ im lặng |
@@ -179,6 +200,23 @@ Xác minh với `goshisen_packets_by_state_total{state="invalid"}`.
 Hook được cố ý để nguyên khi daemon dừng, nên việc forward vẫn bị chặn
 (fail-closed) thay vì được phép im lặng.
 
+**Thiếu cấu hình (`/etc/config/goshisen` không tồn tại/bị xoá) chặn
+forward.** Script init xem cấu hình thiếu là "dịch vụ tắt" và từ chối
+khởi động; hook đã được cài (boot guard, hoặc bảng của daemon trước để
+lại khi dừng) **vẫn ở nguyên**, nên LAN→WAN tiếp tục bị chặn cho đến khi:
+
+- cấu hình được khôi phục (`apk reinstall goshisen` cài lại tệp
+  `/etc/config/goshisen` đi kèm nếu bạn xoá nó; reset factory UCI cũng
+  tương tự), sau đó `uci set goshisen.main.enabled='1'`, `uci commit`,
+  `/etc/init.d/goshisen start`; hoặc
+- chạy tường minh `goshisen hook cleanup` (gỡ bảng `inet goshisen` do
+  ứng dụng sở hữu; khi đó chỉ firewall4 điều hành forward).
+
+Truy cập router-local (serial console, SSH tới router, LuCI) không bao
+giờ bị chặn bởi hook forward, nên các lệnh này vẫn truy cập được — kể cả
+từ phía WAN, mặt phẳng quản lý của router không bị xếp hàng, nên người
+vận hành luôn phục hồi được từ xa.
+
 Các lựa chọn phục hồi, theo thứ tự:
 
 ```sh
@@ -193,9 +231,6 @@ uci set goshisen.main.enabled='0'; uci commit goshisen
 /etc/init.d/goshisen stop
 /etc/init.d/goshisen disable
 ```
-
-Truy cập router-local (serial console, SSH tới router, LuCI) không bao
-giờ bị chặn bởi hook forward, nên các lệnh này vẫn truy cập được.
 
 ## Nâng cấp và gỡ bỏ
 
