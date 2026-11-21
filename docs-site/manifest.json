@@ -350,6 +350,11 @@
   "title": "Proposal — v0.2.3 packaging/signing release: version alignment"
  },
  {
+  "slug": "docs-release-proposal-v0.2.8-scope",
+  "path": "../docs/release/proposal-v0.2.8-scope.md",
+  "title": "Proposal — v0.2.8 scope (after v0.2.7)"
+ },
+ {
   "slug": "docs-release-rc-signing-validation",
   "path": "../docs/release/rc-signing-validation.md",
   "title": "Release-Candidate Signing Validation — v0.2.1-rc.2"
