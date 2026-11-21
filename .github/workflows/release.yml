@@ -41,6 +41,16 @@ jobs:
           fi
           echo "OK: release tag '$RELEASE_TAG' matches ^v[0-9]+\.[0-9]+\.[0-9]+$"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: F-01 pre-tag gate — Makefile must match the tag (fail-closed before build)
+        run: |
+          set -euo pipefail
+          # The tagged commit's openwrt/Makefile must already carry
+          # PKG_VERSION == the tag version and PKG_RELEASE. The
+          # v0.2.6 tag shipped PKG_VERSION:=0.2.5 and was fixed only by
+          # a post-tag pin PR; a tag cannot contain its own hash, so the
+          # version bump must have landed BEFORE the tag. Without this
+          # gate a mismatched tag would build, sign and create a DRAFT.
+          bash scripts/release-pretag-check.sh --tag "$RELEASE_TAG"
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: "1.27.4"
