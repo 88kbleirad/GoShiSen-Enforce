@@ -204,3 +204,142 @@ func TestInitDaemonCommandLine(t *testing.T) {
 		}
 	}
 }
+
+// TestInitRenderToken pins the UCI api_token path (issue #103):
+//   - an absent token renders no api_token line and no warning (reads
+//     stay open, mutations 401 — the daemon's documented behavior);
+//   - a set token renders `api_token: <value>`;
+//   - the rendered config is chmod 600 (never world-readable).
+func TestInitRenderToken(t *testing.T) {
+	mk := func(extra ...string) map[string]string {
+		m := map[string]string{
+			"enabled": "1", "queue_num": "100", "queue_maxlen": "1024",
+			"hook_scope": "openwrt", "log_level": "info",
+			"offload_policy": "warn", "policy_file": "/etc/goshisen/policy.yaml",
+			"interface": "br-lan", "api_port": "8080",
+			"metrics_port": "9090",
+		}
+		for i := 0; i+1 < len(extra); i += 2 {
+			m[extra[i]] = extra[i+1]
+		}
+		return m
+	}
+
+	t.Run("absent token omitted from config", func(t *testing.T) {
+		yaml, _, rc := renderPorts(t, mk())
+		if rc != 0 {
+			t.Fatalf("rc = %d, want 0", rc)
+		}
+		if strings.Contains(yaml, "api_token:") {
+			t.Errorf("rendered config unexpectedly contains api_token:\n%s", yaml)
+		}
+	})
+
+	t.Run("token rendered verbatim", func(t *testing.T) {
+		yaml, _, rc := renderPorts(t, mk("api_token", "s3cret"))
+		if rc != 0 {
+			t.Fatalf("rc = %d, want 0", rc)
+		}
+		if !strings.Contains(yaml, "api_token: s3cret\n") {
+			t.Errorf("rendered config missing api_token:\n%s", yaml)
+		}
+	})
+
+	t.Run("rendered config is 0600", func(t *testing.T) {
+		policy := filepath.Join(t.TempDir(), "policy.yaml")
+		if err := os.WriteFile(policy, []byte("version: 1\ndefault_action: DROP\nrules: []\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		cfgPath := filepath.Join(t.TempDir(), "config.yaml")
+		script := initScriptPath(t)
+		data, err := os.ReadFile(script)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := string(data)
+		cmd := exec.Command("bash")
+		cmd.Stdin = strings.NewReader(`
+config_load() { :; }
+config_get() {
+	local var="" sec opt val=""
+	if [ "$#" -ge 3 ]; then
+		var="$1"; sec="$2"; opt="$3"
+	else
+		sec="$1"; opt="$2"
+	fi
+	case "$sec:$opt" in
+` + stubCases(mk("api_token", "s3cret", "policy_file", policy)) + `
+	esac
+	if [ -n "$var" ]; then
+		eval "$var=\$val"
+	else
+		printf '%s\n' "$val"
+	fi
+}
+oci_err() { echo "goshisen: $*" >&2; }
+uci_warn() { echo "goshisen: $*" >&2; }
+logger() { :; }
+mkdir() { :; }
+` + body + `
+CONFIG_PATH="$TEST_CONFIG_PATH"
+validate_uci
+rc=$?
+if [ "$rc" -ne 0 ]; then
+	exit "$rc"
+fi
+render_config
+`)
+		cmd.Env = append(os.Environ(), "PATH=/usr/bin:/bin", "TEST_CONFIG_PATH="+cfgPath)
+		var out, errb strings.Builder
+		cmd.Stdout = &out
+		cmd.Stderr = &errb
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("run init script: %v: %s", err, errb.String())
+		}
+		st, err := os.Stat(cfgPath)
+		if err != nil {
+			t.Fatalf("stat rendered config: %v", err)
+		}
+		if got := st.Mode().Perm(); got != 0o600 {
+			t.Errorf("rendered config perms = %o, want 600", got)
+		}
+		content, err := os.ReadFile(cfgPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(content), "api_token: s3cret\n") {
+			t.Errorf("rendered config missing api_token:\n%s", content)
+		}
+	})
+}
+
+// TestInitRejectBadToken pins the fail-closed api_token validation: a
+// token with whitespace/control characters must abort the start naming
+// the option (it would corrupt the rendered YAML otherwise).
+func TestInitRejectBadToken(t *testing.T) {
+	mk := func(extra ...string) map[string]string {
+		m := map[string]string{
+			"enabled": "1", "queue_num": "100", "queue_maxlen": "1024",
+			"hook_scope": "openwrt", "log_level": "info",
+			"offload_policy": "warn", "policy_file": "/etc/goshisen/policy.yaml",
+			"interface": "br-lan", "api_port": "8080",
+			"metrics_port": "9090",
+		}
+		for i := 0; i+1 < len(extra); i += 2 {
+			m[extra[i]] = extra[i+1]
+		}
+		return m
+	}
+	for _, tok := range []string{"has space", "colon:sep", "hash#tag", "quote\"q", "brace{", "semi;"} {
+		yaml, errb, rc := renderPorts(t, mk("api_token", tok))
+		if rc != 1 {
+			t.Errorf("token %q: rc = %d, want 1 (yaml=%q err=%q)", tok, rc, yaml, errb)
+		}
+		if !strings.Contains(errb, "api_token") {
+			t.Errorf("token %q: stderr does not name api_token: %q", tok, errb)
+		}
+		if strings.TrimSpace(yaml) != "" {
+			t.Errorf("token %q: reject still rendered a config: %q", tok, yaml)
+		}
+	}
+}

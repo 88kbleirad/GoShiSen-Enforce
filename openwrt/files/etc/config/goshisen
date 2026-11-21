@@ -41,6 +41,15 @@ config goshisen 'main'
 	option api_host '127.0.0.1'
 	# Opt-in to allow a non-loopback api_host (see above). Keep unset.
 	# option allow_non_loopback_api_host '0'
+	# Optional API bearer token. When set, the API requires it for
+	# every mutation (validate/apply/activate); unauthenticated reads
+	# (GET /v1/policy, /v1/policy/versions, /healthz, /readyz,
+	# /metrics) stay open. Allowed characters: A-Za-z0-9._- (the value
+	# is rendered into YAML verbatim; anything else aborts the start
+	# naming this option). The rendered daemon config is chmod 600, so
+	# the token is never world-readable on the device. Keep unset for
+	# read-only API access.
+	# option api_token ''
 	# Optional management API port. An explicit 0 (this file's default)
 	# disables the API listener; 1..65535 enables it on loopback.
 	# NOTE (v0.2.5/v0.2.6 binaries): the daemon ignores a file/flag 0 —
