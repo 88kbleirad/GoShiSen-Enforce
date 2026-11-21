@@ -30,11 +30,15 @@ PR #102 merged (`c0b8047`) and the bounded-read fix PR #104 open.
    Local write access to `policy_dir` makes the API read a FIFO/device;
    use `config.ReadFileBounded` (or a small `internal/safefile` package)
    there too, and add a *reload-under-hostile-store* test.
-2. **Close issue #103 — UCI `api_token`.** Add `option api_token ''`,
-   render it in `render_config()`, and **`chmod 600
-   /var/run/goshisen/config.yaml` unconditionally** (today the rendered
-   file inherits the umask, so a token in it would be 0644). Contract
-   test in `tests/package`; docs EN + VI.
+2. **Close issue #103 — UCI `api_token`.** Implemented in PR #108:
+   `option api_token ''` packaged, rendered by `render_config()` into
+   `/var/run/goshisen/config.yaml`, which is now `chmod 600` (the
+   rendered file used to inherit the umask — 0644). Tokens are
+   restricted to a YAML-plain-safe charset `A-Za-z0-9._-` (start aborts
+   naming the option otherwise), a warn fires when the API listener is
+   enabled without a token (read-only API), and contract tests cover
+   absent/empty/set tokens, the 0600 mode, and rejections. Docs EN + VI
+   updated.
 3. **Decide the read-endpoint question (issue from the v0.2.7 run).**
    Recommended default: when `api_token` is configured, require it for
    `GET /v1/policy` and `GET /v1/policy/versions` too (keep `/healthz`,
