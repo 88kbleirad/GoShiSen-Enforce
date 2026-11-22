@@ -13,6 +13,7 @@ Trạng thái và lịch sử đáng chú ý của GoShiSen-Enforce. Chi tiết 
 - **CI mạnh hơn (#105–#107):** sweep bất thường CLI 257 case và các mục tiêu fuzz config đã được đưa vào repo và chạy trong CI, cùng staticcheck (baseline rỗng) và govulncheck source mode.
 - **UCI api_token (#108, đóng #103):** cấu hình OpenWrt giờ đặt được token API; config daemon được render có chmod 600 và charset token bị giới hạn (A-Za-z0-9._-); init script cảnh báo khi listener API bật mà không có token.
 - **Đọc thống kê queue cũng có giới hạn (mở rộng P1.1 của v0.2.8):** `packet.ReadQueueStats` (đọc `/proc/net/netfilter/nfnetlink_queue`, dùng bởi watcher cảnh báo overflow) là chỗ `os.ReadFile` không giới hạn cuối cùng trong cây mã; nay đi qua `internal/safefile.ReadBounded`, nên file không-thường (FIFO, device, thư mục) hoặc dữ liệu vượt hạn sẽ fail-closed thay vì treo daemon. Test hồi quy bao phủ: file thường, file thiếu, FIFO (không được block), thư mục và kích thước vượt hạn.
+- **Kiểm tra đường dẫn policy lúc khởi động cũng có giới hạn (F-4a/F-4b):** bước tiền-kiểm tra của daemon mở `policy_file` bằng `os.Open` thường, nên một đường dẫn tới FIFO sẽ chặn khởi động vô hạn, còn thư mục/thiết bị vẫn được chấp nhận và chỉ lỗi sau đó. Nay bước kiểm tra đi qua bộ đọc có giới hạn (mở non-blocking, kiểm tra file thường, giới hạn 16 MiB), nên đường dẫn không dùng được sẽ fail nhanh với lỗi rõ ràng `policy_file:`. Test bao phủ: FIFO (không được block), thư mục, thiết bị, vượt hạn và file thường.
 
 ## Chi tiết đã chuyển ra khỏi README
 
