@@ -49,13 +49,13 @@ The record MUST also state explicitly that `GH_RELEASE_SIGNING_KEY`
 
 The **CLI release** signing key `GH_RELEASE_SIGNING_KEY` (Ed25519,
 fingerprint `24215e01…`, key ID `f955ede984245d64`) is not the APK key
-above. As of 2026-11-22 it lives in the protected environment
-`release-cli` (required reviewer: the maintainer; deployment policy:
-`main` and `v*` tags) and is used only by release.yml's `sign` job; the
-build job never sees it. Full migration and removal plan:
-`docs/release/f02-environment-migration.md` (issue #100). The APK key
-remains `GH_RELEASE_APK_SIGNING_KEY` in environment `signing`; never
-reuse one key for the other channel.
+above. It is a **repository-level secret** and is used only by
+release.yml's `sign` job (the build job never sees it). The protected
+environment `release-cli` that briefly held it was withdrawn on
+2026-11-22, so signing is not approval-gated today; the migration record
+and the reinstatement steps are in `docs/release/f02-environment-migration.md`.
+The APK key remains `GH_RELEASE_APK_SIGNING_KEY` in environment
+`signing`; never reuse one key for the other channel.
 
 ## 3. Provisioning procedure (authorized personnel only)
 

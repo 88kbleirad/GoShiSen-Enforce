@@ -5,12 +5,13 @@ name: release
 #
 # F-02 (issue #100): the CLI release signing key
 # (GH_RELEASE_SIGNING_KEY, fingerprint 24215e01..., key id
-# f955ede984245d64) is used only by the `sign` job, which runs under
-# the protected `release-cli` environment (required reviewer; deploy
-# policy: main and v* tags). The `build` job never sees the key and
-# runs with read-only permissions. A `workflow_dispatch` dry-run path
-# exercises signing under the environment with a fixed dummy file
-# (no release, tag, or artifact is ever created).
+# f955ede984245d64) is used only by the `sign` job; the `build` job
+# never sees the key and runs with read-only permissions. The
+# environment-based approval gate was removed on 2026-11-22 at the
+# maintainer's request (see docs/release/f02-environment-migration.md),
+# so signing is currently NOT approval-gated. A `workflow_dispatch`
+# dry-run path exercises signing with a fixed dummy file (no release,
+# tag, or artifact is ever created).
 on:
   push:
     tags:
@@ -158,13 +159,15 @@ jobs:
     name: sign release artifacts (protected environment)
     needs: build
     runs-on: ubuntu-24.04
-    # The production CLI signing key lives in the `release-cli` environment
-    # (required reviewer; deploy policy: main and v* tags). The secret
-    # resolves ONLY through this environment scope, and environment secrets
-    # take precedence over same-named repo-level secrets for this job.
-    # After the repo-level copy is removed (see
-    # docs/release/f02-environment-migration.md) this is the only source.
-    environment: release-cli
+    # NOTE: F-02's `environment: release-cli` gate was removed on 2026-11-22 at
+    # the maintainer's request (the environment was deleted). The signing key is
+    # resolved from the repository-level secret again, so this job is NOT
+    # approval-gated anymore. What still holds: only this job may reference the
+    # key (F-02 guard), only this job may write, and the anchor/checksum gates
+    # below still fail closed. To reinstate the approval gate: recreate the
+    # environment with a required reviewer + allowed refs, re-add
+    # `environment: release-cli` here, and put the key in its secret
+    # (docs/release/f02-environment-migration.md).
     permissions:
       contents: write   # upload assets to the GitHub Release for this tag (only job with write)
     env:
@@ -233,6 +236,7 @@ jobs:
       - name: Sign release artifacts with production key
         if: ${{ !inputs.dry_run }}
         env:
+          # Repository-level secret (the environment scope was removed).
           RELEASE_SIGN_KEY: ${{ secrets.GH_RELEASE_SIGNING_KEY }}
         run: |
           # Private key material lives only in the ephemeral runner temp dir;

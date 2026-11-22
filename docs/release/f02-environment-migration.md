@@ -1,5 +1,22 @@
 # F-02 — CLI release signing key moved behind a protected environment
 
+> **STATUS 2026-11-22: WITHDRAWN / SUPERSEDED.** The `release-cli` environment was
+> deleted by the maintainer (repository environments now list only
+> `github-pages` and `signing`), and `release.yml` no longer declares
+> `environment: release-cli`. The CLI signing key is resolved from the
+> **repository-level** `GH_RELEASE_SIGNING_KEY` again, so signing is **not**
+> approval-gated. What still holds from this work: only the `sign` job may
+> reference the key (F-02 guard, CI), only `sign` may write, the build job never
+> sees the key, and the anchor-fingerprint + asset-checksum gates still fail
+> closed. Everything below is kept as the record of the migration and of the
+> dry-run evidence (nine runs, all fail-closed, leak scans clean); the sections
+> that talk about environment secrets / required reviewers describe the
+> withdrawn design. Deleting an environment also deletes its secrets and
+> protection rules, and a workflow that references a missing environment makes
+> GitHub create it WITHOUT protection rules (then a job falls back to the
+> repository-level secret) — that is why the gate was withdrawn explicitly
+> rather than left declared.
+
 Issue: [#100](https://github.com/88kbleirad/GoShiSen-Enforce/issues/100).
 Scope: the **CLI release** signing key `GH_RELEASE_SIGNING_KEY`
 (Ed25519, production fingerprint
@@ -202,6 +219,7 @@ workflow, and record the result in issue #100:
 | 2026-11-22 | workflow PR: `release.yml` split into validate/build/sign, `sign` under `release-cli`, dry-run path added, F-02 guard + fixtures added to CI | this document, PR link in issue #100 |
 | 2026-11-22 | first dry run (run `44981019938`) dispatched + approved; **failed fail-closed before signing**: `cannot derive public key` ⇒ the environment secret copy is not a PEM private key; `release-sign.sh` now diagnoses secret shape (never value); negative non-main dispatch rejected by the environment policy (run `44981062376`) | issue #100, `docs/release/f02-environment-migration.md` |
 | 2026-11-22 | dry runs `44985559779` (not a PEM private key — 67 chars, no header), `44988649004` (valid PEM, **wrong key**: `key mismatch`), `44989394642` (PEM header present but **openssl cannot read it**, attempts 1–2) — all fail-closed before signing; diagnostics extended accordingly (secret shape; named anchor on mismatch; value-safe file metadata) | issue #100, `docs/release/f02-recheck-evidence.md` |
+| 2026-11-22 | **WITHDRAWN**: the maintainer deleted environment `release-cli` (environments now: `github-pages`, `signing`) and the `environment: release-cli` gate was removed from release.yml; the key is repository-scoped again and signing is not approval-gated (only `sign` may reference the key, per the F-02 guard). Reinstatement steps are in the §2c banner at the top | issue #100, PR for the removal |
 | 2026-11-22 | dry run `44991076551` failed the same *unreadable PEM* class ⇒ `release-sign.sh` now **repairs common paste damage** (surrounding quotes, literal `\n` escapes, CRLF, stray whitespace) with a value-safe `WARN: repaired paste damage …` notice, still gated by openssl parse + anchor match; a passphrase-encrypted key is refused with its own message. Guard fixtures cover escaped/quoted PEM (must pass) and the encrypted header (must fail) | issue #100, PR #117 |
 | 2026-11-22 | dry run `44992807857` (head `e494f2a`) reported `121 chars, 2 line(s), CR=0, openssl=parse-failed` ⇒ root cause pinned by reproduction: a **quoted** PEM (canonical 119/3 lines vs 121/2 quoted) and the first quote-strip was too strict; the repair is now a repeat-trim + strip-quotes + unescape + drop-CR loop validated by openssl, with a guard fixture for the quoted+trailing-whitespace shape | issue #100 |
 | 2026-11-22 | after that repair merged, dry run `44994859221` (head `faf1d66`) reported the identical fingerprint ⇒ the surviving shapes are **mismatched-quote** wrappers (`"…'` ± space) and **collapsed line structure**; the repair now strips quotes per end and reconstructs a canonical PEM from the fence + payload (both openssl-validated, anchor-checked), with fixtures for mismatched quotes and a fully collapsed one-line PEM | issue #100, PR #119 |

@@ -48,7 +48,6 @@ expect_fail() {
   esac
 }
 
-expect_fail bad-no-env.yml                 "must declare environment"
 expect_fail bad-secret-in-build.yml        "secret-scope"
 expect_fail bad-dryrun-secret-in-build.yml "secret-scope"
 expect_fail bad-build-write.yml            "must be exactly contents: read"
@@ -59,7 +58,6 @@ expect_fail bad-dryrun-no-sign.yml         "dry-run-signs-with-key"
 expect_fail bad-dryrun-upload.yml          "dry-run-no-writes"
 expect_fail bad-release-unprotected.yml    "release-step-guarded"
 expect_fail bad-dryrun-noguard.yml         "dry-run-main-only"
-expect_fail bad-build-env.yml              "build-readonly"
 
 # structural: the CLI key must not appear in ANY other workflow without the
 # environment, even when release.yml itself is clean (repo-wide rule).
