@@ -134,6 +134,17 @@ jobs:
           export PATH="$(go env GOPATH)/bin:$PATH"
           bash tests/ci/check-apk-payload-govuln-test.sh
 
+  check-backup-key:
+    # F-02 (issue #100): the offline check the maintainer runs on a personal
+    # machine before re-setting GH_RELEASE_SIGNING_KEY must keep working and
+    # must never print key material (tests use scratch keypairs only).
+    name: check-backup-key (F-02)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Local backup-key check fixtures
+        run: bash tests/ci/check-backup-key-test.sh
+
   release-workflow-guard:
     # F-02 (issue #100) regression gate: the CLI signing key
     # (secrets.GH_RELEASE_SIGNING_KEY) may be used only by release.yml's
