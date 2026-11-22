@@ -57,11 +57,10 @@ Run in order. Every item must pass before tagging.
   - A `workflow_dispatch` **dry-run** path (`dry_run: true`, releases only) signs a fixed dummy file with the real key under the environment, prints only the verification result + public-key fingerprint, and creates no release/tag/artifact.
   - The F-02 guard (`tests/ci/release-workflow-guard-test.sh`, wired into ci.yml as `release-workflow-guard`) fails if the signing key escapes the `sign` job, the `sign` job loses `environment: release-cli`, `build` gains write access or an environment, or any `run:` interpolates `${{ github.* }}` (S-003 class).
   - Migration/handover: `docs/release/f02-environment-migration.md` (repo-level secret removal, verification, rollback, post-first-release check).
-- [ ] **F-02 pre-flight (before the first tag after the key migration):**
-  - [ ] The `v*` deployment policy on environment `release-cli` exists with ref type **tag** (a `v*` *branch* policy does not authorize `refs/tags/vX.Y.Z`; check with `gh api repos/:owner/:repo/environments/release-cli/deployment-branch-policies`). Same for `signing` on the APK path.
-  - [ ] A `workflow_dispatch` dry run on `main` has passed (`gh workflow run release.yml --ref main -f dry_run=true`), i.e. the `release-cli` environment secret is a PEM private key that matches `keys/goshisen-release.pub.pem` (`24215e01...`). The first attempt failed on a mis-pasted secret — `scripts/release-sign.sh` now reports the secret's *shape* (length + category only, never the value).
-  - [ ] The repository-level `GH_RELEASE_SIGNING_KEY` has been removed (names-only check: `gh secret list` and the environment secret listing).
+- [ ] **F-02 pre-flight (CLI signing key):**
+  - [ ] A `workflow_dispatch` dry run on `main` has passed (`gh workflow run release.yml --ref main -f dry_run=true`): the stored `GH_RELEASE_SIGNING_KEY` must be a PEM private key whose public half matches `keys/goshisen-release.pub.pem` (`24215e01...`; verify the backup offline first with `scripts/check-backup-key.sh --key <file>`). Nine dry runs failed on mis-pasted values — `scripts/release-sign.sh` now reports the secret's *shape* / the anchor it belongs to / openssl's own reason, never the value.
   - [ ] `tests/ci/release-workflow-guard-test.sh` is green on the commit to be tagged (`release-workflow-guard (F-02)` job).
+  - [ ] **No approval gate today:** the `release-cli` environment (required reviewer + key in an environment secret) was withdrawn on 2026-11-22; if it is reinstated, re-add `environment: release-cli` to the `sign` job and set the environment secret first (see `docs/release/f02-environment-migration.md`).
 - [ ] Publish the container image (optional) from the tagged checkout with `--cap-drop=ALL --cap-add=NET_ADMIN --cap-add=NET_RAW` per the Dockerfile guidance.
 
 ## 6. Release notes (draft)

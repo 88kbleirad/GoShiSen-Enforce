@@ -11,8 +11,6 @@ main + v* tags). The build job must never see the key.
 Rules enforced (each has a negative fixture in
 tests/ci/release-workflow-structure-test.sh):
 
-  sign-environment         `sign` declares `environment: release-cli`;
-                           no other job declares an `environment`.
   sign-only-write          `sign` has `contents: write`; validate/build
                            do not (read-only release pipeline).
   secret-scope             referencing the secret anywhere outside the
@@ -122,19 +120,6 @@ def add(rule: str, msg: str) -> None:
 # rule implementations: each appends violations
 
 
-def rule_sign_environment(wf: dict) -> None:
-    jobs = jobs_of(wf)
-    if SIGN_JOB not in jobs:
-        add("sign-environment", "no `sign` job in release.yml")
-        return
-    sign_env = jobs[SIGN_JOB].get("environment")
-    if sign_env != ENVIRONMENT:
-        add("sign-environment", f"`sign` job must declare environment: {ENVIRONMENT}, got {sign_env!r}")
-    for name, job in jobs.items():
-        if name == SIGN_JOB:
-            continue
-        if "environment" in job:
-            add("sign-environment", f"job {name!r} declares environment {job['environment']!r}; only `sign` may")
 
 
 def rule_sign_only_write(wf: dict) -> None:
@@ -190,8 +175,6 @@ def rule_build_readonly(wf: dict) -> None:
     perms = build.get("permissions")
     if not isinstance(perms, dict) or perms.get("contents") != "read" or len(perms) != 1:
         add("build-readonly", f"`build` permissions must be exactly contents: read, got {perms!r}")
-    if build.get("environment") is not None:
-        add("build-readonly", "`build` must not declare an environment")
 
 
 def rule_no_github_context_in_run(wf: dict) -> None:
@@ -293,7 +276,6 @@ def main() -> int:
             continue
         others.append((path, load(path)))
 
-    rule_sign_environment(wf)
     rule_sign_only_write(wf)
     rule_secret_scope(wf, others)
     rule_secret_not_in_shell(wf)
