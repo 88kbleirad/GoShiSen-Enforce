@@ -26,7 +26,15 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 KEY=""
 ANCHOR="$ROOT/keys/goshisen-release.pub.pem"
 QUIET=0
-EXPECTED=24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0
+# Single source of truth for the expected CLI fingerprint (rotation = replace
+# this data file + the anchor, no code edit).
+FP_FILE="$ROOT/keys/release-anchor-fingerprint.txt"
+if [ -s "$FP_FILE" ]; then
+  EXPECTED=$(tr -d '[:space:]' < "$FP_FILE")
+else
+  echo "FAIL: expected-fingerprint file '$FP_FILE' missing/empty (pass --expect)" >&2
+  exit 2
+fi
 
 usage() { sed -n '2,20p' "$0"; }
 

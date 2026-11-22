@@ -60,6 +60,7 @@ expect_fail bad-dryrun-upload.yml          "dry-run-no-writes"
 expect_fail bad-release-unprotected.yml    "release-step-guarded"
 expect_fail bad-dryrun-noguard.yml         "dry-run-main-only"
 expect_fail bad-build-env.yml              "build-readonly"
+expect_fail bad-hardcoded-fingerprint.yml  "fingerprint-from-file"
 
 # structural: the CLI key must not appear in ANY other workflow without the
 # environment, even when release.yml itself is clean (repo-wide rule).
@@ -134,6 +135,7 @@ step "Verify production trust anchor" "$TMP/anchor.sh"
 mkdir -p "$TMP/foreign/keys"
 openssl genpkey -algorithm ed25519 -out "$TMP/foreign/keys/k.pem" 2>/dev/null
 openssl pkey -in "$TMP/foreign/keys/k.pem" -pubout -out "$TMP/foreign/keys/goshisen-release.pub.pem" 2>/dev/null
+cp "$ROOT/keys/release-anchor-fingerprint.txt" "$TMP/foreign/keys/"
 if ( cd "$TMP/foreign" && bash "$TMP/anchor.sh" ) >/dev/null 2>&1; then
   fail "anchor gate ACCEPTED a foreign (non-production) anchor"
 fi

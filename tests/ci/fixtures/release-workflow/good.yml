@@ -40,6 +40,14 @@ jobs:
             refs/heads/main) ;;
             *) echo "FAIL: dry-run only on main" >&2; exit 1 ;;
           esac
+      - name: Verify production trust anchor fingerprint (fail-closed)
+        run: |
+          set -euo pipefail
+          anchor=keys/goshisen-release.pub.pem
+          fp_file=keys/release-anchor-fingerprint.txt
+          expected="$(tr -d '[:space:]' < "$fp_file")"
+          fp="$(openssl pkey -pubin -in "$anchor" -outform DER | sha256sum | awk '{print $1}')"
+          [ "$fp" = "$expected" ] || { echo "FAIL: trust anchor fingerprint mismatch" >&2; exit 1; }
       - name: Sign production
         if: ${{ !inputs.dry_run }}
         env:

@@ -1,0 +1,241 @@
+name: release
+true:
+  push:
+    tags:
+    - v*
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry-run: sign a fixed dummy file with the real production key
+          under the release-cli environment (main only). Creates no release, tag,
+          or artifact.'
+        required: false
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    name: validate tag gates
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    timeout-minutes: 15
+    steps:
+    - name: Validate release tag (fail-closed, before any other step)
+      if: ${{ !inputs.dry_run }}
+      run: "set -euo pipefail\n# Identical pattern to scripts/validate-release-tag.sh\
+        \ (S-003).\n# Runs before checkout: no repo files are available yet, so the\n\
+        # check is self-contained and can never depend on attacker data.\nif [[ !\
+        \ \"$RELEASE_TAG\" =~ ^v[0-9]+\\.[0-9]+\\.[0-9]+$ ]]; then\n  echo \"FAIL:\
+        \ release tag '$RELEASE_TAG' does not match ^v[0-9]+\\.[0-9]+\\.[0-9]+$\"\
+        \ >&2\n  exit 1\nfi\necho \"OK: release tag '$RELEASE_TAG' matches ^v[0-9]+\\\
+        .[0-9]+\\.[0-9]+$\"\n"
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+    - name: "F-01 pre-tag gate \u2014 Makefile must match the tag (fail-closed before\
+        \ build)"
+      env:
+        DRY_RUN: ${{ inputs.dry_run }}
+      run: "set -euo pipefail\n# The tagged commit's openwrt/Makefile must already\
+        \ carry\n# PKG_VERSION == the tag version and PKG_RELEASE. The\n# v0.2.6 tag\
+        \ shipped PKG_VERSION:=0.2.5 and was fixed only by\n# a post-tag pin PR; a\
+        \ tag cannot contain its own hash, so the\n# version bump must have landed\
+        \ BEFORE the tag. Without this\n# gate a mismatched tag would build, sign\
+        \ and create a DRAFT.\nif [ \"$DRY_RUN\" = \"true\" ]; then\n  # Dry-run on\
+        \ main: no tag exists. Run the same gate against\n  # the current Makefile\
+        \ version (identical to ci.yml's\n  # release-pretag-gate job).\n  pkg_version=\"\
+        $(sed -nE 's/^PKG_VERSION[[:space:]]*:=?[[:space:]]*(.*)/\\1/p' openwrt/Makefile\
+        \ | head -n1)\"\n  [ -n \"$pkg_version\" ] || { echo \"FAIL: PKG_VERSION not\
+        \ found in openwrt/Makefile\" >&2; exit 1; }\n  bash scripts/release-pretag-check.sh\
+        \ --tag \"v$pkg_version\"\nelse\n  bash scripts/release-pretag-check.sh --tag\
+        \ \"$RELEASE_TAG\"\nfi\n"
+  build:
+    name: build + verify release archives
+    needs: validate
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+      GOTOOLCHAIN: local
+    timeout-minutes: 45
+    steps:
+    - name: "Dry-run \u2014 release build skipped (nothing release-related built)"
+      if: ${{ inputs.dry_run }}
+      run: 'echo "DRY-RUN: release build skipped"
+
+        '
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      if: ${{ !inputs.dry_run }}
+    - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
+      if: ${{ !inputs.dry_run }}
+      with:
+        go-version: 1.27.4
+        cache: true
+    - name: Install packaging tools
+      if: ${{ !inputs.dry_run }}
+      run: "sudo apt-get update\nsudo apt-get install -y --no-install-recommends jq\
+        \ openssl\ncurl -fsSL -o /tmp/syft_1.30.0_linux_amd64.tar.gz \\\n  https://github.com/anchore/syft/releases/download/v1.30.0/syft_1.30.0_linux_amd64.tar.gz\n\
+        curl -fsSL -o /tmp/syft-checksums.txt \\\n  https://github.com/anchore/syft/releases/download/v1.30.0/syft_1.30.0_checksums.txt\n\
+        grep 'syft_1.30.0_linux_amd64.tar.gz' /tmp/syft-checksums.txt > /tmp/expected.sha\n\
+        (cd /tmp && sha256sum -c expected.sha)\ntar xzf /tmp/syft_1.30.0_linux_amd64.tar.gz\
+        \ -C /usr/local/bin syft\ngo install golang.org/x/vuln/cmd/govulncheck@v1.9.0\n"
+    - name: Build archives
+      if: ${{ !inputs.dry_run }}
+      run: make package VERSION="$RELEASE_TAG"
+    - name: Verify archives (arch, version, checksums, SBOM)
+      if: ${{ !inputs.dry_run }}
+      run: make verify-package VERSION="$RELEASE_TAG"
+    - name: "S-005 gate \u2014 govulncheck binary-mode on CLI archives (allowlist-reviewed)"
+      if: ${{ !inputs.dry_run }}
+      run: 'set -euo pipefail
+
+        # The CLI archives must pass binary-mode govulncheck with the
+
+        # reviewed allowlist (empty by default). Fails closed on any
+
+        # finding not explicitly allowlisted in
+
+        # packaging/govulncheck-allowlist.txt.
+
+        export PATH="$(go env GOPATH)/bin:$PATH"
+
+        command -v govulncheck >/dev/null 2>&1 || { echo "FAIL: govulncheck not installed
+        (S-005 CLI gate)" >&2; exit 1; }
+
+        bash scripts/check-cli-archive-govuln.sh dist/goshisen-linux-amd64.tar.gz
+
+        bash scripts/check-cli-archive-govuln.sh dist/goshisen-linux-arm64.tar.gz
+
+        '
+    - name: Upload packaged archives, checksums and SBOM (consumed by the sign job)
+      if: ${{ !inputs.dry_run }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: release-dist
+        path: 'dist/goshisen-linux-*.tar.gz
+
+          dist/checksums.txt
+
+          dist/sbom.spdx.json
+
+          '
+        if-no-files-found: error
+  sign:
+    name: sign release artifacts (protected environment)
+    needs: build
+    runs-on: ubuntu-24.04
+    environment: release-cli
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    timeout-minutes: 30
+    steps:
+    - name: "Dry-run ref guard \u2014 main only (fail-closed)"
+      if: ${{ inputs.dry_run }}
+      run: "set -euo pipefail\n# The environment's deployment policy already restricts\
+        \ deploys\n# to main and v* tags; this guard makes the rejection explicit\n\
+        # and fail-closed before the key is touched.\ncase \"$GITHUB_REF\" in\n  refs/heads/main)\
+        \ echo \"OK: dry-run on main\" ;;\n  *)\n    echo \"FAIL: dry-run allowed\
+        \ only from main (ref=$GITHUB_REF)\" >&2\n    exit 1\n    ;;\nesac\n"
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+    - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
+      with:
+        go-version: 1.27.4
+        cache: false
+    - name: Verify production trust anchor fingerprint (fail-closed)
+      run: "set -euo pipefail\n# The committed trust anchor must be the production\
+        \ CLI release\n# key. The expected SHA-256(DER SPKI) lives in ONE committed\
+        \ data\n# file (keys/release-anchor-fingerprint.txt) instead of being\n# hardcoded\
+        \ here, so a key rotation is a two-file data change\n# (anchor + fingerprint)\
+        \ and cannot half-update the tree.\n# Verified before any secret use, so a\
+        \ swapped/mistaken anchor\n# never signs.\nanchor=keys/goshisen-release.pub.pem\n\
+        fp_file=keys/release-anchor-fingerprint.txt\n[ -f \"$anchor\" ] || { echo\
+        \ \"FAIL: trust anchor $anchor missing\" >&2; exit 1; }\n[ -s \"$fp_file\"\
+        \ ] || { echo \"FAIL: expected-fingerprint file $fp_file missing/empty\" >&2;\
+        \ exit 1; }\nexpected=24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0\n\
+        case \"$expected\" in\n  [0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) ;;\n  *) echo\
+        \ \"FAIL: $fp_file does not contain a hex fingerprint\" >&2; exit 1 ;;\nesac\n\
+        fp=\"$(openssl pkey -pubin -in \"$anchor\" -outform DER | sha256sum | awk\
+        \ '{print $1}')\"\nif [ \"$fp\" != \"$expected\" ]; then\n  echo \"FAIL: trust\
+        \ anchor fingerprint mismatch ($anchor: got $fp, expected $expected)\" >&2\n\
+        \  exit 1\nfi\necho \"OK: trust anchor fingerprint verified $fp\"\n"
+    - name: Download build artifacts
+      if: ${{ !inputs.dry_run }}
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        name: release-dist
+        path: dist
+    - name: Verify assets against build checksums (fail-closed)
+      if: ${{ !inputs.dry_run }}
+      run: "set -euo pipefail\n# The sign job must never sign anything the build job\
+        \ did not\n# produce: the artifact payload must be exactly the expected set\n\
+        # and every archive must match the build's checksums.txt.\ncd dist\nfor f\
+        \ in goshisen-linux-amd64.tar.gz goshisen-linux-arm64.tar.gz checksums.txt\
+        \ sbom.spdx.json; do\n  [ -f \"$f\" ] || { echo \"FAIL: missing expected asset\
+        \ $f\" >&2; exit 1; }\ndone\n[ \"$(find . -maxdepth 1 -type f | wc -l)\" -eq\
+        \ 4 ] || {\n  echo \"FAIL: unexpected files in downloaded artifact\" >&2\n\
+        \  find . -maxdepth 1 -type f >&2\n  exit 1\n}\ngrep -E 'goshisen-linux-(amd64|arm64)\\\
+        .tar\\.gz' checksums.txt | sha256sum -c -\njq -e '.spdxVersion == \"SPDX-2.3\"\
+        \ and ((.packages | length) > 0)' sbom.spdx.json >/dev/null\necho \"OK: downloaded\
+        \ assets match build checksums\"\n"
+    - name: Sign release artifacts with production key
+      if: ${{ !inputs.dry_run }}
+      env:
+        RELEASE_SIGN_KEY: ${{ secrets.GH_RELEASE_SIGNING_KEY }}
+      run: "# Private key material lives only in the ephemeral runner temp dir;\n\
+        # scripts/release-sign.sh removes it via trap and fails closed when\n# the\
+        \ secret is missing, mismatched, or verification fails.\nbash scripts/release-sign.sh\
+        \ \\\n  --dist dist --commit \"$GITHUB_SHA\" --tag \"$RELEASE_TAG\" \\\n \
+        \ --builder release.yml/sign --toolchain \"$(go version)\"\n"
+    - name: "Dry-run \u2014 sign a fixed dummy file with the production key"
+      if: ${{ inputs.dry_run }}
+      env:
+        RELEASE_SIGN_KEY: ${{ secrets.GH_RELEASE_SIGNING_KEY }}
+      run: "set -euo pipefail\n# Signs a fixed dummy file via the same production\
+        \ path\n# (scripts/release-sign.sh), verifies with the committed trust\n#\
+        \ anchor, and prints ONLY the verification result and the public\n# key fingerprint.\
+        \ Never touches a release or tag; uploads\n# nothing. Any secret problem fails\
+        \ closed with a message that\n# never reveals the value.\ntmp=\"$(mktemp -d)\"\
+        ; trap 'rm -rf \"$tmp\"' EXIT\nmkdir -p \"$tmp/dist\"\nprintf 'goshisen-release-dry-run-file\\\
+        n' > \"$tmp/dist/dummy.bin\"\nbash scripts/release-sign.sh \\\n  --dist \"\
+        $tmp/dist\" --commit \"$GITHUB_SHA\" --tag dry-run \\\n  --builder release.yml/sign-dry-run\
+        \ --toolchain \"$(go version)\" \\\n  > \"$tmp/sign.log\"\n# Only verification\
+        \ result lines are printed.\ngrep -E 'OK:|VERIFY-PASS' \"$tmp/sign.log\"\n\
+        fp=\"$(openssl pkey -pubin -in keys/goshisen-release.pub.pem -outform DER\
+        \ | sha256sum | awk '{print $1}')\"\necho \"OK: dry-run signature verified\
+        \ (public key fingerprint $fp)\"\n"
+    - name: Upload release assets
+      if: ${{ !inputs.dry_run }}
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: "# Never auto-publish: attach to an existing release, or create\n# a DRAFT\
+        \ release. A human explicitly publishes. Pushing a tag\n# is the authorization\
+        \ to BUILD and stage artifacts, not to\n# publish a release.\ntag=\"$RELEASE_TAG\"\
+        \nif gh release view \"$tag\" >/dev/null 2>&1; then\n  gh release upload \"\
+        $tag\" \\\n    dist/goshisen-linux-amd64.tar.gz \\\n    dist/goshisen-linux-arm64.tar.gz\
+        \ \\\n    dist/checksums.txt \\\n    dist/sbom.spdx.json \\\n    dist/goshisen-linux-amd64.tar.gz.sig\
+        \ \\\n    dist/goshisen-linux-arm64.tar.gz.sig \\\n    dist/checksums.txt.sig\
+        \ \\\n    dist/sbom.spdx.json.sig \\\n    dist/goshisen-linux-amd64.tar.gz.provenance.json\
+        \ \\\n    dist/goshisen-linux-arm64.tar.gz.provenance.json \\\n    dist/checksums.txt.provenance.json\
+        \ \\\n    dist/sbom.spdx.json.provenance.json \\\n    dist/goshisen-linux-amd64.tar.gz.provenance.json.sig\
+        \ \\\n    dist/goshisen-linux-arm64.tar.gz.provenance.json.sig \\\n    dist/checksums.txt.provenance.json.sig\
+        \ \\\n    dist/sbom.spdx.json.provenance.json.sig \\\n    dist/provenance-index.txt\
+        \ \\\n    dist/provenance-index.txt.sig \\\n    dist/public_key.pem \\\n \
+        \   --clobber\nelse\n  gh release create \"$tag\" \\\n    --draft \\\n   \
+        \ --verify-tag \\\n    --title \"GoShiSen-Enforce $tag\" \\\n    --generate-notes\
+        \ \\\n    dist/goshisen-linux-amd64.tar.gz \\\n    dist/goshisen-linux-arm64.tar.gz\
+        \ \\\n    dist/checksums.txt \\\n    dist/sbom.spdx.json \\\n    dist/goshisen-linux-amd64.tar.gz.sig\
+        \ \\\n    dist/goshisen-linux-arm64.tar.gz.sig \\\n    dist/checksums.txt.sig\
+        \ \\\n    dist/sbom.spdx.json.sig \\\n    dist/goshisen-linux-amd64.tar.gz.provenance.json\
+        \ \\\n    dist/goshisen-linux-arm64.tar.gz.provenance.json \\\n    dist/checksums.txt.provenance.json\
+        \ \\\n    dist/sbom.spdx.json.provenance.json \\\n    dist/goshisen-linux-amd64.tar.gz.provenance.json.sig\
+        \ \\\n    dist/goshisen-linux-arm64.tar.gz.provenance.json.sig \\\n    dist/checksums.txt.provenance.json.sig\
+        \ \\\n    dist/sbom.spdx.json.provenance.json.sig \\\n    dist/provenance-index.txt\
+        \ \\\n    dist/provenance-index.txt.sig \\\n    dist/public_key.pem\nfi\n"

@@ -194,12 +194,22 @@ jobs:
         run: |
           set -euo pipefail
           # The committed trust anchor must be the production CLI release
-          # key: SHA-256 of DER SPKI == 24215e01... Verified before any
-          # secret use, so a swapped/mistaken anchor never signs.
+          # key. The expected SHA-256(DER SPKI) lives in ONE committed data
+          # file (keys/release-anchor-fingerprint.txt) instead of being
+          # hardcoded here, so a key rotation is a two-file data change
+          # (anchor + fingerprint) and cannot half-update the tree.
+          # Verified before any secret use, so a swapped/mistaken anchor
+          # never signs.
           anchor=keys/goshisen-release.pub.pem
+          fp_file=keys/release-anchor-fingerprint.txt
           [ -f "$anchor" ] || { echo "FAIL: trust anchor $anchor missing" >&2; exit 1; }
+          [ -s "$fp_file" ] || { echo "FAIL: expected-fingerprint file $fp_file missing/empty" >&2; exit 1; }
+          expected="$(tr -d '[:space:]' < "$fp_file")"
+          case "$expected" in
+            [0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) ;;
+            *) echo "FAIL: $fp_file does not contain a hex fingerprint" >&2; exit 1 ;;
+          esac
           fp="$(openssl pkey -pubin -in "$anchor" -outform DER | sha256sum | awk '{print $1}')"
-          expected=24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0
           if [ "$fp" != "$expected" ]; then
             echo "FAIL: trust anchor fingerprint mismatch ($anchor: got $fp, expected $expected)" >&2
             exit 1

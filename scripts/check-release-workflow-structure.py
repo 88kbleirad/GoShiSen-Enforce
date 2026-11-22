@@ -34,6 +34,9 @@ tests/ci/release-workflow-structure-test.sh):
                            when `inputs.dry_run` is true.
   dry-run-main-only        a dry-run step fails closed on any ref other
                            than refs/heads/main.
+  fingerprint-from-file    the expected CLI anchor fingerprint is read from
+                           keys/release-anchor-fingerprint.txt, never
+                           hardcoded in the workflow (rotation safety).
 
 Usage:
   check-release-workflow-structure.py [--release PATH] [--scan PATH]...
@@ -240,6 +243,25 @@ def rule_release_step_guarded(wf: dict) -> None:
                     add("release-step-guarded", f"{name}.steps[{idx}] runs `gh release` without `if: ${{{{ !inputs.dry_run }}}}`")
 
 
+def rule_fingerprint_from_file(wf: dict) -> None:
+    """Rotating the CLI key must be a data change, not a workflow edit."""
+    hex64 = re.compile(r"\b[0-9a-f]{64}\b")
+    for name, job in jobs_of(wf).items():
+        for idx, step in enumerate(steps_of(job)):
+            m = hex64.search(run_body(step))
+            if m:
+                add("fingerprint-from-file",
+                    f"{name}.steps[{idx}] hardcodes a 64-hex literal "
+                    f"({m.group(0)[:8]}...); read keys/release-anchor-fingerprint.txt instead")
+    joined = "\n".join(run_body(st) for j in jobs_of(wf).values() for st in steps_of(j))
+    if "release-anchor-fingerprint.txt" not in joined:
+        add("fingerprint-from-file",
+            "release.yml must read the expected fingerprint from keys/release-anchor-fingerprint.txt")
+    if "keys/goshisen-release.pub.pem" not in joined:
+        add("fingerprint-from-file",
+            "release.yml must verify the committed anchor keys/goshisen-release.pub.pem")
+
+
 def rule_dry_run_main_only(wf: dict) -> None:
     jobs = jobs_of(wf)
     sign = jobs.get(SIGN_JOB) or {}
@@ -303,6 +325,7 @@ def main() -> int:
     rule_dry_run_no_writes(wf)
     rule_release_step_guarded(wf)
     rule_dry_run_main_only(wf)
+    rule_fingerprint_from_file(wf)
     for other_path, other in others:
         for name, job in jobs_of(other).items():
             for idx, step in enumerate(steps_of(job)):
