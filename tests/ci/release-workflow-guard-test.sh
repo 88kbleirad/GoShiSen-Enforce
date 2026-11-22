@@ -270,6 +270,15 @@ esac
 case "$out" in
   *AAAAAAAA*) fail "unreadable-PEM diagnosis leaked key material" ;;
 esac
+case "$out" in
+  *"openssl says: "*) ;;
+  *) fail "unreadable PEM: openssl reason missing: $out" ;;
+esac
+key_body="$(grep -v -- '-----' "$TMP/good.pem" | tr -d '
+')"
+case "$out" in
+  *"$key_body"*) fail "openssl-reason line leaked the base64 body" ;;
+esac
 
 # behavioural: common paste damage must be REPAIRED (value-safe) rather than
 # failing — the classes behind dry runs 44989394642 / 44991076551. Each repair

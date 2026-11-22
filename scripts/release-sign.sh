@@ -154,6 +154,11 @@ if [ "$meta_openssl" != "ok" ]; then
     echo "FAIL: RELEASE_SIGN_KEY has a PEM private-key header but openssl cannot read it" >&2
     echo "      metadata: ${key_chars} chars, ${meta_lc} line(s), CR=${meta_cr}, openssl=parse-failed" >&2
     echo "      structure: begin-fence=$has_begin end-fence=$has_end body=${#body} body%4=$(( ${#body} % 4 ))" >&2
+    # openssl's own reason (value-free; any long base64-ish token is scrubbed
+    # so a corrupted body can never surface in the log)
+    plain=$(openssl pkey -in "$KEY" -noout 2>&1 || true)
+    openssl_err=$(printf '%s' "$plain" | head -n1 | sed -E 's/[A-Za-z0-9+/]{40,}={0,2}/<scrubbed>/g')
+    if [ -n "$openssl_err" ]; then echo "      openssl says: $openssl_err" >&2; fi
     echo "      Neither whitespace/quote/escape repair nor a payload reconstruction produced a" >&2
     echo "      readable key: the base64 body is most likely truncated or corrupted. The value is" >&2
     echo "      never printed; re-set the secret from the offline backup's exact file contents" >&2
