@@ -2,12 +2,12 @@
 
 Status and notable history for GoShiSen-Enforce. Per-release detail lives in `docs/release/` (e.g. `v0.2.6-notes.md`, `proposal-next-version-scope.md`).
 
-## Release status (snapshot, 2026-11-21)
+## Release status (snapshot, 2026-11-22)
 
-- **v0.2.7** — latest release (published 2026-11-21): hardening release — port-zero semantics (v0.2.6 docs-gap), `api_host` loopback guard, metrics method hardening, listener-defaults docs correction. Release notes and assets: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.7).
-- **v0.2.6** — previous release (published 2026-11-19): S-005 toolchain-fix release (issue #78) — apk payload and both CLI archives built with go1.27.4.
+- **v0.2.8** — latest release (published 2026-11-22): security/hardening release — bounded file reads everywhere operator input is read, private policy store (0700/0600) with bounded metrics listener, OpenWrt `api_token` written 0600, authenticated-read opt-ins (D1), govulncheck re-balanced (D2). Notes: [`docs/release/v0.2.8-notes.md`](release/v0.2.8-notes.md); assets: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.8).
+- **v0.2.7** — previous release (published 2026-11-21): hardening release — port-zero semantics (v0.2.6 docs-gap), `api_host` loopback guard, metrics method hardening, listener-defaults docs correction. Release notes and assets: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.7).
 
-## Post-v0.2.7 hardening (merged 2026-11-21, next release)
+## v0.2.8 (published 2026-11-22)
 
 - **Policy-store permissions tightened + metrics listener bounded
   (#102):** the policy store creates its directory `0700` and writes

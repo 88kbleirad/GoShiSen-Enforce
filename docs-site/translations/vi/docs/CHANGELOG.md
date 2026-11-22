@@ -2,12 +2,12 @@
 
 Trạng thái và lịch sử đáng chú ý của GoShiSen-Enforce. Chi tiết theo từng bản phát hành nằm trong `docs/release/` (vd: `v0.2.6-notes.md`, `proposal-next-version-scope.md`).
 
-## Trạng thái phát hành (ảnh chụp, 2026-11-21)
+## Trạng thái phát hành (ảnh chụp, 2026-11-22)
 
-- **v0.2.7** — bản phát hành mới nhất (đã công bố 2026-11-21): bản phát hành làm cứng — ngữ nghĩa port-zero (khoảng trống tài liệu v0.2.6), bảo vệ vòng lặp `api_host`, làm cứng phương thức metrics, sửa tài liệu listener-defaults. Ghi chú phát hành và asset: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.7).
-- **v0.2.6** — bản phát hành trước (đã công bố 2026-11-19): bản phát hành sửa toolchain S-005 (issue #78) — payload apk và cả hai kho lưu trữ CLI được build với go1.27.4.
+- **v0.2.8** — bản phát hành mới nhất (đã công bố 2026-11-22): bản phát hành bảo mật/làm cứng — đọc file có giới hạn ở mọi chỗ đọc đầu vào của người vận hành, policy store riêng tư (0700/0600) với listener metrics có giới hạn thời gian, UCI `api_token` được ghi 0600, các tùy chọn yêu cầu xác thực khi đọc (D1), cân bằng lại govulncheck (D2). Ghi chú: `docs/release/v0.2.8-notes.md`; asset: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.8).
+- **v0.2.7** — bản phát hành trước (đã công bố 2026-11-21): bản phát hành làm cứng — ngữ nghĩa port-zero (khoảng trống tài liệu v0.2.6), bảo vệ vòng lặp `api_host`, làm cứng phương thức metrics, sửa tài liệu listener-defaults. Ghi chú phát hành và asset: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.7).
 
-## Làm cứng sau v0.2.7 (đã merge 2026-11-21, bản phát hành tiếp theo)
+## v0.2.8 (đã công bố 2026-11-22)
 
 - **Siết quyền thư mục policy store + giới hạn listener metrics (#102):** policy store tạo thư mục với quyền `0700` và ghi file policy/`active.json` với quyền `0600` (trước là `0755`/`0644`), nên tài khoản cục bộ khác không đọc được policy đang áp dụng; listener HTTP metrics nay đặt `ReadTimeout`/`WriteTimeout` 10 giây và `IdleTimeout` 30 giây, khớp với listener API, nên client cục bộ bị treo không thể giữ kết nối (và goroutine) mãi. Test hồi quy: `TestOpenRestrictedPerms`.
 - **Đọc file có giới hạn (#104):** đọc config/policy/store giờ từ chối file không-thường trước khi mở và giới hạn 16 MiB — đường dẫn policy trỏ vào /dev/urandom trước đây treo vô hạn (bộ nhớ ~1 GiB/s).

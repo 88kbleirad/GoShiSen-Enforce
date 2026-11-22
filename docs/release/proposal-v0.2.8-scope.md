@@ -1,6 +1,12 @@
 # Proposal — v0.2.8 scope (after v0.2.7)
 
-**Status: IN PROGRESS (updated 2026-11-21, after the post-v0.2.7 audit
+**Status: SHIPPED — v0.2.8 published 2026-11-22** (tag `v0.2.8` →
+`2bbf53c`; notes `docs/release/v0.2.8-notes.md`, build/sign/smoke evidence
+`docs/release/v0.2.8-build-evidence.md`). Everything in *What is IN v0.2.8*
+landed; the items under *What moved to v0.2.9* remain open. Original status
+line follows.
+
+**Was: IN PROGRESS (updated 2026-11-21, after the post-v0.2.7 audit
 and D1/D2 implementation).** Written after the v0.2.7 release was
 published (2026-11-21) and its post-publish self-test loop (rounds 1–3:
 deps, static, race/fuzz, HTTP probes, release chain, CLI anomaly sweep).
