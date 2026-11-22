@@ -103,43 +103,65 @@ fi
 # spaces — each verified by openssl; then let the real key prove itself against
 # the anchor. Values never leak: only counts/booleans are printed.
 if [ "$meta_openssl" != "ok" ]; then
-  # The value is a PEM with a private-key header but openssl cannot load it.
-  # Reproduce the stored shape (e.g. dry run 44992807857: 121 chars / 2 lines /
-  # CR=0 / openssl fails) and normalize the common paste damage: surrounding
-  # quotes, trailing/leading whitespace, literal \n/\r\n/\t escapes, CRLF.
-  # Each pass is validated by openssl; if none parses, we fail closed with
-  # value-safe metadata (never the value itself).
+  # The value carries a private-key PEM fence but openssl cannot load it.
+  # Repair the paste damage that produces this (dry run 44992807857 shape:
+  # 121 chars / 2 newlines / openssl fails, i.e. a canonical 119-char,
+  # 3-line PEM wrapped in quotes with a stray space): surrounding whitespace,
+  # ANY leading/trailing quote (they need not match - pastes produce
+  # '..."/"...'), literal \n / \r\n / \t escapes, CR, and finally a
+  # canonical reconstruction from the base64 payload if the line structure
+  # was collapsed. Every candidate is validated by openssl; the surviving
+  # key must still match the committed anchor before anything is signed.
   repaired=0
   normalized_key="$RELEASE_SIGN_KEY"
   pass=0
   while [ "$pass" -lt 3 ] && [ "$repaired" = 0 ]; do
     pass=$((pass+1))
-    # strip surrounding whitespace, then one level of matching quotes, in a loop
-    normalized_key=$(printf '%s' "$normalized_key" | sed -E -e 's/^[[:space:]]+//' -e 's/[[:space:]]+$//')
-    case "$normalized_key" in
-      \'*\'|\"*\") normalized_key=${normalized_key#?}; normalized_key=${normalized_key%?} ;;
-    esac
-    # unescape literal sequences and drop CR
-    normalized_key=$(printf '%s' "$normalized_key" \
-      | sed -E -e 's/\\r\\n/\n/g' -e 's/\\n/\n/g' -e 's/\\t//g' -e 's/\r//g')
+    normalized_key=$(printf '%s' "$normalized_key" | sed -E \
+      -e 's/^[[:space:]]+//' -e 's/[[:space:]]+$//' \
+      -e 's/^[\x27\x22]//' -e 's/[\x27\x22]$//' \
+      -e 's/\\r\\n/\n/g' -e 's/\\n/\n/g' -e 's/\\t//g' -e 's/\r//g')
     printf '%s\n' "$normalized_key" > "$KEY"
     if openssl pkey -in "$KEY" -noout >/dev/null 2>&1; then
-      key_chars=$(wc -c < "$KEY" | tr -d ' ')
-      meta_lc=$(wc -l < "$KEY")
-      meta_cr=$(grep -c $'\r' "$KEY" || true)
-      meta_openssl="ok"
       repaired=1
     fi
   done
   if [ "$repaired" = 0 ]; then
+    # Last resort: rebuild a canonical PEM from the fence label + base64 body.
+    label=$(printf '%s' "$RELEASE_SIGN_KEY" \
+      | sed -nE 's/.*-----BEGIN ([A-Z0-9 ]+)-----.*/\1/p' | head -n1)
+    if [ -n "$label" ]; then
+      payload=$(printf '%s' "$RELEASE_SIGN_KEY" \
+        | sed -E -e 's/\\r\\n//g' -e 's/\\n//g' -e 's/\\t//g' \
+                 -e "s/-----BEGIN ${label}-----//g" -e "s/-----END ${label}-----//g" \
+                 -e 's/[^A-Za-z0-9+/=]//g')
+      if [ -n "$payload" ] && [ $(( ${#payload} % 4 )) -eq 0 ]; then
+        { printf -- '-----BEGIN %s-----\n' "$label"
+          printf '%s' "$payload" | fold -w 64
+          printf '\n-----END %s-----\n' "$label"; } > "$KEY"
+        if openssl pkey -in "$KEY" -noout >/dev/null 2>&1; then
+          repaired=2
+        fi
+      fi
+    fi
+  fi
+  if [ "$repaired" = 0 ]; then
+    first=$(sed -n '1p' "$KEY"); last=$(sed -n '2p' "$KEY")
+    has_begin=no; has_end=no
+    case "$first" in -----BEGIN*) has_begin=yes;; esac
+    case "$last" in *-----END*) has_end=yes;; esac
+    body=$(sed -e '1d' -e '$d' "$KEY" | tr -d '\r\n' | sed -E 's/[^A-Za-z0-9+/=]//g')
     echo "FAIL: RELEASE_SIGN_KEY has a PEM private-key header but openssl cannot read it" >&2
     echo "      metadata: ${key_chars} chars, ${meta_lc} line(s), CR=${meta_cr}, openssl=parse-failed" >&2
-    echo "      Likely causes: passphrase-encrypted (ENCRYPTED) key, truncated body, CRLF-mangled" >&2
-    echo "      base64, an unsupported format, or a value pasted only partly. Value never printed;" >&2
-    echo "      re-set the secret from the offline backup as the file's exact contents." >&2
+    echo "      structure: begin-fence=$has_begin end-fence=$has_end body=${#body} body%4=$(( ${#body} % 4 ))" >&2
+    echo "      Neither whitespace/quote/escape repair nor a payload reconstruction produced a" >&2
+    echo "      readable key: the base64 body is most likely truncated or corrupted. The value is" >&2
+    echo "      never printed; re-set the secret from the offline backup's exact file contents" >&2
+    echo "      (an Ed25519 PKCS#8 PEM is 119 chars over 3 lines)." >&2
     exit 1
   fi
-  echo "WARN: repaired paste damage (quotes/whitespace/escapes/CRLF) — key parses now" >&2
+  [ "$repaired" = 1 ] && echo "WARN: repaired paste damage (quotes/whitespace/escapes/CRLF) — key parses now" >&2
+  [ "$repaired" = 2 ] && echo "WARN: reconstructed the PEM line structure (damaged newlines) — key parses now" >&2
 fi
 
 # The secret must correspond to the committed trust anchor; a mismatched
