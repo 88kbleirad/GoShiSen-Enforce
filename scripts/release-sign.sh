@@ -45,6 +45,15 @@ if [ -z "${RELEASE_SIGN_KEY:-}" ]; then
   exit 1
 fi
 
+# A passphrase-encrypted key cannot be used by this unattended path: say so
+# explicitly instead of letting openssl report "cannot derive public key".
+if printf '%s' "$RELEASE_SIGN_KEY" | grep -q -- '-----BEGIN ENCRYPTED PRIVATE KEY-----'; then
+  echo "FAIL: RELEASE_SIGN_KEY is a PASSPHRASE-ENCRYPTED key; this path cannot unlock it" >&2
+  echo "      Export the CLI release key UNENCRYPTED for the GH_RELEASE_SIGNING_KEY secret" >&2
+  echo "      (the runner has no passphrase), or treat this as revocation + rotation." >&2
+  exit 1
+fi
+
 SCRATCH="${RUNNER_TEMP:-$(mktemp -d)}"
 KEY="$SCRATCH/goshisen-release-key.pem"
 trap 'rm -f "$KEY"' EXIT
@@ -88,17 +97,49 @@ if ! printf '%s' "$RELEASE_SIGN_KEY" | grep -q -- '-----BEGIN .*PRIVATE KEY-----
   exit 1
 fi
 
-# A PEM private-key header is present but openssl cannot load the key: this
-# is a distinct failure class (see dry run 44989394642 attempt 2) and would
-# otherwise surface only as openssl's opaque "cannot derive public key".
-# Report value-safe metadata (counts/booleans) that identifies the cause.
+# A PEM private-key header is present but openssl cannot load the key (distinct
+# failure class, dry runs 44989394642 and 44991076551). First try SAFE repairs
+# of common paste damage — quoting, literal backslash-n escapes, CRLF, trailing
+# spaces — each verified by openssl; then let the real key prove itself against
+# the anchor. Values never leak: only counts/booleans are printed.
 if [ "$meta_openssl" != "ok" ]; then
-  echo "FAIL: RELEASE_SIGN_KEY has a PEM private-key header but openssl cannot read it" >&2
-  echo "      metadata: ${key_chars} chars, ${meta_lc} line(s), CR=${meta_cr}, openssl=parse-failed" >&2
-  echo "      Likely causes: passphrase-encrypted (ENCRYPTED) key, truncated body, CRLF-mangled" >&2
-  echo "      base64, an unsupported format, or a value pasted only partly. Value never printed;" >&2
-  echo "      re-set the secret from the offline backup as the file's exact contents." >&2
-  exit 1
+  # The value is a PEM with a private-key header but openssl cannot load it.
+  # Reproduce the stored shape (e.g. dry run 44992807857: 121 chars / 2 lines /
+  # CR=0 / openssl fails) and normalize the common paste damage: surrounding
+  # quotes, trailing/leading whitespace, literal \n/\r\n/\t escapes, CRLF.
+  # Each pass is validated by openssl; if none parses, we fail closed with
+  # value-safe metadata (never the value itself).
+  repaired=0
+  normalized_key="$RELEASE_SIGN_KEY"
+  pass=0
+  while [ "$pass" -lt 3 ] && [ "$repaired" = 0 ]; do
+    pass=$((pass+1))
+    # strip surrounding whitespace, then one level of matching quotes, in a loop
+    normalized_key=$(printf '%s' "$normalized_key" | sed -E -e 's/^[[:space:]]+//' -e 's/[[:space:]]+$//')
+    case "$normalized_key" in
+      \'*\'|\"*\") normalized_key=${normalized_key#?}; normalized_key=${normalized_key%?} ;;
+    esac
+    # unescape literal sequences and drop CR
+    normalized_key=$(printf '%s' "$normalized_key" \
+      | sed -E -e 's/\\r\\n/\n/g' -e 's/\\n/\n/g' -e 's/\\t//g' -e 's/\r//g')
+    printf '%s\n' "$normalized_key" > "$KEY"
+    if openssl pkey -in "$KEY" -noout >/dev/null 2>&1; then
+      key_chars=$(wc -c < "$KEY" | tr -d ' ')
+      meta_lc=$(wc -l < "$KEY")
+      meta_cr=$(grep -c $'\r' "$KEY" || true)
+      meta_openssl="ok"
+      repaired=1
+    fi
+  done
+  if [ "$repaired" = 0 ]; then
+    echo "FAIL: RELEASE_SIGN_KEY has a PEM private-key header but openssl cannot read it" >&2
+    echo "      metadata: ${key_chars} chars, ${meta_lc} line(s), CR=${meta_cr}, openssl=parse-failed" >&2
+    echo "      Likely causes: passphrase-encrypted (ENCRYPTED) key, truncated body, CRLF-mangled" >&2
+    echo "      base64, an unsupported format, or a value pasted only partly. Value never printed;" >&2
+    echo "      re-set the secret from the offline backup as the file's exact contents." >&2
+    exit 1
+  fi
+  echo "WARN: repaired paste damage (quotes/whitespace/escapes/CRLF) — key parses now" >&2
 fi
 
 # The secret must correspond to the committed trust anchor; a mismatched
