@@ -45,6 +45,26 @@ if [ -z "${RELEASE_SIGN_KEY:-}" ]; then
   exit 1
 fi
 
+SCRATCH="${RUNNER_TEMP:-$(mktemp -d)}"
+KEY="$SCRATCH/goshisen-release-key.pem"
+trap 'rm -f "$KEY"' EXIT
+
+printf '%s' "$RELEASE_SIGN_KEY" > "$KEY"
+chmod 600 "$KEY"
+
+# Value-safe file metadata for diagnostics (counts/booleans only — never
+# contents): the caller (dry run / release) can use these to tell a
+# mis-pasted secret apart from a malformed one. Printed only when the
+# shape check already failed, i.e. exactly when the value is not a PEM
+# private key (a single-line value would otherwise become the raw secret
+# in the log).
+meta_lc=$(wc -l < "$KEY")
+meta_cr=$(grep -c $'\r' "$KEY" || true)
+meta_openssl="ok"
+if ! openssl pkey -in "$KEY" -noout >/dev/null 2>&1; then
+  meta_openssl="parse-failed"
+fi
+
 # The stored value must be a PEM private key. Otherwise openssl reports
 # only an opaque "cannot derive public key", which does not say what was
 # wrong (observed in the first live dry run: the environment copy of the
@@ -62,19 +82,52 @@ if ! printf '%s' "$RELEASE_SIGN_KEY" | grep -q -- '-----BEGIN .*PRIVATE KEY-----
   echo "      Expected the raw PEM private key text. Common mis-pastes: base64-encoded" >&2
   echo "      PEM, the public key, a bare base64 body, an encrypted key, or a trimmed" >&2
   echo "      value. The value is never printed; re-set the secret from the offline backup." >&2
+  [ -f "$KEY" ] && {
+    echo "      metadata: ${key_chars} chars, ${meta_lc} line(s), CR=${meta_cr}, openssl=${meta_openssl}" >&2
+  }
   exit 1
 fi
 
-SCRATCH="${RUNNER_TEMP:-$(mktemp -d)}"
-KEY="$SCRATCH/goshisen-release-key.pem"
-trap 'rm -f "$KEY"' EXIT
-
-printf '%s' "$RELEASE_SIGN_KEY" > "$KEY"
-chmod 600 "$KEY"
+# A PEM private-key header is present but openssl cannot load the key: this
+# is a distinct failure class (see dry run 44989394642 attempt 2) and would
+# otherwise surface only as openssl's opaque "cannot derive public key".
+# Report value-safe metadata (counts/booleans) that identifies the cause.
+if [ "$meta_openssl" != "ok" ]; then
+  echo "FAIL: RELEASE_SIGN_KEY has a PEM private-key header but openssl cannot read it" >&2
+  echo "      metadata: ${key_chars} chars, ${meta_lc} line(s), CR=${meta_cr}, openssl=parse-failed" >&2
+  echo "      Likely causes: passphrase-encrypted (ENCRYPTED) key, truncated body, CRLF-mangled" >&2
+  echo "      base64, an unsupported format, or a value pasted only partly. Value never printed;" >&2
+  echo "      re-set the secret from the offline backup as the file's exact contents." >&2
+  exit 1
+fi
 
 # The secret must correspond to the committed trust anchor; a mismatched
-# key fails the release before anything is signed.
-bash "$(dirname "$0")/check-key-match.sh" "$KEY" "$PUB"
+# key fails the release before anything is signed. On mismatch, identify
+# which known anchor the stored key belongs to — by NAME only: the check
+# compares public keys, never prints key material, and only ever names
+# anchors that are already committed next to the expected anchor (the
+# usual cause is pasting the APK signing key into the CLI key's secret).
+if ! bash "$(dirname "$0")/check-key-match.sh" "$KEY" "$PUB"; then
+  derived="$SCRATCH/derived.pub.pem"
+  if openssl pkey -in "$KEY" -pubout -out "$derived" 2>/dev/null; then
+    match=""
+    for anchor in "$(dirname "$PUB")"/*.pub.pem; do
+      if [ ! -f "$anchor" ]; then continue; fi
+      if [ "$anchor" = "$PUB" ]; then continue; fi
+      if cmp -s "$derived" "$anchor"; then
+        match="${match:+$match, }$(basename "$anchor")"
+      fi
+    done
+    if [ -n "$match" ]; then
+      echo "FAIL: GH_RELEASE_SIGNING_KEY holds a key that belongs to: $match" >&2
+      echo "      That is not the expected CLI release anchor ($(basename "$PUB")), which it must match." >&2
+    else
+      echo "FAIL: GH_RELEASE_SIGNING_KEY holds a private key matching none of the anchors beside $PUB" >&2
+    fi
+    echo "      Compared by public-key equality only; no key material is printed." >&2
+  fi
+  exit 1
+fi
 
 bash "$(dirname "$0")/sign-artifacts.sh" \
   --dist "$DIST" --key "$KEY" --public-key "$PUB" \

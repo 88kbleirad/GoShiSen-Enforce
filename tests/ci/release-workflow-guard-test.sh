@@ -195,6 +195,13 @@ esac
 case "$out" in
   *"$base64_pem"*|*"PRIVATE KEY"*) fail "diagnostic leaked the secret value" ;;
 esac
+case "$out" in
+  *"metadata: "*"chars, "*"line(s), CR="*) ;;
+  *) fail "base64 secret: no value-safe file metadata line: $out" ;;
+esac
+case "$out" in
+  *"$base64_pem"*) fail "metadata line leaked the secret value" ;;
+esac
 
 if out="$( cd "$ROOT" && GITHUB_SHA=deadbeef RELEASE_SIGN_KEY="$(cat "$TMP/good.pub.pem")" \
            bash "$TMP/dryrun.sh" 2>&1 )"; then
@@ -203,6 +210,65 @@ fi
 case "$out" in
   *"holds a PUBLIC key PEM"*) ;;
   *) fail "public-key secret: no shape diagnosis in output: $out" ;;
+esac
+
+# behavioural: a secret that is a valid PEM but belongs to a DIFFERENT key is
+# rejected, and the diagnosis names which known anchor it belongs to (the usual
+# mis-paste is the APK signing key) — names only, never key material.
+openssl genpkey -algorithm ed25519 -out "$TMP/other.pem" 2>/dev/null
+openssl pkey -in "$TMP/other.pem" -pubout -out "$TMP/other.pub.pem" 2>/dev/null
+mkdir -p "$TMP/anchors"
+cp "$TMP/good.pub.pem" "$TMP/anchors/goshisen-release.pub.pem"    # expected anchor
+cp "$TMP/other.pub.pem" "$TMP/anchors/goshisen-apk.pub.pem"       # a different known anchor
+
+if out="$( cd "$ROOT" && GITHUB_SHA=deadbeef \
+           RELEASE_PUB_KEY="$TMP/anchors/goshisen-release.pub.pem" \
+           RELEASE_SIGN_KEY="$(cat "$TMP/other.pem")" \
+           bash "$TMP/dryrun.sh" 2>&1 )"; then
+  fail "a private key not matching the expected anchor was ACCEPTED"
+fi
+case "$out" in
+  *"holds a key that belongs to: goshisen-apk.pub.pem"*) ;;
+  *) fail "wrong-key secret: diagnosis did not name the matching anchor: $out" ;;
+esac
+case "$out" in
+  *"-----BEGIN"*) fail "diagnosis leaked key material" ;;
+esac
+
+# no other known anchor matches -> said so explicitly, still fails closed
+rm "$TMP/anchors/goshisen-apk.pub.pem"
+if out="$( cd "$ROOT" && GITHUB_SHA=deadbeef \
+           RELEASE_PUB_KEY="$TMP/anchors/goshisen-release.pub.pem" \
+           RELEASE_SIGN_KEY="$(cat "$TMP/other.pem")" \
+           bash "$TMP/dryrun.sh" 2>&1 )"; then
+  fail "an unrelated private key was ACCEPTED"
+fi
+case "$out" in
+  *"matching none of the anchors"*) ;;
+  *) fail "unrelated-key secret: no 'none of the anchors' diagnosis: $out" ;;
+esac
+
+# behavioural: a value with a PEM private-key header that openssl cannot read
+# (passphrase-encrypted / truncated / mangled) is rejected with value-safe
+# metadata — the class seen in dry run 44989394642 attempt 2, where the old
+# message was only openssl's opaque "cannot derive public key".
+truncated_pem='-----BEGIN PRIVATE KEY-----
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+-----END PRIVATE KEY-----'
+if out="$( cd "$ROOT" && GITHUB_SHA=deadbeef RELEASE_SIGN_KEY="$truncated_pem" \
+           bash "$TMP/dryrun.sh" 2>&1 )"; then
+  fail "an unreadable PEM private key was ACCEPTED"
+fi
+case "$out" in
+  *"has a PEM private-key header but openssl cannot read it"*) ;;
+  *) fail "unreadable PEM: no explicit diagnosis: $out" ;;
+esac
+case "$out" in
+  *"metadata: "*"openssl=parse-failed"*) ;;
+  *) fail "unreadable PEM: no value-safe metadata line: $out" ;;
+esac
+case "$out" in
+  *AAAAAAAA*) fail "unreadable-PEM diagnosis leaked key material" ;;
 esac
 
 echo "RELEASE-WORKFLOW-GUARD-TEST-PASS"
