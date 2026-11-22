@@ -1,0 +1,22 @@
+permissions:
+  contents: read
+jobs:
+  build:
+    permissions:
+      contents: read
+    steps:
+      - name: B
+        run: echo b
+  sign:
+    environment: release-cli
+    permissions:
+      contents: write
+    steps:
+      - name: S
+        if: ${{ inputs.dry_run }}
+        env:
+          K: ${{ secrets.GH_RELEASE_SIGNING_KEY }}
+        run: |
+          tmp=$(mktemp -d)
+          printf dummy > "$tmp/dummy.bin"
+          bash scripts/release-sign.sh --dist "$tmp" --commit x --tag dry-run

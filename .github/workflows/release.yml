@@ -2,34 +2,55 @@ name: release
 
 # Publishing workflow: runs only on version tags, not on pull
 # requests. PRs validate packaging in ci.yml without publishing.
+#
+# F-02 (issue #100): the CLI release signing key
+# (GH_RELEASE_SIGNING_KEY, fingerprint 24215e01..., key id
+# f955ede984245d64) is used only by the `sign` job, which runs under
+# the protected `release-cli` environment (required reviewer; deploy
+# policy: main and v* tags). The `build` job never sees the key and
+# runs with read-only permissions. A `workflow_dispatch` dry-run path
+# exercises signing under the environment with a fixed dummy file
+# (no release, tag, or artifact is ever created).
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: >-
+          Dry-run: sign a fixed dummy file with the real production key
+          under the release-cli environment (main only). Creates no
+          release, tag, or artifact.
+        required: false
+        type: boolean
+        default: false
 
 permissions:
-  contents: write   # upload assets to the GitHub Release for this tag
+  contents: read   # jobs tighten/expand explicitly below
+
+concurrency:
+  # One release/sign run at a time per ref (tag or branch). Never cancel
+  # an in-progress run: signing is the point of no return for the key.
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  package:
-    name: package + verify + publish
+  validate:
+    name: validate tag gates
     runs-on: ubuntu-24.04
     permissions:
-      contents: write   # upload assets to the GitHub Release for this tag
+      contents: read
     # The tag name is passed through an env var (never interpolated
     # directly into a shell command) and quoted at every use. The first
     # step rejects any name that is not exactly v<major>.<minor>.<patch>
     # before it is used anywhere (S-003: ref-name script injection).
     env:
       RELEASE_TAG: ${{ github.ref_name }}
-      # S-005: the release build must use the pinned toolchain and never
-      # silently switch versions via the go.mod `toolchain` line
-      # (GOTOOLCHAIN=auto would download/use whatever the line demands).
-      # setup-go installs exactly go-version 1.27.4; GOTOOLCHAIN=local
-      # makes `go` refuse any other version with a hard error.
-      GOTOOLCHAIN: local
+    timeout-minutes: 15
     steps:
       - name: Validate release tag (fail-closed, before any other step)
+        if: ${{ !inputs.dry_run }}
         run: |
           set -euo pipefail
           # Identical pattern to scripts/validate-release-tag.sh (S-003).
@@ -42,6 +63,8 @@ jobs:
           echo "OK: release tag '$RELEASE_TAG' matches ^v[0-9]+\.[0-9]+\.[0-9]+$"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: F-01 pre-tag gate — Makefile must match the tag (fail-closed before build)
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
           # The tagged commit's openwrt/Makefile must already carry
@@ -50,12 +73,47 @@ jobs:
           # a post-tag pin PR; a tag cannot contain its own hash, so the
           # version bump must have landed BEFORE the tag. Without this
           # gate a mismatched tag would build, sign and create a DRAFT.
-          bash scripts/release-pretag-check.sh --tag "$RELEASE_TAG"
+          if [ "$DRY_RUN" = "true" ]; then
+            # Dry-run on main: no tag exists. Run the same gate against
+            # the current Makefile version (identical to ci.yml's
+            # release-pretag-gate job).
+            pkg_version="$(sed -nE 's/^PKG_VERSION[[:space:]]*:=?[[:space:]]*(.*)/\1/p' openwrt/Makefile | head -n1)"
+            [ -n "$pkg_version" ] || { echo "FAIL: PKG_VERSION not found in openwrt/Makefile" >&2; exit 1; }
+            bash scripts/release-pretag-check.sh --tag "v$pkg_version"
+          else
+            bash scripts/release-pretag-check.sh --tag "$RELEASE_TAG"
+          fi
+
+  build:
+    name: build + verify release archives
+    needs: validate
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    # No secrets, no environment: this job never sees the signing key.
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+      # S-005: the release build must use the pinned toolchain and never
+      # silently switch versions via the go.mod `toolchain` line
+      # (GOTOOLCHAIN=auto would download/use whatever the line demands).
+      # setup-go installs exactly go-version 1.27.4; GOTOOLCHAIN=local
+      # makes `go` refuse any other version with a hard error.
+      GOTOOLCHAIN: local
+    timeout-minutes: 45
+    steps:
+      - name: Dry-run — release build skipped (nothing release-related built)
+        if: ${{ inputs.dry_run }}
+        run: |
+          echo "DRY-RUN: release build skipped"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: ${{ !inputs.dry_run }}
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        if: ${{ !inputs.dry_run }}
         with:
           go-version: "1.27.4"
           cache: true
       - name: Install packaging tools
+        if: ${{ !inputs.dry_run }}
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends jq openssl
@@ -68,10 +126,13 @@ jobs:
           tar xzf /tmp/syft_1.30.0_linux_amd64.tar.gz -C /usr/local/bin syft
           go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
       - name: Build archives
+        if: ${{ !inputs.dry_run }}
         run: make package VERSION="$RELEASE_TAG"
       - name: Verify archives (arch, version, checksums, SBOM)
+        if: ${{ !inputs.dry_run }}
         run: make verify-package VERSION="$RELEASE_TAG"
       - name: S-005 gate — govulncheck binary-mode on CLI archives (allowlist-reviewed)
+        if: ${{ !inputs.dry_run }}
         run: |
           set -euo pipefail
           # The CLI archives must pass binary-mode govulncheck with the
@@ -82,7 +143,95 @@ jobs:
           command -v govulncheck >/dev/null 2>&1 || { echo "FAIL: govulncheck not installed (S-005 CLI gate)" >&2; exit 1; }
           bash scripts/check-cli-archive-govuln.sh dist/goshisen-linux-amd64.tar.gz
           bash scripts/check-cli-archive-govuln.sh dist/goshisen-linux-arm64.tar.gz
+      - name: Upload packaged archives, checksums and SBOM (consumed by the sign job)
+        if: ${{ !inputs.dry_run }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-dist
+          path: |
+            dist/goshisen-linux-*.tar.gz
+            dist/checksums.txt
+            dist/sbom.spdx.json
+          if-no-files-found: error
+
+  sign:
+    name: sign release artifacts (protected environment)
+    needs: build
+    runs-on: ubuntu-24.04
+    # The production CLI signing key lives in the `release-cli` environment
+    # (required reviewer; deploy policy: main and v* tags). The secret
+    # resolves ONLY through this environment scope, and environment secrets
+    # take precedence over same-named repo-level secrets for this job.
+    # After the repo-level copy is removed (see
+    # docs/release/f02-environment-migration.md) this is the only source.
+    environment: release-cli
+    permissions:
+      contents: write   # upload assets to the GitHub Release for this tag (only job with write)
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    timeout-minutes: 30
+    steps:
+      - name: Dry-run ref guard — main only (fail-closed)
+        if: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          # The environment's deployment policy already restricts deploys
+          # to main and v* tags; this guard makes the rejection explicit
+          # and fail-closed before the key is touched.
+          case "$GITHUB_REF" in
+            refs/heads/main) echo "OK: dry-run on main" ;;
+            *)
+              echo "FAIL: dry-run allowed only from main (ref=$GITHUB_REF)" >&2
+              exit 1
+              ;;
+          esac
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: "1.27.4"
+          cache: false   # used only to stamp the toolchain version in provenance
+      - name: Verify production trust anchor fingerprint (fail-closed)
+        run: |
+          set -euo pipefail
+          # The committed trust anchor must be the production CLI release
+          # key: SHA-256 of DER SPKI == 24215e01... Verified before any
+          # secret use, so a swapped/mistaken anchor never signs.
+          anchor=keys/goshisen-release.pub.pem
+          [ -f "$anchor" ] || { echo "FAIL: trust anchor $anchor missing" >&2; exit 1; }
+          fp="$(openssl pkey -pubin -in "$anchor" -outform DER | sha256sum | awk '{print $1}')"
+          expected=24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0
+          if [ "$fp" != "$expected" ]; then
+            echo "FAIL: trust anchor fingerprint mismatch ($anchor: got $fp, expected $expected)" >&2
+            exit 1
+          fi
+          echo "OK: trust anchor fingerprint verified $fp"
+      - name: Download build artifacts
+        if: ${{ !inputs.dry_run }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-dist
+          path: dist
+      - name: Verify assets against build checksums (fail-closed)
+        if: ${{ !inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          # The sign job must never sign anything the build job did not
+          # produce: the artifact payload must be exactly the expected set
+          # and every archive must match the build's checksums.txt.
+          cd dist
+          for f in goshisen-linux-amd64.tar.gz goshisen-linux-arm64.tar.gz checksums.txt sbom.spdx.json; do
+            [ -f "$f" ] || { echo "FAIL: missing expected asset $f" >&2; exit 1; }
+          done
+          [ "$(find . -maxdepth 1 -type f | wc -l)" -eq 4 ] || {
+            echo "FAIL: unexpected files in downloaded artifact" >&2
+            find . -maxdepth 1 -type f >&2
+            exit 1
+          }
+          grep -E 'goshisen-linux-(amd64|arm64)\.tar\.gz' checksums.txt | sha256sum -c -
+          jq -e '.spdxVersion == "SPDX-2.3" and ((.packages | length) > 0)' sbom.spdx.json >/dev/null
+          echo "OK: downloaded assets match build checksums"
       - name: Sign release artifacts with production key
+        if: ${{ !inputs.dry_run }}
         env:
           RELEASE_SIGN_KEY: ${{ secrets.GH_RELEASE_SIGNING_KEY }}
         run: |
@@ -90,9 +239,33 @@ jobs:
           # scripts/release-sign.sh removes it via trap and fails closed when
           # the secret is missing, mismatched, or verification fails.
           bash scripts/release-sign.sh \
-            --dist dist --commit "${{ github.sha }}" --tag "$RELEASE_TAG" \
-            --builder release.yml/package --toolchain "$(go version)"
+            --dist dist --commit "$GITHUB_SHA" --tag "$RELEASE_TAG" \
+            --builder release.yml/sign --toolchain "$(go version)"
+      - name: Dry-run — sign a fixed dummy file with the production key
+        if: ${{ inputs.dry_run }}
+        env:
+          RELEASE_SIGN_KEY: ${{ secrets.GH_RELEASE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          # Signs a fixed dummy file via the same production path
+          # (scripts/release-sign.sh), verifies with the committed trust
+          # anchor, and prints ONLY the verification result and the public
+          # key fingerprint. Never touches a release or tag; uploads
+          # nothing. Any secret problem fails closed with a message that
+          # never reveals the value.
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          mkdir -p "$tmp/dist"
+          printf 'goshisen-release-dry-run-file\n' > "$tmp/dist/dummy.bin"
+          bash scripts/release-sign.sh \
+            --dist "$tmp/dist" --commit "$GITHUB_SHA" --tag dry-run \
+            --builder release.yml/sign-dry-run --toolchain "$(go version)" \
+            > "$tmp/sign.log"
+          # Only verification result lines are printed.
+          grep -E 'OK:|VERIFY-PASS' "$tmp/sign.log"
+          fp="$(openssl pkey -pubin -in keys/goshisen-release.pub.pem -outform DER | sha256sum | awk '{print $1}')"
+          echo "OK: dry-run signature verified (public key fingerprint $fp)"
       - name: Upload release assets
+        if: ${{ !inputs.dry_run }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

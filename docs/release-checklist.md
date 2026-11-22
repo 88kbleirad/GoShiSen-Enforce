@@ -50,7 +50,13 @@ Run in order. Every item must pass before tagging.
 - [ ] CI on the tag runs green (build + integration jobs, zero mandatory skips).
 - [ ] Version stamp: `make build VERSION=v0.1.0` then `bin/goshisen --version` must print `goshisen v0.1.0` (not `dev`). Guarded in CI (`Verify version stamp` step; `internal/cli.Version` must be a `var`, not a `const` — ldflags `-X` cannot set constants).
 - [ ] Packaging: `make package VERSION=$TAG` builds `goshisen-linux-amd64.tar.gz` + `goshisen-linux-arm64.tar.gz` + `checksums.txt` + `sbom.spdx.json`; `make verify-package VERSION=$TAG` validates arch, static linkage, version stamp, checksums, SBOM; archives byte-reproducible. Guarded by the CI `package` job and `tests/package`.
-- [ ] Release workflow (`.github/workflows/release.yml`) runs on `v*` tags, builds + verifies, and attaches artifacts to the tag's release as a **draft** (never auto-publishes).
+- [ ] Release workflow (`.github/workflows/release.yml`) runs on `v*` tags, builds + verifies, and attaches artifacts to the tag's release as a **draft** (never auto-publishes). Since F-02 (issue #100) the workflow is split:
+  - `validate` — S-003 tag guard (pre-checkout) + F-01 pre-tag gate; `contents: read`, no secrets.
+  - `build` — checkout, pinned Go 1.27.4 (`GOTOOLCHAIN=local`), tools, `make package`, `make verify-package`, S-005 CLI-archive govulncheck gate; uploads archives/checksums/SBOM as a workflow artifact; `contents: read`, no secrets, no environment.
+  - `sign` — `environment: release-cli` (required reviewer; deploy policy: main + `v*` tags); downloads the artifact, verifies every asset against the build's `checksums.txt` (fail-closed), verifies the trust anchor fingerprint `24215e01…`, runs `scripts/release-sign.sh` with `GH_RELEASE_SIGNING_KEY` from the environment only, then `gh release create --draft --verify-tag`; `contents: write` only here.
+  - A `workflow_dispatch` **dry-run** path (`dry_run: true`, releases only) signs a fixed dummy file with the real key under the environment, prints only the verification result + public-key fingerprint, and creates no release/tag/artifact.
+  - The F-02 guard (`tests/ci/release-workflow-guard-test.sh`, wired into ci.yml as `release-workflow-guard`) fails if the signing key escapes the `sign` job, the `sign` job loses `environment: release-cli`, `build` gains write access or an environment, or any `run:` interpolates `${{ github.* }}` (S-003 class).
+  - Migration/handover: `docs/release/f02-environment-migration.md` (repo-level secret removal, verification, rollback, post-first-release check).
 - [ ] Publish the container image (optional) from the tagged checkout with `--cap-drop=ALL --cap-add=NET_ADMIN --cap-add=NET_RAW` per the Dockerfile guidance.
 
 ## 6. Release notes (draft)
