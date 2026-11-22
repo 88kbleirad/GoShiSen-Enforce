@@ -83,6 +83,64 @@ readable PEM private key (quoted/escaped/corrupted/encrypted) with hints.
 Regression-covered by `tests/ci/check-backup-key-test.sh` (CI job
 `check-backup-key (F-02)`).
 
+## 2c. If the offline key cannot be found on any machine
+
+`gh secret list` shows the repository-level `GH_RELEASE_SIGNING_KEY` still
+exists, and the published **v0.2.7** assets verify against the committed anchor
+(`scripts/verify-signatures.sh --dist <v0.2.7 assets> --public-key
+keys/goshisen-release.pub.pem --commit 192eba70 --require-sign` → `VERIFY-PASS`,
+and the release's own `public_key.pem` fingerprint equals `24215e01...`). So the
+CLI key exists and has signed real releases — but **GitHub never reveals a
+secret's value**, so it cannot be copied from the repository scope into the
+environment scope. `gh secret set` requires the value.
+
+Therefore, if `scripts/check-backup-key.sh` returns non-zero for every file you
+hold (no file produces `MATCH`), there are exactly two honest options:
+
+**Option A — leave F-02 partially in place (no key material needed).**
+Keep the repository-level secret and the environment gate on the `sign` job.
+The *approval* requirement is already enforced (the job runs under
+`release-cli`), which is the load-bearing half of F-02; what remains is that
+other jobs in the repository could still read the repo-scoped secret. Record
+that as the residual risk (the F-02 guard already fails the build if any job
+other than `sign` references the key). Nothing to change in code; the
+repo-level copy simply stays.
+
+**Option B — rotate the key (the only way to finish F-02 without the old
+value).** The old *private* key is never needed; only its public anchor is,
+and that is already committed. Order matters:
+
+```sh
+# 1. On an offline machine: create the replacement keypair (never in the repo).
+openssl genpkey -algorithm ed25519 -out goshisen-release-2026-11.pem
+chmod 600 goshisen-release-2026-11.pem
+openssl pkey -in goshisen-release-2026-11.pem -pubout -out goshisen-release.pub.pem
+# 2. Verify the new pair locally before anything else.
+openssl pkey -in goshisen-release-2026-11.pem -pubout -outform DER | sha256sum
+#    -> the new fingerprint; keep the file offline (never in a repo/log/chat)
+
+# 3. Update the committed trust material in ONE dedicated PR (no code paths
+#    hidden elsewhere — these are the four places that carry the fingerprint):
+#      keys/goshisen-release.pub.pem              (new public anchor)
+#      .github/workflows/release.yml              (sign job's `expected=` gate)
+#      scripts/check-backup-key.sh                (EXPECTED default)
+#      docs/release/f02-environment-migration.md  (fingerprints in this doc)
+#    Keep the OLD anchor committed under a new name (e.g.
+#    keys/goshisen-release-v1.pub.pem) so previously published releases stay
+#    verifiable; this PR must pass the F-02 guard and the signature CI job.
+
+# 4. Set the environment secret from the new file (value never printed):
+gh secret set GH_RELEASE_SIGNING_KEY --env release-cli \
+  --repo 88kbleirad/GoShiSen-Enforce < goshisen-release-2026-11.pem
+# 5. Re-run the dry run on main; expect VERIFY-PASS and the NEW fingerprint.
+# 6. Only then remove the repository-level copy (section 3).
+```
+
+Rotation is the documented remedy for a lost/compromised key (see also
+`docs/release/signed-tags-plan.md` and the APK custody rotation section); treat
+a key that cannot be located as **compromised-by-uncertainty** and rotate, rather
+than leaving the environment secret holding an unidentifiable value.
+
 ## 3. Removing the repository-level secret (maintainer, after the dry run passed)
 
 Prerequisite: the F-02 dry run (workflow_dispatch on `main`,
