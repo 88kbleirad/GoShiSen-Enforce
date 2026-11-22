@@ -2,9 +2,10 @@ package packet
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
+
+	"github.com/88kbleirad/GoShiSen-Enforce/internal/safefile"
 )
 
 // QueueStats is a snapshot of the kernel's per-queue statistics exposed
@@ -82,7 +83,11 @@ func ParseQueueStats(content string, queue int) (QueueStats, bool, error) {
 // unreadable so callers can degrade silently (the kernel does not
 // support queue stats).
 func ReadQueueStats(path string, queue int) (QueueStats, error) {
-	data, err := os.ReadFile(path)
+	// Bounded, fail-fast read (internal/safefile): /proc entries are regular
+	// files, but the path is operator-visible and the same defect class as
+	// the v0.2.7 anomaly sweep (a non-regular file such as a FIFO would block
+	// in open(), a device would stream without EOF) applies here too.
+	data, err := safefile.ReadBounded(path)
 	if err != nil {
 		return QueueStats{}, fmt.Errorf("read %s: %w", path, err)
 	}

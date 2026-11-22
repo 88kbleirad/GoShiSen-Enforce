@@ -12,6 +12,7 @@ Trạng thái và lịch sử đáng chú ý của GoShiSen-Enforce. Chi tiết 
 - **Đọc file có giới hạn (#104):** đọc config/policy/store giờ từ chối file không-thường trước khi mở và giới hạn 16 MiB — đường dẫn policy trỏ vào /dev/urandom trước đây treo vô hạn (bộ nhớ ~1 GiB/s).
 - **CI mạnh hơn (#105–#107):** sweep bất thường CLI 257 case và các mục tiêu fuzz config đã được đưa vào repo và chạy trong CI, cùng staticcheck (baseline rỗng) và govulncheck source mode.
 - **UCI api_token (#108, đóng #103):** cấu hình OpenWrt giờ đặt được token API; config daemon được render có chmod 600 và charset token bị giới hạn (A-Za-z0-9._-); init script cảnh báo khi listener API bật mà không có token.
+- **Đọc thống kê queue cũng có giới hạn (mở rộng P1.1 của v0.2.8):** `packet.ReadQueueStats` (đọc `/proc/net/netfilter/nfnetlink_queue`, dùng bởi watcher cảnh báo overflow) là chỗ `os.ReadFile` không giới hạn cuối cùng trong cây mã; nay đi qua `internal/safefile.ReadBounded`, nên file không-thường (FIFO, device, thư mục) hoặc dữ liệu vượt hạn sẽ fail-closed thay vì treo daemon. Test hồi quy bao phủ: file thường, file thiếu, FIFO (không được block), thư mục và kích thước vượt hạn.
 
 ## Chi tiết đã chuyển ra khỏi README
 

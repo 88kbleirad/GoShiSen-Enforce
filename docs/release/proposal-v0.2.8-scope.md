@@ -58,6 +58,12 @@ F-02 (P3.10) require anchor/environment configuration on GitHub.
    Local write access to `policy_dir` makes the API read a FIFO/device;
    use `config.ReadFileBounded` (or a small `internal/safefile` package)
    there too, and add a *reload-under-hostile-store* test.
+   **Status: done.** `internal/store` already read through
+   `internal/safefile` (PR #112 closed the FIFO-swap TOCTOU); the last
+   unbounded reader, `internal/packet.ReadQueueStats` (procfs, called by
+   the overflow watcher), now uses `safefile.ReadBounded` as well, with
+   hostile-input regression tests (FIFO must not block, directory,
+   over-cap size).
 2. **Close issue #103 — UCI `api_token`.** Implemented in PR #108:
    `option api_token ''` packaged, rendered by `render_config()` into
    `/var/run/goshisen/config.yaml`, which is now `chmod 600` (the
