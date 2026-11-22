@@ -57,6 +57,34 @@ repository-level copy is redundant for this workflow and is only a
 residual exposure (any other workflow or job in the repo could still
 read it).
 
+## 1b. Resolution (2026-11-22, verified): the repository-level secret is the correct key
+
+With the environment gate withdrawn, a `workflow_dispatch` dry run on `main`
+(head `fb7aed5`) succeeded — run **45001752175**:
+
+```
+OK: private key matches public key keys/goshisen-release.pub.pem
+VERIFY-PASS: all artifacts verified with keys/goshisen-release.pub.pem
+OK: release artifacts signed and verified (key removed)
+OK: dry-run signature verified (public key fingerprint 24215e01...)
+```
+
+leak scan: 0 PEM private-key blocks, `RELEASE_SIGN_KEY: ***` masked — clean.
+
+So the **repository-level** `GH_RELEASE_SIGNING_KEY` is the production CLI key
+(it matches the committed anchor), and the *environment* copy that was pasted
+into `release-cli` was the wrong/mangled value all along — that, not the key
+backup, was the blocker for every failed dry run.
+
+**Fail-open demonstrated (why the gate had to be withdrawn rather than left
+declared):** dispatching that run auto-created `release-cli` with **no
+protection rules** (`rules: []`) and — because the environment holds no secret —
+the job fell back to the repository-level secret and signed **without any
+approval**. A tag release in that configuration would have published a signed
+draft unattended. After this withdrawal PR merges, `release.yml` no longer
+references the environment, so it cannot be auto-created by the workflow; the
+stray environment should still be deleted in repository settings.
+
 ## 2. Why the workflow is shaped this way
 
 `validate` → `build` → `sign`:
