@@ -1,0 +1,17 @@
+permissions:
+  contents: read
+jobs:
+  build:
+    permissions:
+      contents: read
+    steps:
+      - name: B
+        run: echo b
+  sign:
+    permissions:
+      contents: write
+    steps:
+      - name: S
+        env:
+          K: ${{ secrets.GH_RELEASE_SIGNING_KEY }}
+        run: bash scripts/release-sign.sh

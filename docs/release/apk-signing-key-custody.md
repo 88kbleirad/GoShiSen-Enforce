@@ -45,6 +45,18 @@ APK SIGNING KEY APPROVAL
 The record MUST also state explicitly that `GH_RELEASE_SIGNING_KEY`
 (the CLI-release key) is **not** an approved APK signing key.
 
+## 2a. CLI release key (F-02, issue #100) — separate environment, separate key
+
+The **CLI release** signing key `GH_RELEASE_SIGNING_KEY` (Ed25519,
+fingerprint `24215e01…`, key ID `f955ede984245d64`) is not the APK key
+above. As of 2026-11-22 it lives in the protected environment
+`release-cli` (required reviewer: the maintainer; deployment policy:
+`main` and `v*` tags) and is used only by release.yml's `sign` job; the
+build job never sees it. Full migration and removal plan:
+`docs/release/f02-environment-migration.md` (issue #100). The APK key
+remains `GH_RELEASE_APK_SIGNING_KEY` in environment `signing`; never
+reuse one key for the other channel.
+
 ## 3. Provisioning procedure (authorized personnel only)
 
 1. **Generate** the keypair with the approved tool in the approved
@@ -135,3 +147,4 @@ apk del goshisen                # uninstall
 | --- | --- | --- | --- |
 | 2026-11-14 | handoff created; no key provisioned | — | this document |
 | 2026-11-15 | **first production use** — v0.2.3 release: production signing run `43680663126` (sign + negative-controls SUCCESS), signed `goshisen-0.2.3-r1.apk` (sha256 `948e2e1d…`) published | `542bb7ae9058fee9b4d37ed30b0af44f234ea7cb8866daa1ffc71a7bc37c839d` | `docs/release/v023-release-evidence.md`, `docs/release/v0.2.3-notes.md` |
+| 2026-11-22 | **CLI key scoped (F-02)**: `GH_RELEASE_SIGNING_KEY` moved behind environment `release-cli` (release.yml `sign` job only); APK key/environment `signing` untouched | `24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0` | `docs/release/f02-environment-migration.md`, issue #100 |

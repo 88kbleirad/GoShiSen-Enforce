@@ -1,0 +1,61 @@
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Validate tag
+        run: |
+          set -euo pipefail
+          echo "$RELEASE_TAG" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$'
+
+  build:
+    needs: validate
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Build
+        run: make package
+      - name: Upload archives
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist
+
+  sign:
+    needs: build
+    environment: release-cli
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Guard main only
+        if: ${{ inputs.dry_run }}
+        run: |
+          case "$GITHUB_REF" in
+            refs/heads/main) ;;
+            *) echo "FAIL: dry-run only on main" >&2; exit 1 ;;
+          esac
+      - name: Sign production
+        if: ${{ !inputs.dry_run }}
+        env:
+          RELEASE_SIGN_KEY: ${{ secrets.GH_RELEASE_SIGNING_KEY }}
+        run: bash scripts/release-sign.sh --dist dist --commit "$GITHUB_SHA" --tag "$RELEASE_TAG" --builder release.yml/sign --toolchain x
+      - name: Dry run sign
+        if: ${{ inputs.dry_run }}
+        env:
+          RELEASE_SIGN_KEY: ${{ secrets.GH_RELEASE_SIGNING_KEY }}
+        run: |
+          tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+          printf dummy > "$tmp/dummy.bin"
+          bash scripts/release-sign.sh --dist "$tmp" --commit "$GITHUB_SHA" --tag dry-run --builder t
+          openssl pkey -pubin -in keys/goshisen-release.pub.pem -outform DER | sha256sum
+      - name: Upload release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$RELEASE_TAG" --draft --verify-tag dist/*
