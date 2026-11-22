@@ -19,6 +19,14 @@ Status and notable history for GoShiSen-Enforce. Per-release detail lives in `do
   API token; the rendered daemon config is chmod 600 and the token
   charset is restricted (A-Za-z0-9._-); the init script warns when the
   API listener is enabled without a token.
+- **Queue-stats read bounded too (#100-adjacent, v0.2.8 P1.1 extension):**
+  `packet.ReadQueueStats` (the `/proc/net/netfilter/nfnetlink_queue`
+  reader used by the overflow watcher) was the last unbounded
+  `os.ReadFile` in the tree; it now goes through
+  `internal/safefile.ReadBounded`, so a non-regular file (FIFO, device,
+  directory) or oversized input fails closed instead of hanging the
+  daemon. Regression tests cover regular file, missing file, FIFO
+  (must not block), directory and over-cap sizes.
 
 ## Details moved out of the README
 
