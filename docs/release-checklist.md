@@ -40,7 +40,7 @@ Run in order. Every item must pass before tagging.
 ## 4. Docs consistency
 
 - [ ] README status, user guide, developer guide, architecture, mvp-scope, SECURITY.md, OpenAPI agree with the implementation.
-- [ ] Go version consistent: go.mod `1.25.0`, CI `1.25`, Docker `golang:1.25`, docs `≥ 1.25`.
+- [ ] Go version consistent: go.mod `go 1.26.0` + `toolchain go1.27.4`, CI/release `go-version: 1.27.4` (with `GOTOOLCHAIN=local`), Docker image floor, docs `≥ 1.26`.
 - [ ] Every documented command is executable from the repo root.
 
 ## 5. Release mechanics
