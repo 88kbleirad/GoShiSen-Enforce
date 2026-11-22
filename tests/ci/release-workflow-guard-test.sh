@@ -313,4 +313,37 @@ case "$out" in
   *) fail "encrypted key: no explicit refusal: $out" ;;
 esac
 
+# behavioural: quote wrappers may be MISMATCHED (e.g. '"...' or '"..."  + space) —
+# the exact shape of dry runs 44992807857 / 44994859221 (121 chars, 2 lines,
+# openssl fails). The repair strips each quote independently, then re-validates.
+mismatched_key="\"$(cat "$TMP/good.pem")\" "
+mismatched_flip="\"$(cat "$TMP/good.pem")' "
+for variant in mismatched mismatched-ws; do
+  if [ "$variant" = mismatched ]; then key="$mismatched_key"; else key="$mismatched_flip"; fi
+  out="$( cd "$ROOT" && GITHUB_SHA=deadbeef RELEASE_PUB_KEY="$TMP/good.pub.pem" \
+          RELEASE_SIGN_KEY="$key" bash "$TMP/dryrun.sh" 2>&1 )" \
+    || fail "$variant PEM was rejected (repair should have succeeded): $out"
+  case "$out" in
+    *"repaired paste damage"*|*"reconstructed the PEM line structure"*) ;;
+    *) fail "$variant PEM: no repair/reconstruction notice: $out" ;;
+  esac
+  case "$out" in
+    *VERIFY-PASS*) ;;
+    *) fail "$variant PEM: signing/verification did not pass: $out" ;;
+  esac
+done
+# behavioural: a collapsed line structure (all on one line, spaces) is
+# reconstructed from the base64 body and must pass.
+collapsed_key="$(printf '%s' "$(cat "$TMP/good.pem")" | tr '\n' ' ')"
+out="$( cd "$ROOT" && GITHUB_SHA=deadbeef RELEASE_PUB_KEY="$TMP/good.pub.pem" \
+        RELEASE_SIGN_KEY="$collapsed_key" bash "$TMP/dryrun.sh" 2>&1 )" \
+  || fail "collapsed PEM was rejected (reconstruction should have succeeded): $out"
+case "$out" in
+  *"reconstructed the PEM line structure"*) ;;
+  *) fail "collapsed PEM: no reconstruction notice: $out" ;;
+esac
+case "$out" in
+  *"$collapsed_key"*|*"$mismatched_key"*|*"$mismatched_flip"*) fail "reconstruction path leaked the secret" ;;
+esac
+
 echo "RELEASE-WORKFLOW-GUARD-TEST-PASS"
