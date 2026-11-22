@@ -271,4 +271,46 @@ case "$out" in
   *AAAAAAAA*) fail "unreadable-PEM diagnosis leaked key material" ;;
 esac
 
+# behavioural: common paste damage must be REPAIRED (value-safe) rather than
+# failing — the classes behind dry runs 44989394642 / 44991076551. Each repair
+# still has to pass openssl AND the anchor comparison, so a wrong key can never
+# slip through; the notice names the repair, never the value.
+escaped_key="$(printf '%s' "$(cat "$TMP/good.pem")" | sed -E ':a;N;$!ba;s/\n/\\n/g')"
+quoted_key="\"$(cat "$TMP/good.pem")\""
+quoted_ws_key="$(printf '%s' "$quoted_key" | sed -e 's/$/ /')"
+for variant in escaped quoted quoted-ws; do
+  case "$variant" in
+    escaped)   key="$escaped_key" ;;
+    quoted)    key="$quoted_key" ;;
+    *)         key="$quoted_ws_key" ;;
+  esac
+  out="$( cd "$ROOT" && GITHUB_SHA=deadbeef RELEASE_PUB_KEY="$TMP/good.pub.pem" \
+          RELEASE_SIGN_KEY="$key" bash "$TMP/dryrun.sh" 2>&1 )" \
+    || fail "$variant PEM was rejected (repair should have succeeded): $out"
+  case "$out" in
+    *"repaired paste damage"*) ;;
+    *) fail "$variant PEM: no repair notice: $out" ;;
+  esac
+  case "$out" in
+    *VERIFY-PASS*) ;;
+    *) fail "$variant PEM: signing/verification did not pass: $out" ;;
+  esac
+  case "$out" in
+    *"$key"*|*"$escaped_key"*|*"$quoted_key"*|*"$quoted_ws_key"*) fail "$variant PEM: repair path leaked the secret" ;;
+  esac
+done
+
+# behavioural: a passphrase-encrypted key is refused with its own message
+enc_key='-----BEGIN ENCRYPTED PRIVATE KEY-----
+AAAA
+-----END ENCRYPTED PRIVATE KEY-----'
+if out="$( cd "$ROOT" && GITHUB_SHA=deadbeef RELEASE_SIGN_KEY="$enc_key" \
+           bash "$TMP/dryrun.sh" 2>&1 )"; then
+  fail "an encrypted private key was ACCEPTED"
+fi
+case "$out" in
+  *"PASSPHRASE-ENCRYPTED key"*) ;;
+  *) fail "encrypted key: no explicit refusal: $out" ;;
+esac
+
 echo "RELEASE-WORKFLOW-GUARD-TEST-PASS"
