@@ -63,6 +63,26 @@ read it).
   `release-workflow-guard (F-02)`) fails the PR if any of that structure
   regresses.
 
+## 2b. Checking a backup on a personal machine (offline, value-safe)
+
+Before re-setting the environment secret, verify the file you are about to
+paste with the committed anchor — on your own machine, no network, no CI:
+
+```sh
+# prints size/header/public fingerprint only; never the key value
+bash scripts/check-backup-key.sh --key /path/to/cli-key.pem
+# expect: MATCH: this is the production CLI release key (24215e01...)
+#         (exit 0)
+```
+
+Exit codes: `0` = key matches the production CLI anchor — safe to set;
+`1` = readable key but the wrong one (it will name which committed anchor it
+belongs to, e.g. `goshisen-apk.pub.pem`); `2` = usage/missing; `3` = not a
+readable PEM private key (quoted/escaped/corrupted/encrypted) with hints.
+`--expect <sha256>` checks an explicit fingerprint (useful after rotation).
+Regression-covered by `tests/ci/check-backup-key-test.sh` (CI job
+`check-backup-key (F-02)`).
+
 ## 3. Removing the repository-level secret (maintainer, after the dry run passed)
 
 Prerequisite: the F-02 dry run (workflow_dispatch on `main`,
