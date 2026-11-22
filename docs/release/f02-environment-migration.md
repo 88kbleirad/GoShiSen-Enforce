@@ -68,6 +68,22 @@ read it).
 Prerequisite: the F-02 dry run (workflow_dispatch on `main`,
 `dry_run: true`) has succeeded and its run ID is recorded in issue #100.
 
+**Note on the first dry run (2026-11-22, run `44981019938`):** it was
+approved and reached signing, but **failed fail-closed** before anything
+was signed: `ERROR: cannot derive public key from
+/home/runner/work/_temp/goshisen-release-key.pem` — i.e. the
+`release-cli` **environment copy** of `GH_RELEASE_SIGNING_KEY` is not a
+parseable PEM private key (empty, base64-encoded, public key, or other).
+The repository-level copy is unaffected (the v0.2.7 tag release used it
+successfully). `scripts/release-sign.sh` now diagnoses the secret's
+*shape* (length + category only, never the value) so a re-run tells us
+exactly what is wrong. The maintainer must re-set the environment secret
+from the offline backup before the dry run is re-run; do **not** copy
+the repository secret's value through any log/artifact in the process.
+
+Also confirm (names only) that the environment secret is present with the
+same name:
+
 ```sh
 # 1. Confirm the environment copy exists (names only; never values).
 gh api repos/88kbleirad/GoShiSen-Enforce/environments/release-cli/secrets \
@@ -101,7 +117,11 @@ Symptom → cause → action:
 | The run is waiting on the environment | the required-reviewer approval is pending (by design) | approve the deployment; nothing to roll back |
 | `Environment release-cli is not allowed to deploy to refs/tags/vX.Y.Z` | the environment's deployment policy does not allow that ref | fix the policy in repository settings (add the tag rule); the workflow cannot work around it |
 | `FAIL: RELEASE_SIGN_KEY (GH_RELEASE_SIGNING_KEY) is missing` | the environment secret was missing/renamed | re-create the environment secret from the offline backup — **the value must not be pasted anywhere else** |
-| `FAIL: trust anchor fingerprint mismatch` | the committed anchor changed | restore `keys/goshisen-release.pub.pem` (fingerprint `24215e01…`) |
+| `FAIL: RELEASE_SIGN_KEY is not a PEM private key (N chars; …)` / `holds a PUBLIC key PEM` | the stored value is not the raw private-key PEM (base64-encoded, public key, bare body, encrypted or trimmed) — **this is what the first dry run (run `44981019938`) hit** | re-set the environment secret from the offline backup as the verbatim PEM text (copy from the API-free local file, never through a log/artifact); re-run the dry run |
+| `ERROR: cannot derive public key from …` / `VERIFY-FAIL` after the shape check passes | the value is PEM but malformed, encrypted, or not a key openssl can read | re-set the environment secret from the offline backup; if the backup itself is suspect, treat as revocation + rotation |
+| `FAIL: trust anchor fingerprint mismatch` | the committed anchor changed | restore `keys/goshisen-release.pub.pem` (fingerprint `24215e01...`) |
+| `ERROR: key mismatch: … does not match …` | the environment secret holds a **different** key than the committed anchor | confirm which key the environment secret should hold (production CLI key); re-set from the backup, or rotate the anchor in a dedicated PR |
+| `VERIFY-FAIL: provenance-mismatch` / `stale-provenance` | the artifact did not come from this tag's build | re-run the workflow; the sign job's checksum gate should have caught a tampered asset first — investigate before re-running |
 | Anything else, and the release must ship now | — | roll back to the pre-F-02 workflow: `git revert <F-02 merge commit>` (restores the single-job workflow that reads the repo-level secret), then re-add the repo-level secret from the offline backup with `gh secret set GH_RELEASE_SIGNING_KEY --repo …`. Note: re-adding the repo secret **alone** does not restore old behaviour while the environment secret exists — environment scope wins; the workflow revert is what restores it. |
 
 Rollback is a temporary measure: re-open the F-02 issue with the failure
@@ -155,3 +175,4 @@ workflow, and record the result in issue #100:
 | 2026-11-21 | issue #100 opened (ordering plan; no secret, workflow or setting changed) | issue #100 |
 | 2026-11-22 | maintainer creates environment `release-cli` (required reviewer, `main` + `v*`) and adds the environment secret | issue #100 |
 | 2026-11-22 | workflow PR: `release.yml` split into validate/build/sign, `sign` under `release-cli`, dry-run path added, F-02 guard + fixtures added to CI | this document, PR link in issue #100 |
+| 2026-11-22 | first dry run (run `44981019938`) dispatched + approved; **failed fail-closed before signing**: `cannot derive public key` ⇒ the environment secret copy is not a PEM private key; `release-sign.sh` now diagnoses secret shape (never value); negative non-main dispatch rejected by the environment policy (run `44981062376`) | issue #100, `docs/release/f02-environment-migration.md` |
