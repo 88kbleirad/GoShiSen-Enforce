@@ -11,23 +11,23 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=goshisen
-PKG_VERSION:=0.2.7
+PKG_VERSION:=0.2.8
 # Package version is independent of the CLI release, but for this release
-# it is aligned with the CLI tag (v0.2.7). The daemon source is pinned by
-# PKG_SOURCE_VERSION below (the v0.2.7 tag commit; set by the post-tag
+# it is aligned with the CLI tag (v0.2.8). The daemon source is pinned by
+# PKG_SOURCE_VERSION below (the v0.2.8 tag commit; set by the post-tag
 # pin PR after the tag exists — a tag cannot contain its own hash).
 # PKG_RELEASE=1 restarts the package release counter for the new
-# PKG_VERSION (0.2.7-r1 > 0.2.6-r1 under apk ordering).
+# PKG_VERSION (0.2.8-r1 > 0.2.7-r1 under apk ordering).
 PKG_RELEASE:=1
 # NOTE: PKG_SOURCE_VERSION / PKG_MIRROR_HASH were deliberately NOT bumped
 # in the pre-tag PR. They are the POST-tag pin PR's job (pin = the
 # v0.2.7 tag commit + derived mirror hash), so that the tagged commit's
-# Makefile already carries PKG_VERSION:=0.2.7 (F-01 pre-tag gate).
+# Makefile already carries PKG_VERSION:=0.2.8 (F-01 pre-tag gate).
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/88kbleirad/GoShiSen-Enforce.git
-# Daemon source SHA = release v0.2.7 (tag commit 192eba7; the tag itself
-# is pointing at origin/main 192eba70f0c066f920906b8a213ffa30f2968d85).
+# Daemon source SHA = the v0.2.7 release commit (the pin is updated by the
+# POST-tag pin PR to the v0.2.8 tag commit; the v0.2.7 pin stays until then).
 # This is the ONLY daemon source pin; the packaging recipe lives in this
 # checkout (Makefile + files/) and is versioned independently.
 PKG_SOURCE_VERSION:=192eba70f0c066f920906b8a213ffa30f2968d85
@@ -35,7 +35,7 @@ PKG_SOURCE_VERSION:=192eba70f0c066f920906b8a213ffa30f2968d85
 # pinned commit (PKG_SOURCE_PROTO=git); lets the SDK verify the download
 # (mirror hash). Derived via the empty-hash SDK path: `make
 # package/feeds/goshisen/download V=s` then sha256sum of
-# dl/goshisen-0.2.7.tar.zst.
+# dl/goshisen-0.2.8.tar.zst (after the post-tag pin).
 PKG_MIRROR_HASH:=b74830be602048599b1c095a0074c489d7e8927e121fa512afabeb9412095db0
 PKG_SOURCE_SUBDIR:=$(PKG_NAME)-$(PKG_VERSION)
 
