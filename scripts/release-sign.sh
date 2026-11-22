@@ -73,8 +73,32 @@ printf '%s' "$RELEASE_SIGN_KEY" > "$KEY"
 chmod 600 "$KEY"
 
 # The secret must correspond to the committed trust anchor; a mismatched
-# key fails the release before anything is signed.
-bash "$(dirname "$0")/check-key-match.sh" "$KEY" "$PUB"
+# key fails the release before anything is signed. On mismatch, identify
+# which known anchor the stored key belongs to — by NAME only: the check
+# compares public keys, never prints key material, and only ever names
+# anchors that are already committed next to the expected anchor (the
+# usual cause is pasting the APK signing key into the CLI key's secret).
+if ! bash "$(dirname "$0")/check-key-match.sh" "$KEY" "$PUB"; then
+  derived="$SCRATCH/derived.pub.pem"
+  if openssl pkey -in "$KEY" -pubout -out "$derived" 2>/dev/null; then
+    match=""
+    for anchor in "$(dirname "$PUB")"/*.pub.pem; do
+      if [ ! -f "$anchor" ]; then continue; fi
+      if [ "$anchor" = "$PUB" ]; then continue; fi
+      if cmp -s "$derived" "$anchor"; then
+        match="${match:+$match, }$(basename "$anchor")"
+      fi
+    done
+    if [ -n "$match" ]; then
+      echo "FAIL: GH_RELEASE_SIGNING_KEY holds a key that belongs to: $match" >&2
+      echo "      That is not the expected CLI release anchor ($(basename "$PUB")), which it must match." >&2
+    else
+      echo "FAIL: GH_RELEASE_SIGNING_KEY holds a private key matching none of the anchors beside $PUB" >&2
+    fi
+    echo "      Compared by public-key equality only; no key material is printed." >&2
+  fi
+  exit 1
+fi
 
 bash "$(dirname "$0")/sign-artifacts.sh" \
   --dist "$DIST" --key "$KEY" --public-key "$PUB" \

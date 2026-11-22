@@ -205,4 +205,40 @@ case "$out" in
   *) fail "public-key secret: no shape diagnosis in output: $out" ;;
 esac
 
+# behavioural: a secret that is a valid PEM but belongs to a DIFFERENT key is
+# rejected, and the diagnosis names which known anchor it belongs to (the usual
+# mis-paste is the APK signing key) — names only, never key material.
+openssl genpkey -algorithm ed25519 -out "$TMP/other.pem" 2>/dev/null
+openssl pkey -in "$TMP/other.pem" -pubout -out "$TMP/other.pub.pem" 2>/dev/null
+mkdir -p "$TMP/anchors"
+cp "$TMP/good.pub.pem" "$TMP/anchors/goshisen-release.pub.pem"    # expected anchor
+cp "$TMP/other.pub.pem" "$TMP/anchors/goshisen-apk.pub.pem"       # a different known anchor
+
+if out="$( cd "$ROOT" && GITHUB_SHA=deadbeef \
+           RELEASE_PUB_KEY="$TMP/anchors/goshisen-release.pub.pem" \
+           RELEASE_SIGN_KEY="$(cat "$TMP/other.pem")" \
+           bash "$TMP/dryrun.sh" 2>&1 )"; then
+  fail "a private key not matching the expected anchor was ACCEPTED"
+fi
+case "$out" in
+  *"holds a key that belongs to: goshisen-apk.pub.pem"*) ;;
+  *) fail "wrong-key secret: diagnosis did not name the matching anchor: $out" ;;
+esac
+case "$out" in
+  *"-----BEGIN"*) fail "diagnosis leaked key material" ;;
+esac
+
+# no other known anchor matches -> said so explicitly, still fails closed
+rm "$TMP/anchors/goshisen-apk.pub.pem"
+if out="$( cd "$ROOT" && GITHUB_SHA=deadbeef \
+           RELEASE_PUB_KEY="$TMP/anchors/goshisen-release.pub.pem" \
+           RELEASE_SIGN_KEY="$(cat "$TMP/other.pem")" \
+           bash "$TMP/dryrun.sh" 2>&1 )"; then
+  fail "an unrelated private key was ACCEPTED"
+fi
+case "$out" in
+  *"matching none of the anchors"*) ;;
+  *) fail "unrelated-key secret: no 'none of the anchors' diagnosis: $out" ;;
+esac
+
 echo "RELEASE-WORKFLOW-GUARD-TEST-PASS"
