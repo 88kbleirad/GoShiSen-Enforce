@@ -708,14 +708,19 @@ func isLoopbackAPIHost(host string) bool {
 // Check performs read-only validation against the host: the policy file
 // must be readable and the interface (explicit or auto-detected) must
 // exist and be up. It never changes system state.
+//
+// The policy path is operator-supplied, so it is opened through the bounded
+// reader (internal/safefile): a FIFO would previously block open() forever on
+// this startup path, and a device or directory was accepted here and only
+// rejected later by the real load. Reading through ReadFileBounded applies the
+// same non-blocking open, regular-file check and 16 MiB cap the daemon will
+// apply, so an unusable path fails fast at check time instead of hanging or
+// failing midway through startup.
 func (o *Options) Check() error {
 	var errs []error
 	if p := ExpandPath(o.PolicyFile); p != "" {
-		f, err := os.Open(p)
-		if err != nil {
+		if _, err := ReadFileBounded(p); err != nil {
 			errs = append(errs, fmt.Errorf("policy_file: %w", err))
-		} else {
-			_ = f.Close()
 		}
 	}
 	if _, err := o.InterfaceName(); err != nil {

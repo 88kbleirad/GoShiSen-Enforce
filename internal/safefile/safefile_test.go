@@ -99,3 +99,28 @@ func TestReadBoundedCapAndRoundtrip(t *testing.T) {
 		t.Fatal("payload mismatch")
 	}
 }
+
+// TestReadBoundedProcFile pins the size-independence of ReadBounded: procfs
+// reports st_size 0 for regular files whose content is non-empty (e.g.
+// /proc/version, /proc/net/netfilter/nfnetlink_queue). A size-based
+// implementation would return zero bytes here.
+func TestReadBoundedProcFile(t *testing.T) {
+	const path = "/proc/version"
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no %s: %v", path, err)
+	}
+	st, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Size() != 0 {
+		t.Skip("procfs reports a size here; test would not exercise the zero-size case")
+	}
+	data, err := ReadBounded(path)
+	if err != nil {
+		t.Fatalf("ReadBounded(%s): %v", path, err)
+	}
+	if len(data) == 0 {
+		t.Fatalf("ReadBounded(%s) returned 0 bytes although st_size=%d; must not depend on st_size", path, st.Size())
+	}
+}

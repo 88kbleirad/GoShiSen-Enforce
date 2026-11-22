@@ -27,6 +27,13 @@ Status and notable history for GoShiSen-Enforce. Per-release detail lives in `do
   directory) or oversized input fails closed instead of hanging the
   daemon. Regression tests cover regular file, missing file, FIFO
   (must not block), directory and over-cap sizes.
+- **Startup policy-path check is bounded too (F-4a/F-4b):** the daemon's
+  pre-start validation opened `policy_file` with a plain `os.Open`, so a
+  path to a FIFO blocked startup forever and a directory/device was
+  accepted and only failed later. The check now goes through the bounded
+  reader (non-blocking open, regular-file check, 16 MiB cap), so an
+  unusable path fails fast with a clear `policy_file:` error. Tests cover
+  FIFO (must not block), directory, device, over-cap and a regular file.
 
 ## Details moved out of the README
 
