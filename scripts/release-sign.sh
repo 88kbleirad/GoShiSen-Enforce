@@ -45,6 +45,26 @@ if [ -z "${RELEASE_SIGN_KEY:-}" ]; then
   exit 1
 fi
 
+# The stored value must be a PEM private key. Otherwise openssl reports
+# only an opaque "cannot derive public key", which does not say what was
+# wrong (observed in the first live dry run: the environment copy of the
+# secret did not parse). Name the SHAPE here — never the value: this
+# output goes to the run log, so only a length and a category are printed.
+key_chars=$(printf '%s' "$RELEASE_SIGN_KEY" | wc -c | tr -d ' ')
+if ! printf '%s' "$RELEASE_SIGN_KEY" | grep -q -- '-----BEGIN .*PRIVATE KEY-----'; then
+  if printf '%s' "$RELEASE_SIGN_KEY" | grep -q -- '-----BEGIN PUBLIC KEY-----'; then
+    echo "FAIL: RELEASE_SIGN_KEY holds a PUBLIC key PEM, not the private key (${key_chars} chars)" >&2
+  elif printf '%s' "$RELEASE_SIGN_KEY" | grep -q -- '-----BEGIN'; then
+    echo "FAIL: RELEASE_SIGN_KEY holds a PEM block that is not a private key (${key_chars} chars)" >&2
+  else
+    echo "FAIL: RELEASE_SIGN_KEY is not a PEM private key (${key_chars} chars; no '-----BEGIN ...' line)" >&2
+  fi
+  echo "      Expected the raw PEM private key text. Common mis-pastes: base64-encoded" >&2
+  echo "      PEM, the public key, a bare base64 body, an encrypted key, or a trimmed" >&2
+  echo "      value. The value is never printed; re-set the secret from the offline backup." >&2
+  exit 1
+fi
+
 SCRATCH="${RUNNER_TEMP:-$(mktemp -d)}"
 KEY="$SCRATCH/goshisen-release-key.pem"
 trap 'rm -f "$KEY"' EXIT

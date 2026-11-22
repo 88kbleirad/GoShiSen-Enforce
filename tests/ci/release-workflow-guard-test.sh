@@ -180,4 +180,29 @@ case "$out" in
   *"$key_body"*|*"PRIVATE KEY"*) fail "dry-run output leaked private key material" ;;
 esac
 
+# behavioural: a mis-pasted secret is diagnosed by SHAPE (never by value).
+# These are the two shapes that a wrong environment copy takes in practice:
+# base64-encoded PEM, and the public key instead of the private key.
+base64_pem="$(base64 -w0 < "$TMP/good.pem")"
+if out="$( cd "$ROOT" && GITHUB_SHA=deadbeef RELEASE_SIGN_KEY="$base64_pem" \
+           bash "$TMP/dryrun.sh" 2>&1 )"; then
+  fail "base64-encoded secret was ACCEPTED as the signing key"
+fi
+case "$out" in
+  *"is not a PEM private key"*) ;;
+  *) fail "base64 secret: no shape diagnosis in output: $out" ;;
+esac
+case "$out" in
+  *"$base64_pem"*|*"PRIVATE KEY"*) fail "diagnostic leaked the secret value" ;;
+esac
+
+if out="$( cd "$ROOT" && GITHUB_SHA=deadbeef RELEASE_SIGN_KEY="$(cat "$TMP/good.pub.pem")" \
+           bash "$TMP/dryrun.sh" 2>&1 )"; then
+  fail "public-key PEM was ACCEPTED as the signing key"
+fi
+case "$out" in
+  *"holds a PUBLIC key PEM"*) ;;
+  *) fail "public-key secret: no shape diagnosis in output: $out" ;;
+esac
+
 echo "RELEASE-WORKFLOW-GUARD-TEST-PASS"
