@@ -40,7 +40,7 @@ Chạy theo thứ tự. Mọi mục phải PASS trước khi gắn thẻ.
 ## 4. Nhất quán tài liệu
 
 - [ ] README status, hướng dẫn người dùng, hướng dẫn nhà phát triển, architecture, mvp-scope, SECURITY.md, OpenAPI khớp với triển khai.
-- [ ] Phiên bản Go nhất quán: go.mod `1.25.0`, CI `1.25`, Docker `golang:1.25`, docs `≥ 1.25`.
+- [ ] Phiên bản Go nhất quán: go.mod `go 1.26.0` + `toolchain go1.27.4`, CI/release `go-version: 1.27.4` (với `GOTOOLCHAIN=local`), sàn image Docker, docs `≥ 1.26`.
 - [ ] Mọi lệnh được tài liệu hoá chạy được từ gốc kho.
 
 ## 5. Cơ chế phát hành

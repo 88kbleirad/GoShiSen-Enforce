@@ -16,6 +16,9 @@ on:
   push:
     tags:
       - "v*"
+  # F-02 note: the release-cli environment gate was withdrawn in #125
+  # (the environment was deleted); the dry run and the sign job proceed
+  # without a required-reviewer approval.
   workflow_dispatch:
     inputs:
       dry_run:
