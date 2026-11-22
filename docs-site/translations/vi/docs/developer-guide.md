@@ -2,7 +2,7 @@
 
 ## Điều kiện tiên quyết
 
-- Go ≥ 1.25 (khớp `go.mod`; CI và Docker dùng Go 1.25)
+- Go ≥ 1.26 (khớp `go.mod`; CI và Docker cài toolchain ghim go1.27.4)
 - Linux (cho công việc namespace lab sau này, cần root)
 - `make` cho các mục tiêu chuẩn
 

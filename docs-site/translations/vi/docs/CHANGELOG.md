@@ -9,6 +9,7 @@ Trạng thái và lịch sử đáng chú ý của GoShiSen-Enforce. Chi tiết 
 
 ## Làm cứng sau v0.2.7 (đã merge 2026-11-21, bản phát hành tiếp theo)
 
+- **Siết quyền thư mục policy store + giới hạn listener metrics (#102):** policy store tạo thư mục với quyền `0700` và ghi file policy/`active.json` với quyền `0600` (trước là `0755`/`0644`), nên tài khoản cục bộ khác không đọc được policy đang áp dụng; listener HTTP metrics nay đặt `ReadTimeout`/`WriteTimeout` 10 giây và `IdleTimeout` 30 giây, khớp với listener API, nên client cục bộ bị treo không thể giữ kết nối (và goroutine) mãi. Test hồi quy: `TestOpenRestrictedPerms`.
 - **Đọc file có giới hạn (#104):** đọc config/policy/store giờ từ chối file không-thường trước khi mở và giới hạn 16 MiB — đường dẫn policy trỏ vào /dev/urandom trước đây treo vô hạn (bộ nhớ ~1 GiB/s).
 - **CI mạnh hơn (#105–#107):** sweep bất thường CLI 257 case và các mục tiêu fuzz config đã được đưa vào repo và chạy trong CI, cùng staticcheck (baseline rỗng) và govulncheck source mode.
 - **UCI api_token (#108, đóng #103):** cấu hình OpenWrt giờ đặt được token API; config daemon được render có chmod 600 và charset token bị giới hạn (A-Za-z0-9._-); init script cảnh báo khi listener API bật mà không có token.

@@ -14,8 +14,9 @@ Các tổ hợp sau được build và xác thực trong CI:
 | `linux/amd64` | PASS | PASS (CI + cục bộ) | Mục tiêu chính |
 | `linux/arm64` | PASS | PASS (CI) | Build liên kết tĩnh; xác thực runtime trên arm64 bị giới hạn bởi mức độ sẵn có của runner arm64 — xem Ghi chú tương thích |
 
-- Cần toolchain Go 1.25+ để build từ nguồn (nhị phân phát hành đã
-  build sẵn và không cần toolchain).
+- Cần Go 1.26+ để build từ nguồn: `go.mod` khai báo `go 1.26.0` và ghim
+  `toolchain go1.27.4` (nhị phân phát hành đã build sẵn và không cần
+  toolchain).
 - Daemon là nhị phân tĩnh: không cần thư viện chia sẻ.
 - Nhị phân `nft` phải có mặt khi chạy.
 
@@ -204,6 +205,28 @@ tường minh với:
 ```bash
 sudo goshisen hook cleanup
 ```
+
+## Xác minh thẻ phát hành
+
+Ký thẻ phát hành (SSH `allowed_signers` / GPG) là một **mục tiêu**, chưa
+phải yêu cầu đang hiệu lực: nó chỉ trở thành yêu cầu khi người bảo trì
+cấu hình khóa ký và commit trust anchor (xem
+`docs/release/signed-tags-plan.md`). Cho tới lúc đó, thẻ phát hành là thẻ
+annotated nhưng **chưa ký**. Hãy xác minh những gì có thể trước khi
+build từ một thẻ:
+
+```bash
+git fetch --tags origin
+git tag -v vX.Y.Z        # có ý nghĩa khi đã cấu hình ký thẻ
+```
+
+Khi đã cấu hình ký, thẻ đã ký in ra `Good "git" signature for
+<principal> ...`; thẻ chưa ký in ra `error: no signature found` — đừng
+build bản phát hành từ thẻ đó. Gate phía phát hành trong
+`scripts/release-pin-gate.sh` chỉ thực thi kiểm tra chữ ký khi được bật
+tường minh (`GATE_TAG_SIGN_CHECK=1`); đây không phải yêu cầu đang hiệu
+lực cho tới khi người bảo trì cấu hình khóa ký. Quy trình và quản lý
+khóa: `docs/release/signed-tags-plan.md`.
 
 ## Ghi chú tương thích
 
