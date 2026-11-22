@@ -14,8 +14,9 @@ The following combinations are built and validated in CI:
 | `linux/amd64` | PASS | PASS (CI + local) | Primary target |
 | `linux/arm64` | PASS | PASS (CI) | Build is statically linked; runtime validation on arm64 is limited by availability of arm64 runners — see Compatibility notes |
 
-- Go 1.25+ toolchain is required to build from source (the release
-  binaries are pre-built and need no toolchain).
+- Go 1.26+ is required to build from source: `go.mod` declares
+  `go 1.26.0` and pins `toolchain go1.27.4` (the release binaries are
+  pre-built and need no toolchain).
 - The daemon is a static binary: no shared libraries are required.
 - The `nft` binary must be present at runtime.
 

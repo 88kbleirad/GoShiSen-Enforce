@@ -9,6 +9,14 @@ Status and notable history for GoShiSen-Enforce. Per-release detail lives in `do
 
 ## Post-v0.2.7 hardening (merged 2026-11-21, next release)
 
+- **Policy-store permissions tightened + metrics listener bounded
+  (#102):** the policy store creates its directory `0700` and writes
+  policy/`active.json` files `0600` (was `0755`/`0644`), so another
+  local account can no longer read applied policies; the metrics HTTP
+  listener now sets `ReadTimeout`/`WriteTimeout` 10 s and
+  `IdleTimeout` 30 s, matching the API listener, so a stalled local
+  client cannot hold a connection (and its goroutine) open. Regression
+  test: `TestOpenRestrictedPerms`.
 - **Bounded file reads (#104):** config/policy/store reads now reject
   non-regular files before opening and cap at 16 MiB — a policy path
   pointing at /dev/urandom previously hung forever (memory ~1 GiB/s).
