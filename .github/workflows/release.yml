@@ -7,24 +7,26 @@ name: release
 # (GH_RELEASE_SIGNING_KEY, fingerprint 24215e01..., key id
 # f955ede984245d64) is used only by the `sign` job; the `build` job
 # never sees the key and runs with read-only permissions. The
-# environment-based approval gate was removed on 2026-11-22 at the
-# maintainer's request (see docs/release/f02-environment-migration.md),
-# so signing is currently NOT approval-gated. A `workflow_dispatch`
-# dry-run path exercises signing with a fixed dummy file (no release,
-# tag, or artifact is ever created).
+# approval gate is `environment: signing` on the `sign` job (required
+# reviewer + deployment policies `main` branch / `v*` tag), so a tag
+# release pauses for approval before the key is resolved — reinstated
+# 2026-11-23 (the earlier `release-cli` environment was withdrawn in
+# #125; see docs/release/f02-environment-migration.md). A
+# `workflow_dispatch` dry-run path exercises signing with a fixed dummy
+# file (no release, tag, or artifact is ever created).
 on:
   push:
     tags:
       - "v*"
-  # F-02 note: the release-cli environment gate was withdrawn in #125
-  # (the environment was deleted); the dry run and the sign job proceed
-  # without a required-reviewer approval.
+  # F-02 note: the approval gate is the `sign` job's `environment: signing`
+  # (reinstated 2026-11-23; the earlier `release-cli` environment was
+  # withdrawn in #125). A dry run on main pauses for the same approval.
   workflow_dispatch:
     inputs:
       dry_run:
         description: >-
           Dry-run: sign a fixed dummy file with the real production key
-          under the release-cli environment (main only). Creates no
+          under the `signing` environment (main only). Creates no
           release, tag, or artifact.
         required: false
         type: boolean
@@ -162,15 +164,15 @@ jobs:
     name: sign release artifacts (protected environment)
     needs: build
     runs-on: ubuntu-24.04
-    # NOTE: F-02's `environment: release-cli` gate was removed on 2026-11-22 at
-    # the maintainer's request (the environment was deleted). The signing key is
-    # resolved from the repository-level secret again, so this job is NOT
-    # approval-gated anymore. What still holds: only this job may reference the
-    # key (F-02 guard), only this job may write, and the anchor/checksum gates
-    # below still fail closed. To reinstate the approval gate: recreate the
-    # environment with a required reviewer + allowed refs, re-add
-    # `environment: release-cli` here, and put the key in its secret
-    # (docs/release/f02-environment-migration.md).
+    # F-02 (issue #100): the CLI signing key is scoped to the `signing`
+    # environment (required reviewer `88kbleirad`; deployment policies:
+    # `main` branch + `v*` tag), so a tag release pauses for approval before
+    # the key is resolved. Environment secrets win over same-named
+    # repository secrets, so once the environment copy is set the
+    # repository-level copy is removable (docs/release/f02-environment-migration.md).
+    # Only this job may reference the key (F-02 guard, CI), only this job may
+    # write, and the anchor/checksum gates below fail closed.
+    environment: signing
     permissions:
       contents: write   # upload assets to the GitHub Release for this tag (only job with write)
     env:

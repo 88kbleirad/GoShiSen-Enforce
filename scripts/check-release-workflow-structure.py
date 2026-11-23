@@ -5,19 +5,23 @@ Goal of F-02: the CLI release signing key
 (`secrets.GH_RELEASE_SIGNING_KEY`, production fingerprint
 `24215e01...`, key id `f955ede984245d64`) must be usable only by the
 `sign` job of `.github/workflows/release.yml`, which runs under the
-protected `release-cli` environment (required reviewer, deploy policy:
-main + v* tags). The build job must never see the key.
+protected `signing` environment (required reviewer, deploy policy:
+main branch + v* tag). The build job must never see the key.
 
 Rules enforced (each has a negative fixture in
 tests/ci/release-workflow-structure-test.sh):
 
   sign-only-write          `sign` has `contents: write`; validate/build
                            do not (read-only release pipeline).
+  environment-scoped       `sign` must declare `environment: signing`:
+                           the approval gate IS the environment, so a
+                           missing/renamed environment silently drops
+                           the required reviewer (the #125 regression).
   secret-scope             referencing the secret anywhere outside the
                            `sign` job fails — in release.yml and in every
                            other scanned workflow (where it must then be
                            inside a job that declares `environment:
-                           release-cli`).
+                           signing`).
   secret-not-in-shell      the secret must never be interpolated into a
                            `run:` body (env-only: no shell/argv/log path).
   build-readonly           `build` permissions are exactly
@@ -48,7 +52,7 @@ import yaml
 
 SECRET_NAME = "GH_RELEASE_SIGNING_KEY"
 SECRET_EXPR = "secrets.GH_RELEASE_SIGNING_KEY"
-ENVIRONMENT = "release-cli"
+ENVIRONMENT = "signing"
 SIGN_JOB = "sign"
 RELEASE_WRITE_RE = re.compile(r"\bgh\s+release\b")
 GITHUB_CTX_RE = re.compile(r"\$\{\{\s*github\.")
@@ -136,6 +140,23 @@ def rule_sign_only_write(wf: dict) -> None:
                 add("sign-only-write", f"`sign` permissions must be contents: write, got {perms!r}")
         elif writes:
             add("sign-only-write", f"job {name!r} has write permissions {writes}; only `sign` may write")
+
+
+def rule_environment_scoped(wf: dict) -> None:
+    """F-02: the `sign` job must run under the protected environment.
+
+    The approval gate is the job's `environment:`, so a job that names no
+    environment (or a different one) silently loses the required-reviewer
+    approval — the regression that had to be withdrawn in #125. Fail
+    closed instead of trusting review.
+    """
+    sign = jobs_of(wf).get(SIGN_JOB)
+    if sign is None:
+        add("environment-scoped", "no `sign` job in release.yml")
+        return
+    env = sign.get("environment")
+    if env != ENVIRONMENT:
+        add("environment-scoped", f"`sign` must declare environment: {ENVIRONMENT}, got {env!r}")
 
 
 def rule_secret_scope(wf: dict, others: list[tuple[str, dict]]) -> None:
@@ -277,6 +298,7 @@ def main() -> int:
         others.append((path, load(path)))
 
     rule_sign_only_write(wf)
+    rule_environment_scoped(wf)
     rule_secret_scope(wf, others)
     rule_secret_not_in_shell(wf)
     rule_build_readonly(wf)

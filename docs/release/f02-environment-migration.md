@@ -1,21 +1,18 @@
 # F-02 — CLI release signing key moved behind a protected environment
 
-> **STATUS 2026-11-22: WITHDRAWN / SUPERSEDED.** The `release-cli` environment was
-> deleted by the maintainer (repository environments now list only
-> `github-pages` and `signing`), and `release.yml` no longer declares
-> `environment: release-cli`. The CLI signing key is resolved from the
-> **repository-level** `GH_RELEASE_SIGNING_KEY` again, so signing is **not**
-> approval-gated. What still holds from this work: only the `sign` job may
-> reference the key (F-02 guard, CI), only `sign` may write, the build job never
-> sees the key, and the anchor-fingerprint + asset-checksum gates still fail
-> closed. Everything below is kept as the record of the migration and of the
-> dry-run evidence (nine runs, all fail-closed, leak scans clean); the sections
-> that talk about environment secrets / required reviewers describe the
-> withdrawn design. Deleting an environment also deletes its secrets and
-> protection rules, and a workflow that references a missing environment makes
-> GitHub create it WITHOUT protection rules (then a job falls back to the
-> repository-level secret) — that is why the gate was withdrawn explicitly
-> rather than left declared.
+> **STATUS 2026-11-23: REINSTATED — the gate is `environment: signing`.**
+> `release.yml`'s `sign` job now declares `environment: signing` (the same
+> environment `apk-sign.yml` uses: required reviewer `88kbleirad`, deployment
+> policies `main` branch + `v*` tag), so a tag release — and the dry run —
+> pauses for approval before the key is resolved. **Current state and the exact
+> remaining steps are in §0.** Sections §1 onward stay as the record of the
+> earlier `release-cli` attempt (nine dry runs, all fail-closed, leak scans
+> clean) and of its withdrawal; wherever they say `release-cli`, they describe
+> that withdrawn design, not today's. Deleting an environment also deletes its
+> secrets and protection rules, and a workflow that declares a missing
+> environment makes GitHub create it WITHOUT protection rules (the job then
+> falls back to the repository-level secret) — which is why the gate is
+> declared only for an environment that exists with rules.
 
 Issue: [#100](https://github.com/88kbleirad/GoShiSen-Enforce/issues/100).
 Scope: the **CLI release** signing key `GH_RELEASE_SIGNING_KEY`
@@ -24,6 +21,57 @@ Scope: the **CLI release** signing key `GH_RELEASE_SIGNING_KEY`
 key ID `f955ede984245d64`). The APK signing key is a different key and a
 different environment (`signing`) — see
 `docs/release/apk-signing-key-custody.md`.
+
+## 0. Current state (2026-11-23) — gate reinstated in `signing`
+
+| Item | State |
+| --- | --- |
+| `release.yml` `sign` job | `environment: signing`; only `sign` may reference the key, only `sign` may write |
+| Environment `signing` | required reviewer `88kbleirad` (`can_admins_bypass: true`); deployment policies `main` (branch) + `v*` (**tag**), so tag releases pass the policy check |
+| Environment secret in `signing` | `GH_RELEASE_APK_SIGNING_KEY` only — **`GH_RELEASE_SIGNING_KEY` is not there yet** |
+| Repository-level `GH_RELEASE_SIGNING_KEY` | still present; it **is** the production CLI key (run `45001752175` signed and verified against the anchor). Remove it only after a green dry run proves the environment scope |
+| Environment `release-cli` | stray leftover: no protection rules, no policies, no secrets. Delete it in Settings → Environments; nothing declares it, and re-declaring it would let GitHub auto-create it unprotected |
+| F-02 guard | rule `environment-scoped` (the `sign` job must declare `environment: signing`) + negative fixture `bad-sign-no-environment.yml`; `secret-scope` still confines the key to `sign` in every scanned workflow |
+
+### 0.1 Ordering (blocked on the key's value)
+
+GitHub never returns a secret value, so the environment secret cannot be
+copied out of the repository scope. The value must come from the offline
+backup (or a rotation):
+
+```sh
+# 1. verify the backup offline first — prints only size/header/fingerprint
+bash scripts/check-backup-key.sh --key /path/to/cli-key.pem     # expect: MATCH + exit 0
+# 2. store it in the environment (the value is never echoed)
+gh secret set GH_RELEASE_SIGNING_KEY --env signing \
+  --repo 88kbleirad/GoShiSen-Enforce < /path/to/cli-key.pem
+# 3. names only: the environment must list it, the repository must still list it
+gh api repos/88kbleirad/GoShiSen-Enforce/environments/signing/secrets --jq '.secrets[].name'
+gh secret list --repo 88kbleirad/GoShiSen-Enforce
+# 4. dry run (needs the required-reviewer approval)
+gh workflow run release.yml --ref main -f dry_run=true
+# 5. after a green run: delete ONLY the repository-level copy (§3), then dispatch
+#    a second dry run — its success is the proof the key resolves from the
+#    environment scope. Record both run IDs + a leak scan in issue #100.
+```
+
+If the backup no longer exists, rotate: `openssl genpkey -algorithm ed25519`,
+store the new key in the environment secret, and replace
+`keys/goshisen-release.pub.pem` + `keys/release-anchor-fingerprint.txt` in a
+dedicated PR (keep the old anchor committed so past releases still verify).
+
+### 0.2 Exposure note — sharing `signing` with the APK workflow
+
+Environment secrets are readable by **every** job that declares the
+environment. `apk-sign.yml`'s `sign` job declares `environment: signing` and
+checks out + builds the repository before it signs, so once
+`GH_RELEASE_SIGNING_KEY` lives there that job can read it too (and
+release.yml's `sign` job can read `GH_RELEASE_APK_SIGNING_KEY`). Both
+workflows gate on the same required reviewer, so this is a deliberate
+trade-off (one environment to manage) rather than a slip; a dedicated
+environment — as the withdrawn `release-cli` was — keeps the two keys apart.
+`can_admins_bypass` is `true` on `signing`: a repository admin can bypass the
+reviewer. Keep the admin set minimal.
 
 ## 1. State at handover (2026-11-22)
 
@@ -151,7 +199,7 @@ same name:
 
 ```sh
 # 1. Confirm the environment copy exists (names only; never values).
-gh api repos/88kbleirad/GoShiSen-Enforce/environments/release-cli/secrets \
+gh api repos/88kbleirad/GoShiSen-Enforce/environments/signing/secrets \
   --jq '.secrets[].name'
 # expect: GH_RELEASE_SIGNING_KEY
 
@@ -165,7 +213,7 @@ gh secret delete GH_RELEASE_SIGNING_KEY --repo 88kbleirad/GoShiSen-Enforce
 # 4. Verify (again names only): repo level must no longer list it, the
 #    environment must still list it.
 gh secret list --repo 88kbleirad/GoShiSen-Enforce          # expect: no GH_RELEASE_SIGNING_KEY
-gh api repos/88kbleirad/GoShiSen-Enforce/environments/release-cli/secrets \
+gh api repos/88kbleirad/GoShiSen-Enforce/environments/signing/secrets \
   --jq '.secrets[].name'                                    # expect: GH_RELEASE_SIGNING_KEY
 ```
 
@@ -180,7 +228,7 @@ Symptom → cause → action:
 | Symptom | Likely cause | Action |
 | --- | --- | --- |
 | The run is waiting on the environment | the required-reviewer approval is pending (by design) | approve the deployment; nothing to roll back |
-| `Environment release-cli is not allowed to deploy to refs/tags/vX.Y.Z` | the environment's deployment policy does not allow that ref | fix the policy in repository settings (add the tag rule); the workflow cannot work around it |
+| `Environment signing is not allowed to deploy to refs/tags/vX.Y.Z` | the environment's deployment policy does not allow that ref | fix the policy in repository settings (add the `v*` tag rule); the workflow cannot work around it |
 | `FAIL: RELEASE_SIGN_KEY (GH_RELEASE_SIGNING_KEY) is missing` | the environment secret was missing/renamed | re-create the environment secret from the offline backup — **the value must not be pasted anywhere else** |
 | `FAIL: RELEASE_SIGN_KEY is not a PEM private key (N chars; …)` / `holds a PUBLIC key PEM` | the stored value is not the raw private-key PEM (base64-encoded, public key, bare body, encrypted or trimmed) — **this is what the first dry run (run `44981019938`) hit** | re-set the environment secret from the offline backup as the verbatim PEM text (copy from the API-free local file, never through a log/artifact); re-run the dry run |
 | `WARN: repaired paste damage …` then normal signing | the stored value had paste damage (surrounding quotes, literal `\n` escapes, CRLF, stray leading/trailing whitespace) | none — the key parses after the repair, and it still has to match the anchor before signing. Re-set the secret from the exact file contents next maintenance window |
@@ -204,7 +252,7 @@ Run once, after the first real release that goes through the new
 workflow, and record the result in issue #100:
 
 - [ ] `gh run view <run-id> --json jobs` shows `validate` → `build` →
-      `sign`, with `sign` gated on the `release-cli` environment.
+      `sign`, with `sign` gated on the `signing` environment.
 - [ ] The `sign` job's log shows the approval wait and then
       `OK: trust anchor fingerprint verified 24215e01…`, `OK: downloaded
       assets match build checksums`, `OK: release artifacts signed and
@@ -250,4 +298,5 @@ workflow, and record the result in issue #100:
 | 2026-11-22 | **WITHDRAWN**: the maintainer deleted environment `release-cli` (environments now: `github-pages`, `signing`) and the `environment: release-cli` gate was removed from release.yml; the key is repository-scoped again and signing is not approval-gated (only `sign` may reference the key, per the F-02 guard). Reinstatement steps are in the §2c banner at the top | issue #100, PR for the removal |
 | 2026-11-22 | dry run `44991076551` failed the same *unreadable PEM* class ⇒ `release-sign.sh` now **repairs common paste damage** (surrounding quotes, literal `\n` escapes, CRLF, stray whitespace) with a value-safe `WARN: repaired paste damage …` notice, still gated by openssl parse + anchor match; a passphrase-encrypted key is refused with its own message. Guard fixtures cover escaped/quoted PEM (must pass) and the encrypted header (must fail) | issue #100, PR #117 |
 | 2026-11-22 | dry run `44992807857` (head `e494f2a`) reported `121 chars, 2 line(s), CR=0, openssl=parse-failed` ⇒ root cause pinned by reproduction: a **quoted** PEM (canonical 119/3 lines vs 121/2 quoted) and the first quote-strip was too strict; the repair is now a repeat-trim + strip-quotes + unescape + drop-CR loop validated by openssl, with a guard fixture for the quoted+trailing-whitespace shape | issue #100 |
-| 2026-11-22 | after that repair merged, dry run `44994859221` (head `faf1d66`) reported the identical fingerprint ⇒ the surviving shapes are **mismatched-quote** wrappers (`"…'` ± space) and **collapsed line structure**; the repair now strips quotes per end and reconstructs a canonical PEM from the fence + payload (both openssl-validated, anchor-checked), with fixtures for mismatched quotes and a fully collapsed one-line PEM | issue #100, PR #119 |
+| 2026-11-22 | after that repair merged, dry run `44994859221` (head `faf1d66`) reported the identical fingerprint ⇒ the surviving shapes are **mismatched-quote** wrappers (`"...'` ± space) and **collapsed line structure**; the repair now strips quotes per end and reconstructs a canonical PEM from the fence + payload (both openssl-validated, anchor-checked), with fixtures for mismatched quotes and a fully collapsed one-line PEM | issue #100, PR #119 |
+| 2026-11-23 | **REINSTATED in a different environment**: `release.yml`'s `sign` job declares `environment: signing` (same environment as `apk-sign.yml`: required reviewer + `main`/`v*` policies), so the approval gate is back without recreating the withdrawn `release-cli`. The F-02 guard gained the `environment-scoped` rule (`sign` must declare `environment: signing`) plus the `bad-sign-no-environment.yml` negative fixture — the #125 regression (a `sign` job that silently loses the gate) now fails CI. Remaining before the repository-level secret can go: the key's value in the environment secret (offline backup or rotation), a green dry run, then the removal in §3 | issue #100, see §0 |

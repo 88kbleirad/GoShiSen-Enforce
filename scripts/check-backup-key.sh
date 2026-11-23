@@ -88,7 +88,7 @@ say "pubkey:   sha256(DER SPKI) = $fp"
 
 if [ "$fp" = "$EXPECTED" ]; then
   say "MATCH:    this is the production CLI release key (24215e01...)"
-  say "          next: gh secret set GH_RELEASE_SIGNING_KEY --env release-cli --repo 88kbleirad/GoShiSen-Enforce < <file>"
+  say "          next: gh secret set GH_RELEASE_SIGNING_KEY --env signing --repo 88kbleirad/GoShiSen-Enforce < <file>"
   exit 0
 fi
 
