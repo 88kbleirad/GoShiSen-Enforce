@@ -58,7 +58,7 @@ need() {
 # so lines stay intact and greps never see a lone high byte mid-line;
 # CR is then stripped (serial line endings).
 vm() {
-    python3 "$CONSOLE" --port "$CONSOLE_PORT" --cmd "$1" --timeout 25 2>&1 \
+    python3 "$CONSOLE" --port "$CONSOLE_PORT" --cmd "$1" --timeout "${2:-25}" 2>&1 \
         | tr -c '[:print:]\n\r\t' '?' | sed 's/\r//g'
 }
 
@@ -295,12 +295,22 @@ client true 2>/dev/null || denv "cannot execute in namespace $NS (root or passwo
 # The daemon must be running with the queue bound before snapshots mean
 # anything. A cold TCG boot autostarts the daemon via rc.local; under
 # QEMU TCG this can take 90-200s (first boot even longer), so wait up
-# to 300s for the NFQUEUE bind log line. The CI boot step also waits on
-# the console and the daemon; this window makes the e2e self-sufficient
-# on slow hosts.
+# to 300s for the NFQUEUE bind. Readiness is checked from
+# /proc/net/netfilter/nfnetlink_queue first (authoritative: a bound queue
+# has a non-zero peer portid; the log line can be rotated away by a
+# respawn) and from the log line second. If the rc.local autostart lost
+# the boot race, start the daemon explicitly — busybox has setsid, and a
+# plain `&` child would die on a serial-session SIGHUP (same fallback as
+# scripts/openwrt-e2e-v6.sh; its absence here failed run 45158649686 at
+# the 300s readiness gate while v6 passed).
 daemon_ready=0
 deadline=$((SECONDS + 300))
 while [ $SECONDS -lt $deadline ]; do
+    if vm "awk '\$1==$QUEUE{print \$2}' /proc/net/netfilter/nfnetlink_queue" \
+        | grep -a -E '^[1-9][0-9]*$' | grep -q .; then
+        daemon_ready=1
+        break
+    fi
     if vm "echo READY_COUNT=\$(grep -c 'NFQUEUE bound' /tmp/goshisen2.log 2>/dev/null || echo 0)" \
         | grep -a -E '^READY_COUNT=' | tail -n1 | grep -qE '^READY_COUNT=[1-9]'; then
         daemon_ready=1
@@ -308,7 +318,20 @@ while [ $SECONDS -lt $deadline ]; do
     fi
     sleep 3
 done
-[ "$daemon_ready" -eq 1 ] || denv "daemon not ready (no NFQUEUE bound in /tmp/goshisen2.log)"
+if [ "$daemon_ready" -ne 1 ]; then
+    note "daemon not ready after 300s; starting it explicitly (rc.local autostart race)"
+    vm "setsid /usr/sbin/goshisen --config /etc/goshisen/config.yaml >/tmp/goshisen2.log 2>&1 < /dev/null & sleep 5" 30 >/dev/null
+    deadline2=$((SECONDS + 120))
+    while [ $SECONDS -lt $deadline2 ]; do
+        if vm "awk '\$1==$QUEUE{print \$2}' /proc/net/netfilter/nfnetlink_queue" \
+            | grep -a -E '^[1-9][0-9]*$' | grep -q .; then
+            daemon_ready=1
+            break
+        fi
+        sleep 3
+    done
+fi
+[ "$daemon_ready" -eq 1 ] || denv "daemon not ready (no NFQUEUE bound in /tmp/goshisen2.log; explicit start also failed — see failure-diagnostics.txt)"
 
 snapshot baseline
 peer=$(snap_or_zero baseline peer_portid)

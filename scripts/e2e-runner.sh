@@ -393,22 +393,32 @@ fi
 cleanup() {
   local rc=$?
   say "cleanup (rc=$rc)"
+  # Collect diagnostics on significant failure BEFORE tearing the lab down:
+  # the guest's daemon log, dmesg and nft state are only readable while QEMU
+  # runs. Collecting after `down` produced an artifact with an empty serial
+  # tail and no guest state (run 45158649686), which made the failure
+  # undiagnosable.
+  if [ "$rc" -ne 0 ]; then
+    collect_artifacts
+  fi
   # teardown the lab (kills qemu via pidfile, removes netns/tap/bridge).
   # Use the same privilege escalation as `lab up`: the lab's resources
   # are root-owned when the runner is invoked via sudo -E, and an
   # unprivileged `down` would silently leave QEMU/netns behind.
   (cd "$ROOT" && sudo -E bash "$LAB_SCRIPT" down >/dev/null 2>&1 || true)
-  # collect diagnostics on significant failure
-  if [ "$rc" -ne 0 ]; then
-    collect_artifacts
-  fi
   return "$rc"
 }
 trap cleanup EXIT
 
+guest_cmd() { # best-effort guest probe over the serial console (lab still up)
+  timeout 30 python3 "$ROOT/scripts/openwrt-console.py" \
+    --port "${OPENWRT_CONSOLE_PORT:-5555}" --cmd "$1" --timeout 20 2>/dev/null \
+    | tr -c '[:print:]\n\r\t' '?' | sed 's/\r//g' || true
+}
+
 collect_artifacts() {
   {
-    echo "### serial console tail ($$LAB_LOG)"
+    echo "### serial console tail ($LAB_LOG)"
     tail -n 80 "$LAB_LOG" 2>/dev/null || echo "(no lab log)"
     echo "### qemu/processes"
     pgrep -af 'qemu-system' 2>/dev/null | head -5 || true
@@ -422,6 +432,17 @@ collect_artifacts() {
     cat /proc/net/netfilter/nfnetlink_queue 2>/dev/null || true
     echo "### modules"
     grep -E 'nfnetlink|nf_conntrack|nft_' /proc/modules 2>/dev/null | head -10 || true
+    # Guest state — the reason a readiness gate failed lives only in the VM
+    # (daemon log, logread, kmods). Bounded probes: a dead/frozen guest must
+    # not hang the job's epilogue.
+    echo "### guest: daemon log tail (/tmp/goshisen2.log)"
+    guest_cmd "tail -n 60 /tmp/goshisen2.log"
+    echo "### guest: logread + dmesg"
+    guest_cmd "logread -e goshisen | tail -n 30; dmesg | tail -n 20"
+    echo "### guest: daemon pid + queue kmods"
+    guest_cmd "pidof goshisen; lsmod | grep -E 'nft_queue|nfnetlink_queue'"
+    echo "### guest: nfnetlink_queue + goshisen nft table"
+    guest_cmd "cat /proc/net/netfilter/nfnetlink_queue 2>&1; nft list table inet goshisen 2>&1 | head -n 20"
   } > "$ARTIFACTS/failure-diagnostics.txt" 2>&1 || true
   cp "$MANIFEST" "$ARTIFACTS/" 2>/dev/null || true
   say "diagnostics written to $ARTIFACTS/failure-diagnostics.txt"

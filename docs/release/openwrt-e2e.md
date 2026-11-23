@@ -66,6 +66,31 @@ is untouched. Regression tests: `TestCTFlagsTolerable`,
   - ACCEPT control (same path): curl exit 0, HTTP 200 + `GSH-ALLOW-PROOF`, daemon accept verdicts +10 (new +1, established +9), hook +10, identity holds (hook delta == verdict delta), server logged the GET.
   - Policy restored to the packaged deny-all (rules=0) after the run.
 
+### Daemon readiness + failure diagnostics (2026-11-23)
+
+A lost `rc.local` boot race must not be reported as a product failure:
+
+- Readiness is polled from `/proc/net/netfilter/nfnetlink_queue` first (a bound
+  queue has a non-zero peer portid; `/tmp/goshisen2.log` can be rotated away by a
+  daemon respawn), with the `NFQUEUE bound` log line as the fallback.
+- If neither is ready after 300 s (slow TCG cold boot), the script starts the
+  daemon explicitly (`setsid … >/tmp/goshisen2.log 2>&1 < /dev/null &` — busybox
+  ships no `nohup`) and re-polls for 120 s before failing `ENV`.
+  `scripts/openwrt-e2e-v6.sh` always had this fallback;
+  `scripts/openwrt-e2e.sh` gained it in PR #134 after CI run `45158649686` failed
+  the v4 gate while the v6 job passed on the same commit.
+- `scripts/e2e-runner.sh` collects `failure-diagnostics.txt` **before**
+  `lab down` (the earlier teardown-first order produced an artifact with an empty
+  serial tail and no guest state) and adds bounded guest probes: daemon log tail,
+  `logread -e goshisen`, `dmesg`, `pidof goshisen` + queue kmods,
+  `nfnetlink_queue` and the `goshisen` nft table.
+- Rehearsal recipe for this path: provision the image, delete the
+  `goshisen --config` autostart line from the mounted rootfs' `/etc/rc.local`
+  (`losetup --find --show -P` + `partx -a` + `mount <loop>p2`), then boot and run
+  `scripts/openwrt-e2e.sh` — the run must log
+  `daemon not ready after 300s; starting it explicitly (rc.local autostart race)`
+  and still pass both controls.
+
 ## Local validation
 
 | Check | Result |
