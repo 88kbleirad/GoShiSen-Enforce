@@ -10,10 +10,22 @@ on:
 permissions:
   contents: read
 
+env:
+  # Bounded curl for pinned tool downloads: --max-time plus retries turn a
+  # stalled transfer into a failed step instead of a hung gate. An unbounded
+  # syft download hung the "sign + verify release artifacts" job for 37m16s in
+  # run 45158637759 while the same job passed in 55s on the sibling run.
+  CURL_BOUNDED: "--connect-timeout 15 --max-time 300 --retry 3 --retry-delay 5 --retry-all-errors"
+  # Bounded apt, same reason: an unbounded `apt-get update` hung the
+  # "integration (real netns lab, privileged)" job's "Install netfilter
+  # tooling" step on run 45164900572 (50+ min in a ~3 min job).
+  APT_BOUNDED: "-o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3"
+
 jobs:
   build:
     name: build, vet, test
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
@@ -168,6 +180,7 @@ jobs:
   arm64:
     name: arm64 cross-build + static ELF
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
@@ -195,6 +208,8 @@ jobs:
   robustness:
     name: CLI anomaly sweep + config fuzz + lint gates
     runs-on: ubuntu-24.04
+    # Bounded: `go install` of the pinned scanners is a network step.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
@@ -242,6 +257,8 @@ jobs:
   package:
     name: package + verify release archives
     runs-on: ubuntu-24.04
+    # Bounded: the job downloads syft; a stalled transfer must fail the job.
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -252,13 +269,13 @@ jobs:
           cache: true
       - name: Install packaging tools
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends jq
+          sudo apt-get $APT_BOUNDED update
+          sudo apt-get $APT_BOUNDED install -y --no-install-recommends jq
           # syft pinned to a reviewed immutable version; verify its
           # published checksum before use.
-          curl -fsSL -o /tmp/syft_1.30.0_linux_amd64.tar.gz \
+          curl $CURL_BOUNDED -fsSL -o /tmp/syft_1.30.0_linux_amd64.tar.gz \
             https://github.com/anchore/syft/releases/download/v1.30.0/syft_1.30.0_linux_amd64.tar.gz
-          curl -fsSL -o /tmp/syft-checksums.txt \
+          curl $CURL_BOUNDED -fsSL -o /tmp/syft-checksums.txt \
             https://github.com/anchore/syft/releases/download/v1.30.0/syft_1.30.0_checksums.txt
           grep 'syft_1.30.0_linux_amd64.tar.gz' /tmp/syft-checksums.txt > /tmp/expected.sha
           (cd /tmp && sha256sum -c expected.sha)
@@ -285,6 +302,10 @@ jobs:
   verify-signatures:
     name: sign + verify release artifacts (test key, fail-closed)
     runs-on: ubuntu-24.04
+    # Bounded: the job downloads syft and generates keys; a stalled transfer or
+    # a hung openssl must fail the job instead of blocking the PR (run
+    # 45158637759 hung here for 37m16s).
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -295,11 +316,11 @@ jobs:
           cache: true
       - name: Install packaging tools (syft pinned)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends jq openssl
-          curl -fsSL -o /tmp/syft_1.30.0_linux_amd64.tar.gz \
+          sudo apt-get $APT_BOUNDED update
+          sudo apt-get $APT_BOUNDED install -y --no-install-recommends jq openssl
+          curl $CURL_BOUNDED -fsSL -o /tmp/syft_1.30.0_linux_amd64.tar.gz \
             https://github.com/anchore/syft/releases/download/v1.30.0/syft_1.30.0_linux_amd64.tar.gz
-          curl -fsSL -o /tmp/syft-checksums.txt \
+          curl $CURL_BOUNDED -fsSL -o /tmp/syft-checksums.txt \
             https://github.com/anchore/syft/releases/download/v1.30.0/syft_1.30.0_checksums.txt
           grep 'syft_1.30.0_linux_amd64.tar.gz' /tmp/syft-checksums.txt > /tmp/expected.sha
           (cd /tmp && sha256sum -c expected.sha)
@@ -344,6 +365,7 @@ jobs:
   openwrt-integration:
     name: openwrt e2e (QEMU lab, privileged)
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
@@ -352,8 +374,8 @@ jobs:
           cache: true
       - name: Install lab tooling
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          sudo apt-get $APT_BOUNDED update
+          sudo apt-get $APT_BOUNDED install -y --no-install-recommends \
             iproute2 nftables procps kmod curl wget python3 qemu-system-x86 \
             iptables e2fsprogs
       - name: Build static daemon for the image
@@ -390,6 +412,7 @@ jobs:
   openwrt-integration-v6:
     name: openwrt e2e v6 stateful (QEMU lab, privileged)
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
@@ -398,8 +421,8 @@ jobs:
           cache: true
       - name: Install lab tooling
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          sudo apt-get $APT_BOUNDED update
+          sudo apt-get $APT_BOUNDED install -y --no-install-recommends \
             iproute2 nftables procps kmod curl wget python3 qemu-system-x86 \
             iptables e2fsprogs
       - name: Record CI kernel version
@@ -438,6 +461,8 @@ jobs:
   integration:
     name: integration (real netns lab, privileged)
     runs-on: ubuntu-24.04
+    # Bounded: apt-get plus the netns lab; a stalled mirror must fail the job.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
@@ -446,8 +471,8 @@ jobs:
           cache: true
       - name: Install netfilter tooling
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends nftables iproute2 procps kmod
+          sudo apt-get $APT_BOUNDED update
+          sudo apt-get $APT_BOUNDED install -y --no-install-recommends nftables iproute2 procps kmod
       - name: Kernel / capability preflight
         run: |
           set -e

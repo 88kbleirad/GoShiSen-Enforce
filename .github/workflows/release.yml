@@ -35,6 +35,14 @@ on:
 permissions:
   contents: read   # jobs tighten/expand explicitly below
 
+env:
+  # Bounded curl for pinned tool downloads: --max-time plus retries turn a
+  # stalled transfer into a failed step instead of a hung release job (the
+  # same class that hung ci.yml's sign+verify job for 37m16s).
+  CURL_BOUNDED: "--connect-timeout 15 --max-time 300 --retry 3 --retry-delay 5 --retry-all-errors"
+  # Bounded apt (same class as the curl bound above; see ci.yml run 45164900572).
+  APT_BOUNDED: "-o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3"
+
 concurrency:
   # One release/sign run at a time per ref (tag or branch). Never cancel
   # an in-progress run: signing is the point of no return for the key.
@@ -121,11 +129,11 @@ jobs:
       - name: Install packaging tools
         if: ${{ !inputs.dry_run }}
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends jq openssl
-          curl -fsSL -o /tmp/syft_1.30.0_linux_amd64.tar.gz \
+          sudo apt-get $APT_BOUNDED update
+          sudo apt-get $APT_BOUNDED install -y --no-install-recommends jq openssl
+          curl $CURL_BOUNDED -fsSL -o /tmp/syft_1.30.0_linux_amd64.tar.gz \
             https://github.com/anchore/syft/releases/download/v1.30.0/syft_1.30.0_linux_amd64.tar.gz
-          curl -fsSL -o /tmp/syft-checksums.txt \
+          curl $CURL_BOUNDED -fsSL -o /tmp/syft-checksums.txt \
             https://github.com/anchore/syft/releases/download/v1.30.0/syft_1.30.0_checksums.txt
           grep 'syft_1.30.0_linux_amd64.tar.gz' /tmp/syft-checksums.txt > /tmp/expected.sha
           (cd /tmp && sha256sum -c expected.sha)
