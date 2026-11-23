@@ -11,22 +11,25 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=goshisen
-PKG_VERSION:=0.2.8
+PKG_VERSION:=0.2.9
 # Package version is independent of the CLI release, but for this release
-# it is aligned with the CLI tag (v0.2.8). The daemon source is pinned by
-# PKG_SOURCE_VERSION below (the v0.2.8 tag commit; set by the post-tag
-# pin PR after the tag exists — a tag cannot contain its own hash).
+# it is aligned with the CLI tag (v0.2.9). The daemon source is pinned by
+# PKG_SOURCE_VERSION below; until the post-tag pin PR lands it still names
+# the previous release's commit (v0.2.8, 2bbf53c) — a tag cannot contain
+# its own hash, so the pin is a POST-tag step (F-01 pre-tag gate).
 # PKG_RELEASE=1 restarts the package release counter for the new
-# PKG_VERSION (0.2.8-r1 > 0.2.7-r1 under apk ordering).
+# PKG_VERSION (0.2.9-r1 > 0.2.8-r1 under apk ordering).
 PKG_RELEASE:=1
-# NOTE: PKG_SOURCE_VERSION / PKG_MIRROR_HASH were deliberately NOT bumped
-# in the pre-tag PR. They are the POST-tag pin PR's job (pin = the
-# v0.2.8 tag commit + derived mirror hash), so that the tagged commit's
-# Makefile already carries PKG_VERSION:=0.2.8 (F-01 pre-tag gate).
+# NOTE: PKG_SOURCE_VERSION / PKG_MIRROR_HASH are deliberately NOT bumped in
+# this pre-tag PR. They are the POST-tag pin PR's job (pin = the v0.2.9 tag
+# commit + derived mirror hash), so that the tagged commit's Makefile
+# already carries PKG_VERSION:=0.2.9 — what scripts/release-pretag-check.sh
+# (F-01) demands before the tag is created.
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/88kbleirad/GoShiSen-Enforce.git
-# Daemon source SHA = the v0.2.8 tag commit (2bbf53c).
+# Daemon source SHA = the v0.2.8 tag commit (2bbf53c); the post-tag pin PR
+# for v0.2.9 moves this to the v0.2.9 tag commit.
 # This is the ONLY daemon source pin; the packaging recipe lives in this
 # checkout (Makefile + files/) and is versioned independently.
 PKG_SOURCE_VERSION:=2bbf53cfda3811ce7278601ac9ac1037cb000b1f
