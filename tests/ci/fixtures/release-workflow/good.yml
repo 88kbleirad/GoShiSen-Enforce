@@ -29,6 +29,7 @@ jobs:
   sign:
     needs: build
     runs-on: ubuntu-24.04
+    environment: signing
     permissions:
       contents: write
     steps:

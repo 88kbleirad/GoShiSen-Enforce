@@ -50,6 +50,7 @@ expect_fail() {
 
 expect_fail bad-secret-in-build.yml        "secret-scope"
 expect_fail bad-dryrun-secret-in-build.yml "secret-scope"
+expect_fail bad-sign-no-environment.yml    "environment-scoped"
 expect_fail bad-build-write.yml            "must be exactly contents: read"
 expect_fail bad-interp.yml                 "interpolates \${{ github."
 expect_fail bad-sign-read.yml              "sign-only-write"

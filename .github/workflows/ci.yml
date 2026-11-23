@@ -148,12 +148,12 @@ jobs:
   release-workflow-guard:
     # F-02 (issue #100) regression gate: the CLI signing key
     # (secrets.GH_RELEASE_SIGNING_KEY) may be used only by release.yml's
-    # `sign` job; the `release-cli` environment gate was withdrawn in
-    # #125 (the environment was deleted), so the key is repo-scoped and
-    # signing is not approval-gated — this guard still fails any other
-    # job/workflow that references the key. `build` stays secret-free
-    # with contents: read. The structural checker + its per-rule
-    # negative fixtures live in
+    # `sign` job, and that job must declare `environment: signing` — the
+    # approval gate IS the environment (required reviewer), so the guard
+    # fails a `sign` job that lost it (the #125 regression) as well as any
+    # other job/workflow that references the key. `build` stays
+    # secret-free with contents: read. The structural checker + its
+    # per-rule negative fixtures live in
     # scripts/check-release-workflow-structure.py and
     # tests/ci/release-workflow-guard-test.sh (which also executes the
     # real fail-closed step bodies: dry-run ref guard, asset checksum
