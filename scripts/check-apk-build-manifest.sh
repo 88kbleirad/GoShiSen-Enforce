@@ -10,6 +10,8 @@
 # files cannot produce.
 #
 # What it proves (all fail-closed):
+#   0. the manifest was produced by THIS committed build script
+#      (generator_sha256 == sha256(scripts/build-apk-release.sh));
 #   1. the manifest is well-formed and has the required fields;
 #   2. recipe.committed_sha256 covers EXACTLY the files under openwrt/ in
 #      the recorded commit, and the recorded hashes equal the committed

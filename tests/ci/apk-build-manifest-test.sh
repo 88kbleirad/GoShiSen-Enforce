@@ -25,6 +25,7 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 
 POLICY="$ROOT/packaging/go-toolchain.env"
 policy_get() { sed -nE "s/^$1=[[:space:]]*//p" "$POLICY" | head -n1; }
+GEN_SHA="$(sha256sum "$ROOT/scripts/build-apk-release.sh" | cut -d' ' -f1)"
 SDK_PIN="$(sed -nE 's/^[[:space:]]*image:[[:space:]]*(openwrt\/sdk@sha256:[0-9a-f]{64}).*/\1/p' \
   "$ROOT/.github/workflows/apk-sign.yml" | head -n1)"
 [ -n "$SDK_PIN" ] || fail "cannot read the SDK pin from apk-sign.yml"
@@ -62,6 +63,7 @@ gen_manifest() {
   chmod +x "$out/daemon-A.bin"
 
   jq -n \
+    --arg gensha "$GEN_SHA" \
     --arg commit "$commit" --arg version "$version" --arg srcver "$src_ver" \
     --argjson recipe "$recipe_json" --arg ovlsha "$overlay_sha" --arg cfgsha "$cfg_sha" \
     --arg mksha "$mk_sha" --arg sdk "$SDK_PIN" \
@@ -72,6 +74,7 @@ gen_manifest() {
     --arg paysha "$(sha256sum "$out/daemon-A.bin" | cut -d' ' -f1)" \
     '{
       manifest_version: 1, created_utc: "2026-01-01T00:00:00Z", label: "A",
+      generator_sha256: $gensha,
       generator: "tests/ci/apk-build-manifest-test.sh",
       source: {commit: $commit, commit_subject: "fixture", tree_clean: true},
       pkg: {name: "goshisen", version: $version, release: "1",
@@ -116,6 +119,12 @@ out="$("$CHECK" --manifest "$TMP/absent.json" 2>&1)" || rc=$?
 [ "$rc" -ne 0 ] || fail "absent manifest was ACCEPTED"
 grep -qF "not found" <<<"$out" || fail "absent manifest: wrong reason: $out"
 echo "  ok: rejected for the right reason (not found)"
+
+# --- wrong builder hash --------------------------------------------------
+echo "== manifest claims a different build script =="
+jq '.generator_sha256 = "9999999999999999999999999999999999999999999999999999999999999999"' \
+  "$OUT/build-manifest-A.json" > "$TMP/wrong-gen.json"
+expect_fail "$TMP/wrong-gen.json" "produced by a different build script"
 
 # --- malformed / missing field ------------------------------------------
 echo "== malformed JSON and missing field =="

@@ -389,7 +389,7 @@ docker_run() { # docker_run <logfile> <container-script> [args...]
 
 # The mirror hash is part of the Makefile we mount, so each pass writes the
 # scratch Makefile first (the mounted feed is read-only to the container).
-scratch_set_mirror() { # scratch_set_mirror <sha256>
+scratch_set_mirror() { # scratch_set_mirror <sha256> — records the substitution
   subst PKG_MIRROR_HASH "$1"
   MAKEFILE_FINAL_SHA="$(sha256sum "$MAKEFILE" | cut -d' ' -f1)"
 }
@@ -405,7 +405,7 @@ if [ -n "$MIRROR_HASH" ]; then
   scratch_set_mirror "$MIRROR_HASH"
   ok "using caller-supplied PKG_MIRROR_HASH $MIRROR_HASH"
 else
-  scratch_set_mirror "0000000000000000000000000000000000000000000000000000000000000000"
+  scratch_zero_mirror
   note "deriving PKG_MIRROR_HASH with the zero-hash two-pass procedure"
   docker_run "$OUT/logs/$LABEL-derive.log" "$CB_DERIVE" \
     || die "derive pass failed (see $OUT/logs/$LABEL-derive.log)"
@@ -471,6 +471,7 @@ MANIFEST="$OUT/build-manifest-$LABEL.json"
 GENERATOR_SHA="$(sha256sum "$ROOT/scripts/build-apk-release.sh" | cut -d' ' -f1)"
 jq -n \
   --arg created "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --arg gensha "$GENERATOR_SHA" \
   --arg label "$LABEL" \
   --arg commit "$COMMIT_SHA" --arg subject "$COMMIT_SUBJECT" \
   --arg pkgver "$PKG_VERSION" --arg pkgrel "$PKG_RELEASE" \
@@ -491,6 +492,7 @@ jq -n \
   '{
      manifest_version: 1,
      created_utc: $created,
+     generator_sha256: $gensha,
      label: $label,
      generator: "scripts/build-apk-release.sh",
      source: {commit: $commit, commit_subject: $subject, tree_clean: true},
