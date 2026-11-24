@@ -1,0 +1,19 @@
+diff --git a/openwrt/Makefile b/openwrt/Makefile
+index 1bc191d..4c98535 100644
+--- a/openwrt/Makefile
++++ b/openwrt/Makefile
+@@ -47,7 +47,13 @@ PKG_SOURCE_SUBDIR:=$(PKG_NAME)-$(PKG_VERSION)
+ PKG_GOARCH ?= amd64
+ 
+ # Go builds are handled outside OpenWrt's gcc toolchain.
+-PKG_BUILD_DEPENDS:=golang/host
++# Local build overlay (packaging/apk-build/no-golang-host.patch, applied by
++# scripts/build-apk-release.sh to a scratch copy only): the SDK's
++# golang/host builds Go from source inside the container (~2 GB and the
++# first ENOSPC point on a small host). Build/Compile below calls `go build`
++# from PATH, so the build uses the pinned official go1.27.4 toolchain
++# instead. The committed recipe keeps the dependency.
++# PKG_BUILD_DEPENDS:=golang/host
+ PKG_USE_MIPS16:=0
+ PKG_BUILD_PARALLEL:=1
+ 
