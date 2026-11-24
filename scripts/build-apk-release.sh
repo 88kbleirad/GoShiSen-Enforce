@@ -151,13 +151,13 @@ WATCHDOG='
 '
 CB_DERIVE="$PRELUDE$WATCHDOG"'
 make package/feeds/goshisen/download V=s >/tmpwork/download.log 2>&1 || true
-grep -E "Hash mismatch for file $TARBALL_NAME" /tmpwork/download.log | tail -1 || true
-find dl -name "$TARBALL_NAME" -printf "%s\n" || true
-sha256sum dl/$TARBALL_NAME 2>/dev/null || true
+grep -E "Hash mismatch for file $GSH_TARBALL_NAME" /tmpwork/download.log | tail -1 || true
+find dl -name "$GSH_TARBALL_NAME" -printf "%s\n" || true
+sha256sum dl/$GSH_TARBALL_NAME 2>/dev/null || true
 '
 CB_DERIVE2="$PRELUDE$WATCHDOG"'
 make package/feeds/goshisen/download V=s >/tmpwork/download2.log 2>&1 || { tail -30 /tmpwork/download2.log; exit 1; }
-sha256sum dl/$TARBALL_NAME
+sha256sum dl/$GSH_TARBALL_NAME
 '
 CB_BUILD="$PRELUDE$WATCHDOG"'
 make package/feeds/goshisen/compile V=s >/tmpwork/compile.log 2>&1 || {
@@ -172,12 +172,12 @@ echo "APK=$APK"
 sha256sum "$APK"
 mkdir -p /tmpwork/apk-x
 /builder/staging_dir/host/bin/apk extract --allow-untrusted --destination /tmpwork/apk-x "$APK" >/dev/null
-cp /tmpwork/apk-x/usr/sbin/goshisen /out/daemon-$LABEL.bin
-sha256sum /out/daemon-$LABEL.bin
-/out/daemon-$LABEL.bin --version | tee /out/version-$LABEL.txt
+cp /tmpwork/apk-x/usr/sbin/goshisen /out/daemon-$GSH_LABEL.bin
+sha256sum /out/daemon-$GSH_LABEL.bin
+/out/daemon-$GSH_LABEL.bin --version | tee /out/version-$GSH_LABEL.txt
 echo "--- go buildinfo ---"
-go version -m /out/daemon-$LABEL.bin | head -2 || true
-cp "$APK" /out/goshisen-$PKG_VERSION-r$PKG_RELEASE-$LABEL.apk
+go version -m /out/daemon-$GSH_LABEL.bin | head -2 || true
+cp "$APK" /out/goshisen-$GSH_PKG_VERSION-r$GSH_PKG_RELEASE-$GSH_LABEL.apk
 mkdir -p /tmpwork/emptykeys
 if /builder/staging_dir/host/bin/apk verify --keys-dir /tmpwork/emptykeys "$APK" >/tmpwork/verify.out 2>&1; then
   echo "SIGNCHECK-FAIL: the produced apk verifies as TRUSTED - this script must only build unsigned apks"
@@ -190,7 +190,7 @@ grep -q "UNTRUSTED signature" /tmpwork/verify.out || {
   exit 1
 }
 echo "SIGNCHECK-UNSIGNED-OK apk verify reports UNTRUSTED signature (unsigned build, as expected)"
-echo BUILD-OK-$LABEL
+echo BUILD-OK-$GSH_LABEL
 '
 if [ -n "$PRINT_CONTAINER_SCRIPT" ]; then
   case "$PRINT_CONTAINER_SCRIPT" in
