@@ -114,6 +114,18 @@ PKG_VERSION="$(jq -r '.pkg.version' "$MANIFEST")"
 PKG_RELEASE="$(jq -r '.pkg.release' "$MANIFEST")"
 PKG_NAME="$(jq -r '.pkg.name' "$MANIFEST")"
 
+# --- the builder itself ---------------------------------------------------
+# A manifest is only as trustworthy as the script that wrote it: the committed
+# builder must be the one that produced it.
+GENERATOR="$ROOT/scripts/build-apk-release.sh"
+M_GENSHA="$(jq -r '.generator_sha256 // empty' "$MANIFEST")"
+[ -n "$M_GENSHA" ] || fail "manifest lacks generator_sha256 (the build script's own hash)"
+[ -f "$GENERATOR" ] || fail "build script $GENERATOR not found"
+G_GENSHA="$(sha256sum "$GENERATOR" | cut -d' ' -f1)"
+[ "$M_GENSHA" = "$G_GENSHA" ] \
+  || fail "manifest was produced by a different build script (manifest $M_GENSHA != committed $G_GENSHA)"
+ok "manifest was produced by the committed build script ($G_GENSHA)"
+
 # --- 2. the commit the manifest claims ----------------------------------
 M_COMMIT="$(jq -r '.source.commit' "$MANIFEST")"
 if [ -n "$REF" ]; then

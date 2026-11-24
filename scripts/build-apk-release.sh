@@ -294,8 +294,8 @@ grep -q '^# PKG_BUILD_DEPENDS:=golang/host$' "$MAKEFILE" \
 
 # --- 3. declared substitutions (recorded, so the checker can replay) -----
 SUBS_JSON='[]'
-subst() { # subst <KEY> <value> — rewrite `KEY:=...` exactly once
-  local key="$1" val="$2" before
+subst() { # subst <KEY> <value> [record] — rewrite `KEY:=...` exactly once
+  local key="$1" val="$2" record="${3:-1}" before
   before="$(grep -cE "^$key:=" "$MAKEFILE" || true)"
   [ "$before" = "1" ] || die "$key must appear exactly once in the patched Makefile (found $before)"
   python3 - "$MAKEFILE" "$key" "$val" <<'PY'
@@ -306,8 +306,10 @@ new, n = re.subn(rf'^{re.escape(key)}:=.*$', f'{key}:={val}', text, count=1, fla
 assert n == 1, n
 open(path, 'w', encoding='utf-8').write(new)
 PY
-  SUBS_JSON="$(jq -c --arg k "$key" --arg v "$val" \
-    '. + [{key:$k, value:$v, rule:("s/^" + $k + ":=.*/" + $k + ":=" + $v + "/")}]' <<<"$SUBS_JSON")"
+  if [ "$record" = 1 ]; then
+    SUBS_JSON="$(jq -c --arg k "$key" --arg v "$val" \
+      '. + [{key:$k, value:$v, rule:("s/^" + $k + ":=.*/" + $k + ":=" + $v + "/")}]' <<<"$SUBS_JSON")"
+  fi
 }
 [ -n "$PKG_VERSION_OVERRIDE" ] && subst PKG_VERSION "$PKG_VERSION_OVERRIDE"
 [ -n "$PKG_RELEASE_OVERRIDE" ] && subst PKG_RELEASE "$PKG_RELEASE_OVERRIDE"
@@ -378,7 +380,7 @@ docker_run() { # docker_run <logfile> <container-script> [args...]
     -v "$WORK/dl":/builder/dl \
     -v "$OUT":/out \
     -v "$WORK/tmp":/tmpwork \
-    "$SDK_IMAGE" bash -c "$script" bash "$@" >>"$log" 2>&1
+    "$SDK_IMAGE" bash -c "$script" bash "$@" >"$log" 2>&1
 }
 
 # (The container scripts and the --print-container-script pre-flight live at the
@@ -389,6 +391,11 @@ docker_run() { # docker_run <logfile> <container-script> [args...]
 # scratch Makefile first (the mounted feed is read-only to the container).
 scratch_set_mirror() { # scratch_set_mirror <sha256>
   subst PKG_MIRROR_HASH "$1"
+  MAKEFILE_FINAL_SHA="$(sha256sum "$MAKEFILE" | cut -d' ' -f1)"
+}
+scratch_zero_mirror() { # derivation-only intermediate; never recorded, so the
+  # manifest's substitution list replays the FINAL recipe exactly once.
+  subst PKG_MIRROR_HASH "0000000000000000000000000000000000000000000000000000000000000000" 0
   MAKEFILE_FINAL_SHA="$(sha256sum "$MAKEFILE" | cut -d' ' -f1)"
 }
 
@@ -461,6 +468,7 @@ if [ -s "$WORK/tmp/feeds-commits.txt" ]; then
 fi
 
 MANIFEST="$OUT/build-manifest-$LABEL.json"
+GENERATOR_SHA="$(sha256sum "$ROOT/scripts/build-apk-release.sh" | cut -d' ' -f1)"
 jq -n \
   --arg created "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --arg label "$LABEL" \
