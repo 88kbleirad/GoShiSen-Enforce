@@ -80,12 +80,14 @@ LABEL="A"
 KEEP_WORK=0
 CANONICAL_NAME=0
 BUILD_TIMEOUT="${BUILD_TIMEOUT:-3600}"
+PRINT_CONTAINER_SCRIPT=""
 
 usage() {
   sed -n '/^# Usage (two independent builds/,/^#     --work/p' "$0" >&2
   echo "usage: $0 --out DIR [--commit REF] [--label A|B] [--work DIR]" >&2
   echo "         [--pkg-version V] [--pkg-source-version SHA] [--mirror-hash SHA256]" >&2
   echo "         [--go-root DIR | download the pinned tarball] [--sdk-image REF] [--keep-work]" >&2
+  echo "         [--print-container-script derive|derive2|build]   # pre-flight: pipe it to bash -n" >&2
   exit 2
 }
 
@@ -102,6 +104,7 @@ while [ $# -gt 0 ]; do
     --work) WORK="${2:?}"; shift 2 ;;
     --label) LABEL="${2:?}"; shift 2 ;;
     --canonical-name) CANONICAL_NAME=1; shift ;;
+    --print-container-script) PRINT_CONTAINER_SCRIPT="${2:?}"; shift 2 ;;
     --keep-work) KEEP_WORK=1; shift ;;
     -h|--help) usage ;;
     *) echo "unknown argument: $1" >&2; usage ;;
@@ -111,6 +114,84 @@ done
 die() { echo "FAIL: $*" >&2; exit 1; }
 ok() { echo "OK: $*"; }
 note() { echo "note: $*" >&2; }
+
+# --- container scripts (defined before any precondition) ------------------
+# Single-quoted literals: nothing needs escaping, so a quoting mistake cannot
+# silently break a 10-minute build (it did once). They read LABEL,
+# PKG_VERSION, PKG_RELEASE and TARBALL_NAME from the environment docker_run
+# passes. Syntax-check without a build, docker, a commit or a clean tree:
+#   for s in derive derive2 build; do scripts/build-apk-release.sh --print-container-script $s | bash -n; done
+PRELUDE='
+set -euo pipefail
+cd /builder
+export PATH=/go-host/bin:/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export GOTOOLCHAIN=local
+export TMPDIR=/builder/tmp GOTMPDIR=/builder/tmp GOCACHE=/builder/tmp/gocache GOMODCACHE=/builder/tmp/gomod
+go version
+# Order matters and matches the v0.2.8 procedure: feeds update/install first,
+# then our config fragment folded in by `make defconfig`.
+./scripts/feeds update -a >/tmpwork/feeds-update.log 2>&1 || { tail -30 /tmpwork/feeds-update.log; exit 1; }
+./scripts/feeds install -a >/tmpwork/feeds-install.log 2>&1 || { tail -30 /tmpwork/feeds-install.log; exit 1; }
+cp /in/sdk.config .config
+make defconfig >/tmpwork/defconfig.log 2>&1 || { tail -20 /tmpwork/defconfig.log; exit 1; }
+'
+# Disk watchdog: the container overlay lives on the host root filesystem, so
+# abort before the host fills. It dies with the container; no cleanup needed.
+WATCHDOG='
+( while :; do a=$(df --output=avail -k /builder 2>/dev/null | tail -1); [ -n "$a" ] && [ "$a" -lt 409600 ] && { echo "DISK-WATCHDOG-ABORT avail=${a}K" >&2; pkill -x make || true; touch /tmp/diskwarn; }; sleep 10; done ) &
+'
+CB_DERIVE="$PRELUDE$WATCHDOG"'
+make package/feeds/goshisen/download V=s >/tmpwork/download.log 2>&1 || true
+grep -E "Hash mismatch for file $TARBALL_NAME" /tmpwork/download.log | tail -1 || true
+find dl -name "$TARBALL_NAME" -printf "%s\n" || true
+sha256sum dl/$TARBALL_NAME 2>/dev/null || true
+'
+CB_DERIVE2="$PRELUDE$WATCHDOG"'
+make package/feeds/goshisen/download V=s >/tmpwork/download2.log 2>&1 || { tail -30 /tmpwork/download2.log; exit 1; }
+sha256sum dl/$TARBALL_NAME
+'
+CB_BUILD="$PRELUDE$WATCHDOG"'
+make package/feeds/goshisen/compile V=s >/tmpwork/compile.log 2>&1 || {
+  echo COMPILE-FAILED
+  tail -40 /tmpwork/compile.log
+  [ -f /tmp/diskwarn ] && echo DISK-WATCHDOG-FIRED
+  exit 1
+}
+APK=$(find /builder/bin -name "goshisen-*.apk" | head -1)
+[ -n "$APK" ] || { echo NO-APK-PRODUCED; exit 1; }
+echo "APK=$APK"
+sha256sum "$APK"
+mkdir -p /tmpwork/apk-x
+/builder/staging_dir/host/bin/apk extract --allow-untrusted --destination /tmpwork/apk-x "$APK" >/dev/null
+cp /tmpwork/apk-x/usr/sbin/goshisen /out/daemon-$LABEL.bin
+sha256sum /out/daemon-$LABEL.bin
+/out/daemon-$LABEL.bin --version | tee /out/version-$LABEL.txt
+echo "--- go buildinfo ---"
+go version -m /out/daemon-$LABEL.bin | head -2 || true
+cp "$APK" /out/goshisen-$PKG_VERSION-r$PKG_RELEASE-$LABEL.apk
+mkdir -p /tmpwork/emptykeys
+if /builder/staging_dir/host/bin/apk verify --keys-dir /tmpwork/emptykeys "$APK" >/tmpwork/verify.out 2>&1; then
+  echo "SIGNCHECK-FAIL: the produced apk verifies as TRUSTED - this script must only build unsigned apks"
+  cat /tmpwork/verify.out
+  exit 1
+fi
+grep -q "UNTRUSTED signature" /tmpwork/verify.out || {
+  echo "SIGNCHECK-FAIL: unexpected apk verify output for an unsigned package"
+  cat /tmpwork/verify.out
+  exit 1
+}
+echo "SIGNCHECK-UNSIGNED-OK apk verify reports UNTRUSTED signature (unsigned build, as expected)"
+echo BUILD-OK-$LABEL
+'
+if [ -n "$PRINT_CONTAINER_SCRIPT" ]; then
+  case "$PRINT_CONTAINER_SCRIPT" in
+    derive) printf '%s\n' "$CB_DERIVE" ;;
+    derive2) printf '%s\n' "$CB_DERIVE2" ;;
+    build) printf '%s\n' "$CB_BUILD" ;;
+    *) die "--print-container-script takes derive|derive2|build" ;;
+  esac
+  exit 0
+fi
 
 [ -n "$OUT" ] || usage
 [[ "$LABEL" =~ ^[A-Za-z0-9._-]+$ ]] || die "invalid --label '$LABEL'"
@@ -273,6 +354,8 @@ docker_run() { # docker_run <logfile> <container-script> [args...]
   local log="$1"; shift
   local script="$1"; shift
   timeout "$BUILD_TIMEOUT" docker run --rm --network host --user root \
+    -e LABEL="$LABEL" -e PKG_VERSION="$PKG_VERSION" -e PKG_RELEASE="$PKG_RELEASE" \
+    -e TARBALL_NAME="$TARBALL_NAME" \
     -v "$WORK/recipe/openwrt":/builder/package/feeds/goshisen:ro \
     -v "$WORK/inputs":/in:ro \
     -v "$GO_ROOT":/go-host:ro \
@@ -284,33 +367,9 @@ docker_run() { # docker_run <logfile> <container-script> [args...]
     "$SDK_IMAGE" bash -c "$script" bash "$@" >>"$log" 2>&1
 }
 
-PRELUDE='
-set -euo pipefail
-cd /builder
-export PATH=/go-host/bin:/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-export GOTOOLCHAIN=local
-export TMPDIR=/builder/tmp GOTMPDIR=/builder/tmp GOCACHE=/builder/tmp/gocache GOMODCACHE=/builder/tmp/gomod
-go version
-'
-
-FEEDS='
-./scripts/feeds update -a >/tmpwork/feeds-update.log 2>&1 || { tail -30 /tmpwork/feeds-update.log; exit 1; }
-./scripts/feeds install -a >/tmpwork/feeds-install.log 2>&1 || { tail -30 /tmpwork/feeds-install.log; exit 1; }
-'
-
-# Order matters and matches the v0.2.8 procedure: feeds update/install, then
-# our config fragment folded in by `make defconfig`.
-CONFIG_FRAGMENT='
-cp /in/sdk.config .config
-make defconfig >/tmpwork/defconfig.log 2>&1 || { tail -20 /tmpwork/defconfig.log; exit 1; }
-'
-
-WATCHDOG='
-( while :; do a=$(df --output=avail -k /builder 2>/dev/null | tail -1); \
-    [ -n "$a" ] && [ "$a" -lt 409600 ] && { echo "DISK-WATCHDOG-ABORT avail=${a}K" >&2; pkill -x make || true; touch /tmp/diskwarn; }; \
-    sleep 10; done ) &
-WD=$!
-'
+# (The container scripts and the --print-container-script pre-flight live at the
+# top of this file, before any precondition, so they can be syntax-checked
+# without docker, a commit or a clean tree.)
 
 # The mirror hash is part of the Makefile we mount, so each pass writes the
 # scratch Makefile first (the mounted feed is read-only to the container).
@@ -327,13 +386,8 @@ if [ -n "$MIRROR_HASH" ]; then
 else
   scratch_set_mirror "0000000000000000000000000000000000000000000000000000000000000000"
   note "deriving PKG_MIRROR_HASH with the zero-hash two-pass procedure"
-  docker_run "$OUT/logs/$LABEL-derive.log" "$PRELUDE $FEEDS $CONFIG_FRAGMENT $WATCHDOG
-make package/feeds/goshisen/download V=s >/tmpwork/download.log 2>&1 || true
-kill \$WD 2>/dev/null || true
-grep -E 'Hash mismatch for file $TARBALL_NAME' /tmpwork/download.log | tail -1 || true
-find dl -name '$TARBALL_NAME' -printf '%s\n' || true
-sha256sum dl/$TARBALL_NAME 2>/dev/null || true
-" || die "derive pass failed (see $OUT/logs/$LABEL-derive.log)"
+  docker_run "$OUT/logs/$LABEL-derive.log" "$CB_DERIVE" \
+    || die "derive pass failed (see $OUT/logs/$LABEL-derive.log)"
   MIRROR_HASH="$(sed -nE "s/.*Hash mismatch for file $TARBALL_NAME: expected [0-9a-f]{64}, got ([0-9a-f]{64}).*/\1/p" \
     "$OUT/logs/$LABEL-derive.log" | tail -1)"
   [[ "$MIRROR_HASH" =~ ^[0-9a-f]{64}$ ]] \
@@ -342,11 +396,8 @@ sha256sum dl/$TARBALL_NAME 2>/dev/null || true
   ok "derived PKG_MIRROR_HASH $MIRROR_HASH"
   scratch_set_mirror "$MIRROR_HASH"
   # Second pass proves the pinned hash is accepted and the tarball matches.
-  docker_run "$OUT/logs/$LABEL-derive2.log" "$PRELUDE $FEEDS $CONFIG_FRAGMENT $WATCHDOG
-make package/feeds/goshisen/download V=s >/tmpwork/download2.log 2>&1 || { tail -30 /tmpwork/download2.log; exit 1; }
-kill \$WD 2>/dev/null || true
-sha256sum dl/$TARBALL_NAME
-" || die "download pass with the derived hash failed (see $OUT/logs/$LABEL-derive2.log)"
+  docker_run "$OUT/logs/$LABEL-derive2.log" "$CB_DERIVE2" \
+    || die "download pass with the derived hash failed (see $OUT/logs/$LABEL-derive2.log)"
   GOT_TARBALL_SHA="$(grep -E "  dl/$TARBALL_NAME\$" "$OUT/logs/$LABEL-derive2.log" | tail -1 | cut -d' ' -f1)"
   [ "$GOT_TARBALL_SHA" = "$MIRROR_HASH" ] \
     || die "downloaded tarball sha256 '$GOT_TARBALL_SHA' != derived PKG_MIRROR_HASH $MIRROR_HASH"
@@ -354,41 +405,8 @@ sha256sum dl/$TARBALL_NAME
 fi
 
 # --- 7. build -----------------------------------------------------------
-docker_run "$OUT/logs/$LABEL-build.log" "$PRELUDE $FEEDS $CONFIG_FRAGMENT $WATCHDOG
-make package/feeds/goshisen/compile V=s >/tmpwork/compile.log 2>&1 || {
-  echo COMPILE-FAILED
-  tail -40 /tmpwork/compile.log
-  [ -f /tmp/diskwarn ] && echo DISK-WATCHDOG-FIRED
-  kill \$WD 2>/dev/null || true
-  exit 1
-}
-kill \$WD 2>/dev/null || true
-APK=\$(find /builder/bin -name 'goshisen-*.apk' | head -1)
-[ -n \"\$APK\" ] || { echo NO-APK-PRODUCED; exit 1; }
-echo \"APK=\$APK\"
-sha256sum \"\$APK\"
-mkdir -p /tmpwork/apk-x
-/builder/staging_dir/host/bin/apk extract --allow-untrusted --destination /tmpwork/apk-x \"\$APK\" >/dev/null
-cp /tmpwork/apk-x/usr/sbin/goshisen /out/daemon-$LABEL.bin
-sha256sum /out/daemon-$LABEL.bin
-/out/daemon-$LABEL.bin --version | tee /out/version-$LABEL.txt
-echo '--- go buildinfo ---'
-go version -m /out/daemon-$LABEL.bin | head -2 || true
-cp \"\$APK\" /out/goshisen-$PKG_VERSION-r$PKG_RELEASE-$LABEL.apk
-mkdir -p /tmpwork/emptykeys
-if /builder/staging_dir/host/bin/apk verify --keys-dir /tmpwork/emptykeys \"\$APK\" >/tmpwork/verify.out 2>&1; then
-  echo SIGNCHECK-FAIL: the produced apk verifies as TRUSTED — this script must only build unsigned apks
-  cat /tmpwork/verify.out
-  exit 1
-fi
-grep -q 'UNTRUSTED signature' /tmpwork/verify.out || {
-  echo SIGNCHECK-FAIL: unexpected apk verify output for an unsigned package
-  cat /tmpwork/verify.out
-  exit 1
-}
-echo SIGNCHECK-UNSIGNED-OK: apk verify reports \\\"UNTRUSTED signature\\\" (unsigned, as built)
-echo BUILD-OK-$LABEL
-" || die "build failed (see $OUT/logs/$LABEL-build.log)"
+docker_run "$OUT/logs/$LABEL-build.log" "$CB_BUILD" \
+  || die "build failed (see $OUT/logs/$LABEL-build.log)"
 
 APK_FILE="$OUT/goshisen-$PKG_VERSION-r$PKG_RELEASE-$LABEL.apk"
 PAYLOAD_FILE="$OUT/daemon-$LABEL.bin"
