@@ -84,7 +84,7 @@ gen_manifest() {
                substitutions: [{key: "PKG_VERSION", value: $version, rule: ("s/^PKG_VERSION:=.*/PKG_VERSION:=" + $version + "/")}]},
       build: {sdk_image: $sdk, goarch: "amd64",
               go: {version: $gover, tarball_sha256: $gotsha, bin_go_sha256: $gobin}},
-      artifacts: {apk: {name: ("goshisen-" + $version + "-r1.apk"), file: ("goshisen-" + $version + "-r1-A.apk"), sha256: $apksha, size: 1},
+      artifacts: {apk: {name: ("goshisen-" + $version + "-r1.apk"), file: ("goshisen-" + $version + "-r1-A.apk"), sha256: $apksha, size: 1, signed: false},
                   payload: {path: "usr/sbin/goshisen", sha256: $paysha, version: ("goshisen " + $version)}}
     }' > "$out/build-manifest-A.json"
 }
@@ -174,6 +174,35 @@ expect_fail "$TMP/apk-name.json" "artifacts.apk.name"
 jq '.artifacts.payload.sha256 = "5555555555555555555555555555555555555555555555555555555555555555"' \
   "$OUT/build-manifest-A.json" > "$TMP/pay-sha.json"
 expect_fail "$TMP/pay-sha.json" "payload sha256" --payload "$OUT/daemon-A.bin"
+jq 'del(.artifacts.apk.signed)' "$OUT/build-manifest-A.json" > "$TMP/no-sign-state.json"
+expect_fail "$TMP/no-sign-state.json" "artifacts.apk.signed must be true or false" \
+  --apk "$OUT/goshisen-0.2.9-test-r1-A.apk"
+
+# --- signature-state re-check via APK_TOOL (stubbed: no real apk-tools here) --
+echo "== APK_TOOL signature-state branch =="
+printf '#!/bin/sh\necho "UNTRUSTED signature" >&2\nexit 1\n' > "$TMP/apk-unsigned"
+printf '#!/bin/sh\necho "OK"\nexit 0\n' > "$TMP/apk-signed"
+chmod +x "$TMP/apk-unsigned" "$TMP/apk-signed"
+APK_TOOL="$TMP/apk-unsigned" "$CHECK" --manifest "$OUT/build-manifest-A.json" \
+  --apk "$OUT/goshisen-0.2.9-test-r1-A.apk" 2>&1 | grep -q "UNTRUSTED signature (unsigned, as recorded)" \
+  || fail "unsigned manifest + UNTRUSTED apk verify should PASS"
+echo "  ok: unsigned manifest + UNTRUSTED apk verify passes"
+jq '.artifacts.apk.signed = true' "$OUT/build-manifest-A.json" > "$TMP/claims-signed.json"
+rc=0
+out="$(APK_TOOL="$TMP/apk-unsigned" "$CHECK" --manifest "$TMP/claims-signed.json" \
+  --apk "$OUT/goshisen-0.2.9-test-r1-A.apk" 2>&1)" || rc=$?
+[ "$rc" -ne 0 ] || fail "a manifest claiming signed=true was ACCEPTED with an UNTRUSTED apk"
+grep -qF "manifest says signed, but apk verify failed" <<<"$out" \
+  || fail "signed-claim case failed for the wrong reason: $out"
+echo "  ok: signed claim with an UNTRUSTED apk is rejected"
+APK_TOOL="$TMP/apk-signed" "$CHECK" --manifest "$TMP/claims-signed.json" \
+  --apk "$OUT/goshisen-0.2.9-test-r1-A.apk" 2>&1 | grep -q "apk verify: OK (signed, as recorded)" \
+  || fail "signed manifest + OK apk verify should PASS"
+echo "  ok: signed manifest + OK apk verify passes"
+jq '.artifacts.apk.signed = true' "$OUT/build-manifest-A.json" > "$TMP/claims-signed2.json"
+APK_TOOL="$TMP/apk-signed" "$CHECK" --manifest "$TMP/claims-signed2.json" --apk "$OUT/goshisen-0.2.9-test-r1-A.apk" >/dev/null \
+  || fail "signed manifest with a signed stub must PASS"
+echo "  ok: both signature-state directions covered (stubbed apk verify)"
 
 # --- A/B compare --------------------------------------------------------
 echo "== A/B comparison =="

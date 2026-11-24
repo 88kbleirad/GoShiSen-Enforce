@@ -375,6 +375,18 @@ sha256sum /out/daemon-$LABEL.bin
 echo '--- go buildinfo ---'
 go version -m /out/daemon-$LABEL.bin | head -2 || true
 cp \"\$APK\" /out/goshisen-$PKG_VERSION-r$PKG_RELEASE-$LABEL.apk
+mkdir -p /tmpwork/emptykeys
+if /builder/staging_dir/host/bin/apk verify --keys-dir /tmpwork/emptykeys \"\$APK\" >/tmpwork/verify.out 2>&1; then
+  echo SIGNCHECK-FAIL: the produced apk verifies as TRUSTED — this script must only build unsigned apks
+  cat /tmpwork/verify.out
+  exit 1
+fi
+grep -q 'UNTRUSTED signature' /tmpwork/verify.out || {
+  echo SIGNCHECK-FAIL: unexpected apk verify output for an unsigned package
+  cat /tmpwork/verify.out
+  exit 1
+}
+echo SIGNCHECK-UNSIGNED-OK: apk verify reports \\\"UNTRUSTED signature\\\" (unsigned, as built)
 echo BUILD-OK-$LABEL
 " || die "build failed (see $OUT/logs/$LABEL-build.log)"
 
@@ -398,8 +410,13 @@ PAYLOAD_GO="$(strings -n 8 "$PAYLOAD_FILE" | grep -A1 'Go buildinf:' | tail -1 |
 [ "$PAYLOAD_VERSION" = "goshisen $PKG_VERSION" ] \
   || die "payload --version '$PAYLOAD_VERSION' != 'goshisen $PKG_VERSION'"
 [ -n "$PAYLOAD_GO" ] || die "payload has no readable Go buildinfo"
-tar -tzf "$APK_FILE" >/dev/null 2>&1 \
-  || die "produced apk is not a plain (unsigned) tar.gz — this script must only build unsigned apks"
+# Unsignedness and extractability are asserted INSIDE the container (apk-tools
+# v3 only): OpenWrt 25.12 apk v3 is an ADB container, not a plain tar.gz, so a
+# host-side `tar` probe cannot tell signed from unsigned. The build pass prints
+# SIGNCHECK-UNSIGNED-OK only after `apk verify` reports UNTRUSTED (i.e. nothing
+# trusts this file yet) and the payload was extracted successfully.
+grep -q 'SIGNCHECK-UNSIGNED-OK' "$OUT/logs/$LABEL-build.log" \
+  || die "the build pass did not report SIGNCHECK-UNSIGNED-OK (see $OUT/logs/$LABEL-build.log)"
 
 # --- 8. manifest --------------------------------------------------------
 RECIPE_JSON="$(for rel in "${!RECIPE_SHA[@]}"; do
@@ -422,7 +439,8 @@ jq -n \
   --arg gover "$GO_VERSION" --arg gotar "$GO_TARBALL" \
   --arg gotarsha "$GO_TARBALL_SHA256" --arg gotarsrc "$GO_SOURCE" \
   --arg gobinsha "$GO_BIN_SHA256" \
-  --arg apkname "$APK_NAME" --arg apkfile "$APK_FILE_LABELED" --arg apksha "$APK_SHA" --argjson apksize "$APK_SIZE" \
+  --arg apkname "$APK_NAME" --arg apkfile "$APK_FILE_LABELED" --arg apksha "$APK_SHA" \
+  --argjson apksize "$APK_SIZE" \
   --arg paysha "$PAYLOAD_SHA" --argjson paysize "$PAYLOAD_SIZE" \
   --arg payver "$PAYLOAD_VERSION" --arg paygo "$PAYLOAD_GO" \
   '{
@@ -454,7 +472,9 @@ jq -n \
        buildid: "omitted (openwrt/Makefile does not pass -buildid=)"
      },
      artifacts: {
-       apk: {name: $apkname, file: $apkfile, sha256: $apksha, size: $apksize, signed: false},
+       apk: {name: $apkname, file: $apkfile, sha256: $apksha, size: $apksize,
+             signed: false,
+             apk_verify: "UNTRUSTED signature (apk verify --keys-dir <empty>, rc=1) — signature added later by apk-sign.yml"},
        payload: {path: "usr/sbin/goshisen", sha256: $paysha, size: $paysize,
                  version: $payver, go_buildinfo: $paygo}
      }

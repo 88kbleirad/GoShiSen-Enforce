@@ -30,8 +30,10 @@
 #      .github/workflows/apk-sign.yml (script and workflow cannot drift);
 #   8. artifacts.apk.sha256 / artifacts.payload.sha256 match the actual
 #      files when they are available, the apk name matches
-#      PKG_VERSION-rPKG_RELEASE, the apk is unsigned (a plain tar.gz), and
-#      the payload reports `goshisen <pkg.version>`;
+#      PKG_VERSION-rPKG_RELEASE, the recorded signature state is a boolean
+#      (and, with APK_TOOL=apk-tools v3, `apk verify` agrees with it:
+#      UNTRUSTED for an unsigned build), and the payload reports
+#      `goshisen <pkg.version>`;
 #   9. with --compare, a second manifest (the A/B partner) has identical
 #      artifact hashes and identical inputs.
 #
@@ -238,9 +240,29 @@ if [ -n "$APK" ]; then
   A_SHA="$(sha256sum "$APK" | cut -d' ' -f1)"
   A_WANT="$(jq -r '.artifacts.apk.sha256' "$MANIFEST")"
   [ "$A_SHA" = "$A_WANT" ] || fail "apk sha256 $A_SHA != manifest $A_WANT"
-  tar -tzf "$APK" >/dev/null 2>&1 \
-    || fail "apk '$APK' is not a plain tar.gz — the manifest says unsigned, but it looks signed"
-  ok "apk sha256 matches and the apk is unsigned ($A_SHA)"
+  SIGNED="$(jq -r '.artifacts.apk.signed | if . == null then "missing" else tostring end' "$MANIFEST")"
+  case "$SIGNED" in
+    true|false) ;;
+    *) fail "artifacts.apk.signed must be true or false (got '$SIGNED')" ;;
+  esac
+  # OpenWrt 25.12 apk v3 is an ADB container, not a tar.gz, so only apk-tools
+  # can tell signed from unsigned. The checker re-verifies when APK_TOOL
+  # (apk-tools v3) is provided; otherwise it says so instead of guessing.
+  if [ -n "${APK_TOOL:-}" ] && [ -x "${APK_TOOL}" ]; then
+    mkdir -p "$TMP/emptykeys"
+    vout="$("$APK_TOOL" verify --keys-dir "$TMP/emptykeys" "$APK" 2>&1)" && vrc=0 || vrc=$?
+    if [ "$SIGNED" = false ]; then
+      { [ "$vrc" -ne 0 ] && grep -qi 'UNTRUSTED' <<<"$vout"; } \
+        || fail "manifest says unsigned, but apk verify did not report UNTRUSTED: $vout"
+      ok "apk sha256 matches; apk verify: UNTRUSTED signature (unsigned, as recorded)"
+    else
+      [ "$vrc" -eq 0 ] || fail "manifest says signed, but apk verify failed: $vout"
+      ok "apk sha256 matches; apk verify: OK (signed, as recorded)"
+    fi
+  else
+    echo "note: apk signature state recorded as signed=$SIGNED; not re-checked (set APK_TOOL to apk-tools v3 to verify)" >&2
+    ok "apk sha256 matches ($A_SHA)"
+  fi
 else
   echo "note: apk not supplied or not found next to the manifest; sha256 not compared" >&2
 fi
