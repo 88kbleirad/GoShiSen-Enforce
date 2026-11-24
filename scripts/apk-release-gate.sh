@@ -21,8 +21,8 @@
 #   APK_SIGN_KEY="$(cat ${secret})" \
 #   scripts/apk-release-gate.sh \
 #     --apk goshisen-0.2.0-r5.apk [--apk ...] \
-#     --anchor keys/goshisen-release.pub.pem \
-#     --fingerprint 24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0 \
+#     --anchor keys/goshisen-apk.pub.pem \
+#     --fingerprint 542bb7ae9058fee9b4d37ed30b0af44f234ea7cb8866daa1ffc71a7bc37c839d \
 #     --commit <sha> --tag v0.2.2 --builder release.yml/apk --outdir dist-apk
 #
 # Environment:
