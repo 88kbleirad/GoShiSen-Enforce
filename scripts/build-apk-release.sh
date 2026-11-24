@@ -134,6 +134,15 @@ go version
 ./scripts/feeds install -a >/tmpwork/feeds-install.log 2>&1 || { tail -30 /tmpwork/feeds-install.log; exit 1; }
 cp /in/sdk.config .config
 make defconfig >/tmpwork/defconfig.log 2>&1 || { tail -20 /tmpwork/defconfig.log; exit 1; }
+# Record the feed commits the closure was built from: the apk depends on feed
+# packages (nftables, kmod-*), so the closure is only reproducible with these.
+: > /tmpwork/feeds-commits.txt
+for d in /builder/feeds/*/; do
+  f=$(basename "$d")
+  c=$(git -C "$d" log -1 --format=%H 2>/dev/null || true)
+  [ -n "$c" ] && echo "$f $c" >> /tmpwork/feeds-commits.txt
+done
+cat /tmpwork/feeds-commits.txt
 '
 # Disk watchdog: the container overlay lives on the host root filesystem, so
 # abort before the host fills. It dies with the container; no cleanup needed.
@@ -353,9 +362,14 @@ ok "Go toolchain go$GO_VERSION verified ($GO_SOURCE)"
 docker_run() { # docker_run <logfile> <container-script> [args...]
   local log="$1"; shift
   local script="$1"; shift
+  # NOTE: never pass PKG_*/VERSION_* names into the SDK container. OpenWrt's
+  # make reads the environment as make variables, so e.g. PKG_VERSION=0.2.9
+  # would be inherited by EVERY package in the closure (observed: nu801 was
+  # packaged as nu801-0.2.9.tar.zst and failed its own PKG_MIRROR_HASH check).
+  # The GSH_ prefix cannot collide with a make variable.
   timeout "$BUILD_TIMEOUT" docker run --rm --network host --user root \
-    -e LABEL="$LABEL" -e PKG_VERSION="$PKG_VERSION" -e PKG_RELEASE="$PKG_RELEASE" \
-    -e TARBALL_NAME="$TARBALL_NAME" \
+    -e GSH_LABEL="$LABEL" -e GSH_PKG_VERSION="$PKG_VERSION" \
+    -e GSH_PKG_RELEASE="$PKG_RELEASE" -e GSH_TARBALL_NAME="$TARBALL_NAME" \
     -v "$WORK/recipe/openwrt":/builder/package/feeds/goshisen:ro \
     -v "$WORK/inputs":/in:ro \
     -v "$GO_ROOT":/go-host:ro \
@@ -440,6 +454,11 @@ grep -q 'SIGNCHECK-UNSIGNED-OK' "$OUT/logs/$LABEL-build.log" \
 RECIPE_JSON="$(for rel in "${!RECIPE_SHA[@]}"; do
     printf '%s\n%s\n' "$rel" "${RECIPE_SHA[$rel]}"
   done | jq -Rn '[inputs] | [range(0; length; 2) as $i | {key: .[$i], value: .[$i+1]}] | from_entries')"
+FEEDS_JSON='{}'
+if [ -s "$WORK/tmp/feeds-commits.txt" ]; then
+  FEEDS_JSON="$(awk '{print $1"\n"$2}' "$WORK/tmp/feeds-commits.txt" \
+    | jq -Rn '[inputs] | [range(0; length; 2) as $i | {key: .[$i], value: .[$i+1]}] | from_entries')"
+fi
 
 MANIFEST="$OUT/build-manifest-$LABEL.json"
 jq -n \
@@ -449,7 +468,7 @@ jq -n \
   --arg pkgver "$PKG_VERSION" --arg pkgrel "$PKG_RELEASE" \
   --arg srcver "$PKG_SOURCE_VERSION" --arg srcres "$PKG_SOURCE_RESOLVED" \
   --arg mirror "$MIRROR_HASH" --argjson derived "$MIRROR_DERIVED" \
-  --argjson recipe "$RECIPE_JSON" \
+  --argjson recipe "$RECIPE_JSON" --argjson feeds "$FEEDS_JSON" \
   --arg overlay "$OVERLAY_REL" --arg overlaysha "$OVERLAY_SHA" \
   --arg cfg "$SDK_CONFIG_REL" --arg cfgsha "$SDK_CONFIG_SHA" \
   --arg mksha "$MAKEFILE_FINAL_SHA" --argjson subs "$SUBS_JSON" \
@@ -481,6 +500,7 @@ jq -n \
      },
      build: {
        sdk_image: $sdk, sdk_tag: $sdktag, goarch: "amd64",
+       feeds_commits: $feeds,
        go: {version: $gover, tarball: $gotar, tarball_sha256: $gotarsha,
             bin_go_sha256: $gobinsha, source: $gotarsrc, gotoolchain: "local"},
        env: {CGO_ENABLED: "0", GOOS: "linux", GOARCH: "amd64",

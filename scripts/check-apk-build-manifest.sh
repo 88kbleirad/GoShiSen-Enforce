@@ -290,7 +290,8 @@ if [ -n "$COMPARE" ]; then
   jq -e . "$COMPARE" >/dev/null 2>&1 || fail "compare manifest '$COMPARE' is not valid JSON"
   for f in '.source.commit' '.pkg.version' '.pkg.release' '.pkg.source_version' \
            '.pkg.mirror_hash' '.recipe.makefile_final_sha256' '.build.sdk_image' \
-           '.build.go.tarball_sha256' '.artifacts.apk.sha256' '.artifacts.payload.sha256'; do
+           '.build.go.tarball_sha256' '.build.feeds_commits' \
+           '.artifacts.apk.sha256' '.artifacts.payload.sha256'; do
     a="$(jq -r "($f) // empty" "$MANIFEST")"
     b="$(jq -r "($f) // empty" "$COMPARE")"
     [ "$a" = "$b" ] || fail "A/B mismatch on $f: '$(jq -r "($f) // empty" "$MANIFEST")' vs '$b'"
