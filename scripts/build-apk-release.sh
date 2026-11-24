@@ -168,7 +168,7 @@ fi
 command -v docker >/dev/null 2>&1 || die "docker not available"
 command -v jq >/dev/null 2>&1 || die "jq not available"
 
-mkdir -p "$OUT/logs" "$WORK/recipe" "$WORK/inputs" "$WORK/bin" "$WORK/tmp" "$WORK/dl"
+mkdir -p "$OUT/logs" "$WORK/logs" "$WORK/recipe" "$WORK/inputs" "$WORK/bin" "$WORK/tmp" "$WORK/dl"
 cleanup() { [ "$KEEP_WORK" = 1 ] || rm -rf "$WORK/go" "$WORK/recipe"; }
 trap cleanup EXIT
 
@@ -176,7 +176,8 @@ trap cleanup EXIT
 # git archive guarantees the committed bytes (no working-tree edits leak in).
 git -C "$ROOT" archive "$COMMIT_SHA" openwrt "$OVERLAY_REL" "$SDK_CONFIG_REL" \
   > "$WORK/recipe.tar" 2>"$WORK/logs/$LABEL-archive.log" \
-  || die "git archive failed for $COMMIT_SHA — does that commit contain $OVERLAY_REL and $SDK_CONFIG_REL?"
+  || { tail -3 "$WORK/logs/$LABEL-archive.log" >&2
+       die "git archive failed for $COMMIT_SHA — does that commit contain $OVERLAY_REL and $SDK_CONFIG_REL?"; }
 tar -xf "$WORK/recipe.tar" -C "$WORK/recipe"
 MAKEFILE="$WORK/recipe/openwrt/Makefile"
 [ -f "$MAKEFILE" ] || die "openwrt/Makefile missing from $COMMIT_SHA"
