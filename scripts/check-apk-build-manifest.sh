@@ -226,8 +226,12 @@ EXPECTED_NAME="$PKG_NAME-$PKG_VERSION-r$PKG_RELEASE.apk"
 [ "$APK_NAME" = "$EXPECTED_NAME" ] \
   || fail "artifacts.apk.name '$APK_NAME' != '$EXPECTED_NAME'"
 if [ -z "$APK" ]; then
-  cand="$(dirname "$MANIFEST")/$(jq -r '.artifacts.apk.name' "$MANIFEST" | sed "s/\.apk\$/-$(jq -r '.label // "A"' "$MANIFEST").apk/")"
-  [ -f "$cand" ] && APK="$cand" || true
+  # The builder writes a labeled file for A/B runs and records it as
+  # artifacts.apk.file; fall back to the canonical name.
+  for cand in "$(dirname "$MANIFEST")/$(jq -r '.artifacts.apk.file // empty' "$MANIFEST")" \
+              "$(dirname "$MANIFEST")/$APK_NAME"; do
+    [ -n "$cand" ] && [ -f "$cand" ] && { APK="$cand"; break; }
+  done
 fi
 if [ -n "$APK" ]; then
   [ -f "$APK" ] || fail "apk '$APK' not found"

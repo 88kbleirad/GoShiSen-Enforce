@@ -36,14 +36,18 @@ gen_manifest() {
   local repo="$1" commit="$2" version="$3" out="$4"
   mkdir -p "$out/replay"
   git -C "$repo" archive "$commit" openwrt packaging/apk-build | tar -x -C "$out/replay"
+
+  # Committed (pre-overlay) hashes — this is what the manifest records.
+  local recipe_json
+  recipe_json="$(cd "$out/replay" && for f in $(find openwrt -type f | sort); do
+      printf '%s\n%s\n' "$f" "$(sha256sum "$f" | cut -d' ' -f1)"
+    done | jq -Rn '[inputs] | [range(0; length; 2) as $i | {key: .[$i], value: .[$i+1]}] | from_entries')"
+
   (cd "$out/replay" && patch -p1 -s < packaging/apk-build/no-golang-host.patch) \
     || fail "generator: overlay did not apply"
   sed -E -i "s/^PKG_VERSION:=.*/PKG_VERSION:=$version/" "$out/replay/openwrt/Makefile"
 
-  local recipe_json overlay_sha cfg_sha mk_sha
-  recipe_json="$(cd "$out/replay" && for f in $(find openwrt -type f | sort); do
-      printf '%s\n%s\n' "$f" "$(sha256sum "$f" | cut -d' ' -f1)"
-    done | jq -Rn '[inputs] | [range(0; length; 2) as $i | {key: .[$i], value: .[$i+1]}] | from_entries')"
+  local overlay_sha cfg_sha mk_sha
   overlay_sha="$(sha256sum "$out/replay/packaging/apk-build/no-golang-host.patch" | cut -d' ' -f1)"
   cfg_sha="$(sha256sum "$out/replay/packaging/apk-build/sdk-x86_64.config" | cut -d' ' -f1)"
   mk_sha="$(sha256sum "$out/replay/openwrt/Makefile" | cut -d' ' -f1)"
@@ -80,7 +84,7 @@ gen_manifest() {
                substitutions: [{key: "PKG_VERSION", value: $version, rule: ("s/^PKG_VERSION:=.*/PKG_VERSION:=" + $version + "/")}]},
       build: {sdk_image: $sdk, goarch: "amd64",
               go: {version: $gover, tarball_sha256: $gotsha, bin_go_sha256: $gobin}},
-      artifacts: {apk: {name: ("goshisen-" + $version + "-r1.apk"), sha256: $apksha, size: 1},
+      artifacts: {apk: {name: ("goshisen-" + $version + "-r1.apk"), file: ("goshisen-" + $version + "-r1-A.apk"), sha256: $apksha, size: 1},
                   payload: {path: "usr/sbin/goshisen", sha256: $paysha, version: ("goshisen " + $version)}}
     }' > "$out/build-manifest-A.json"
 }
@@ -206,8 +210,10 @@ git -C "$SCRATCH" tag v0.2.9 "$TIP"
 
 SOUT="$TMP/scratch-out"
 gen_manifest "$SCRATCH" "$TIP" "0.2.9" "$SOUT"
+# The pin gate (step 5) requires the release-canonical basename.
+cp "$SOUT/goshisen-0.2.9-r1-A.apk" "$SOUT/goshisen-0.2.9-r1.apk"
 GATE_REPO="$SCRATCH" bash "$GATE" \
-  --apk "$SOUT/goshisen-0.2.9-r1-A.apk" --tag v0.2.9 \
+  --apk "$SOUT/goshisen-0.2.9-r1.apk" --tag v0.2.9 \
   --payload "$SOUT/daemon-A.bin" --manifest "$SOUT/build-manifest-A.json" >"$TMP/gate.log" 2>&1 \
   || { tail -20 "$TMP/gate.log"; fail "pin gate with a valid manifest did not PASS"; }
 grep -q "apk build manifest describes this commit" "$TMP/gate.log" \
@@ -218,7 +224,7 @@ echo "  ok: pin gate ran step 9 and PASSed"
 jq '.build.sdk_image = "openwrt/sdk@sha256:7777777777777777777777777777777777777777777777777777777777777777"' \
   "$SOUT/build-manifest-A.json" > "$SOUT/bad.json"
 rc=0
-GATE_REPO="$SCRATCH" bash "$GATE" --apk "$SOUT/goshisen-0.2.9-r1-A.apk" --tag v0.2.9 \
+GATE_REPO="$SCRATCH" bash "$GATE" --apk "$SOUT/goshisen-0.2.9-r1.apk" --tag v0.2.9 \
   --payload "$SOUT/daemon-A.bin" --manifest "$SOUT/bad.json" >"$TMP/gate-bad.log" 2>&1 || rc=$?
 [ "$rc" -ne 0 ] || fail "pin gate ACCEPTED a manifest with a drifted SDK digest"
 grep -q "apk build manifest check failed" "$TMP/gate-bad.log" \
@@ -227,7 +233,7 @@ echo "  ok: pin gate fails closed on a bad manifest"
 
 # --- the gate must stay opt-in (no manifest => no manifest check) --------
 echo "== step 9 is opt-in =="
-GATE_REPO="$SCRATCH" bash "$GATE" --apk "$SOUT/goshisen-0.2.9-r1-A.apk" --tag v0.2.9 \
+GATE_REPO="$SCRATCH" bash "$GATE" --apk "$SOUT/goshisen-0.2.9-r1.apk" --tag v0.2.9 \
   --payload "$SOUT/daemon-A.bin" >"$TMP/gate-nomanifest.log" 2>&1 \
   || { tail -10 "$TMP/gate-nomanifest.log"; fail "pin gate without --manifest did not PASS"; }
 grep -q "apk build-manifest check skipped" "$TMP/gate-nomanifest.log" \

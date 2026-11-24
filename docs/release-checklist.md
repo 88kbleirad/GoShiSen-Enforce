@@ -179,6 +179,30 @@ Run in order. Every item must pass before tagging.
   over cmd/internal/pkg/go.mod/go.sum/openwrt/files, payload `--version`
   == PKG_VERSION, apk filename == PKG_VERSION-r<PKG_RELEASE>). See
   `docs/release/release-pin-gate.md` for design and procedure.
+- [ ] **apk build from the committed recipe (v0.2.9+):** build the
+  unsigned package with
+  `scripts/build-apk-release.sh --commit <pin-commit> --go-root <verified
+  go1.27.4> --label A --out <dir> --work <scratch> --canonical-name`, then
+  repeat with `--label B` and require identical apk + payload hashes.
+  The script `git archive`s the commit, applies the committed overlay
+  `packaging/apk-build/no-golang-host.patch` to a scratch copy (never the
+  working tree's `openwrt/Makefile`), folds in
+  `packaging/apk-build/sdk-x86_64.config`, verifies the Go tarball/bin
+  hashes against `packaging/go-toolchain.env`, uses the SDK digest pinned
+  in `.github/workflows/apk-sign.yml`, derives `PKG_MIRROR_HASH`, and
+  writes `build-manifest-<label>.json`. Then run the gate with the
+  manifest so the artifact is tied to the committed recipe:
+  `scripts/release-pin-gate.sh --apk goshisen-<ver>-r<rel>.apk --tag
+  v<ver> --payload <extracted> --manifest build-manifest-A.json`
+  (plus `GATE_S005_CHECKS=1` and, ideally, the A/B comparison
+  `scripts/check-apk-build-manifest.sh --manifest build-manifest-A.json
+  --compare build-manifest-B.json`). What this does and does not prove:
+  `docs/release/release-pin-gate.md` and `packaging/apk-build/README.md`.
+  CI does **not** build the apk (3.18 GB SDK image, feed clones, ~5 GB
+  scratch, 10-30 min per build, privileged QEMU for the smoke); CI runs
+  `tests/ci/apk-build-manifest-test.sh` on every PR
+  (`apk-build-manifest-gate (F-01)`) and the payload gates on any apk
+  artifact, so recipe regressions still fail before a release.
 
 ## Post-release verification (v0.2.3+)
 

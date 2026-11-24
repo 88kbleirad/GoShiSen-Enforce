@@ -74,6 +74,7 @@ OUT=""
 WORK=""
 LABEL="A"
 KEEP_WORK=0
+CANONICAL_NAME=0
 BUILD_TIMEOUT="${BUILD_TIMEOUT:-3600}"
 
 usage() {
@@ -95,6 +96,7 @@ while [ $# -gt 0 ]; do
     --out) OUT="${2:?}"; shift 2 ;;
     --work) WORK="${2:?}"; shift 2 ;;
     --label) LABEL="${2:?}"; shift 2 ;;
+    --canonical-name) CANONICAL_NAME=1; shift ;;
     --keep-work) KEEP_WORK=1; shift ;;
     -h|--help) usage ;;
     *) echo "unknown argument: $1" >&2; usage ;;
@@ -366,6 +368,13 @@ APK_FILE="$OUT/goshisen-$PKG_VERSION-r$PKG_RELEASE-$LABEL.apk"
 PAYLOAD_FILE="$OUT/daemon-$LABEL.bin"
 [ -f "$APK_FILE" ] || die "expected apk $APK_FILE not produced"
 [ -f "$PAYLOAD_FILE" ] || die "expected payload $PAYLOAD_FILE not produced"
+APK_FILE_LABELED="$(basename "$APK_FILE")"
+if [ "$CANONICAL_NAME" = 1 ]; then
+  # The release path must stage the apk under exactly PKG_VERSION-rPKG_RELEASE
+  # (apk-sign.yml fetches the draft asset by that name).
+  cp "$APK_FILE" "$OUT/$APK_NAME"
+  ok "also staged the canonical release name $APK_NAME (same bytes)"
+fi
 APK_SHA="$(sha256sum "$APK_FILE" | cut -d' ' -f1)"
 PAYLOAD_SHA="$(sha256sum "$PAYLOAD_FILE" | cut -d' ' -f1)"
 APK_SIZE="$(stat -c %s "$APK_FILE")"
@@ -399,7 +408,7 @@ jq -n \
   --arg gover "$GO_VERSION" --arg gotar "$GO_TARBALL" \
   --arg gotarsha "$GO_TARBALL_SHA256" --arg gotarsrc "$GO_SOURCE" \
   --arg gobinsha "$GO_BIN_SHA256" \
-  --arg apkname "$(basename "$APK_FILE")" --arg apksha "$APK_SHA" --argjson apksize "$APK_SIZE" \
+  --arg apkname "$APK_NAME" --arg apkfile "$APK_FILE_LABELED" --arg apksha "$APK_SHA" --argjson apksize "$APK_SIZE" \
   --arg paysha "$PAYLOAD_SHA" --argjson paysize "$PAYLOAD_SIZE" \
   --arg payver "$PAYLOAD_VERSION" --arg paygo "$PAYLOAD_GO" \
   '{
@@ -431,7 +440,7 @@ jq -n \
        buildid: "omitted (openwrt/Makefile does not pass -buildid=)"
      },
      artifacts: {
-       apk: {name: $apkname, sha256: $apksha, size: $apksize, signed: false},
+       apk: {name: $apkname, file: $apkfile, sha256: $apksha, size: $apksize, signed: false},
        payload: {path: "usr/sbin/goshisen", sha256: $paysha, size: $paysize,
                  version: $payver, go_buildinfo: $paygo}
      }

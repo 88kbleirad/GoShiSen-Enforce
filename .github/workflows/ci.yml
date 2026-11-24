@@ -177,6 +177,32 @@ jobs:
       - name: Release workflow must keep the CLI key scoped to the sign job
         run: bash tests/ci/release-workflow-guard-test.sh
 
+  apk-build-manifest-gate:
+    # The apk build manifest (scripts/build-apk-release.sh) must describe a
+    # build that the COMMITTED recipe can produce: recipe + overlay hashes
+    # equal the committed files at the recorded commit, replaying them
+    # reproduces the recorded Makefile hash, the Go version/toolchain hashes
+    # satisfy packaging/go-toolchain.env, the SDK digest equals apk-sign.yml's
+    # pin, and the artifact hashes match the files. Fixtures only.
+    #
+    # Why CI does not build the apk itself: the build needs the 3.18 GB
+    # digest-pinned OpenWrt SDK image, a network clone of every pinned feed
+    # plus the package source, ~5 GB of scratch space and 10-30 min per build
+    # (twice for A/B), and the smoke test needs privileged QEMU. That is a
+    # release-host step (scripts/build-apk-release.sh); CI runs the fixtures
+    # here and the payload gates (apk-payload-go-gate / apk-payload-govuln-gate)
+    # on any apk artifact, so a recipe/manifest regression still fails on the PR.
+    name: apk-build-manifest-gate (F-01)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install jq (manifest fixtures parse and mutate JSON)
+        run: |
+          sudo apt-get $APT_BOUNDED update
+          sudo apt-get $APT_BOUNDED install -y --no-install-recommends jq
+      - name: Build-manifest fixtures must fail closed for the right reason
+        run: bash tests/ci/apk-build-manifest-test.sh
+
   arm64:
     name: arm64 cross-build + static ELF
     runs-on: ubuntu-24.04
