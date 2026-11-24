@@ -27,7 +27,7 @@ different environment (`signing`) — see
 | Item | State |
 | --- | --- |
 | `release.yml` `sign` job | `environment: signing`; only `sign` may reference the key, only `sign` may write |
-| Environment `signing` | required reviewer `88kbleirad` (`can_admins_bypass: true`); deployment policies `main` (branch) + `v*` (**tag**), so tag releases pass the policy check |
+| Environment `signing` | required reviewer `88kbleirad` (`can_admins_bypass: true`, `prevent_self_review: false` — so the approval is deliberate confirmation, not two-person review; see §0.3); deployment policies `main` (branch) + `v*` (**tag**), so tag releases pass the policy check |
 | Environment secret in `signing` | `GH_RELEASE_APK_SIGNING_KEY` only — **`GH_RELEASE_SIGNING_KEY` is not there yet** |
 | Repository-level `GH_RELEASE_SIGNING_KEY` | still present; it **is** the production CLI key (run `45001752175` signed and verified against the anchor). Remove it only after a green dry run proves the environment scope |
 | Environment `release-cli` | stray leftover: no protection rules, no policies, no secrets. Delete it in Settings → Environments; nothing declares it, and re-declaring it would let GitHub auto-create it unprotected |
@@ -57,8 +57,23 @@ gh workflow run release.yml --ref main -f dry_run=true
 
 If the backup no longer exists, rotate: `openssl genpkey -algorithm ed25519`,
 store the new key in the environment secret, and replace
-`keys/goshisen-release.pub.pem` + `keys/release-anchor-fingerprint.txt` in a
-dedicated PR (keep the old anchor committed so past releases still verify).
+`keys/goshisen-release.pub.pem` in a dedicated PR — and, in the same PR, the two
+**hardcoded** copies of the expected fingerprint (keep the old anchor committed
+so past releases still verify):
+
+| Where | Literal |
+| --- | --- |
+| `.github/workflows/release.yml` (the `sign` job's anchor gate, `expected=`) | `24215e01...` |
+| `scripts/check-backup-key.sh` (`EXPECTED=`, the offline check's default) | `24215e01...` |
+
+There is **no** `keys/release-anchor-fingerprint.txt` on `main` — that name does
+not exist in the repository, and the fingerprint has no single source file. The
+workflow literal is authoritative (it fails closed on mismatch before the key is
+touched); the script literal is the offline check's default and must be updated
+with it, or `check-backup-key.sh` will reject the rotated key as "not the
+production CLI key". An earlier revision of this section (and the unmerged
+`feat/f02-anchor-fingerprint-source`) proposed such a single-source file; it was
+never merged, so treat both literals as the source of truth.
 
 ### 0.2 Exposure note — sharing `signing` with the APK workflow
 
@@ -72,6 +87,44 @@ trade-off (one environment to manage) rather than a slip; a dedicated
 environment — as the withdrawn `release-cli` was — keeps the two keys apart.
 `can_admins_bypass` is `true` on `signing`: a repository admin can bypass the
 reviewer. Keep the admin set minimal.
+
+### 0.3 What the approval gate does and does not guarantee
+
+The section title ("protected environment") can read as stronger than what is
+configured, so state both properties plainly. Both come from the `signing`
+environment's settings (Settings → Environments → `signing`; alternatively
+`gh api repos/88kbleirad/GoShiSen-Enforce/environments/signing`, names and
+booleans only) as last inspected on **2026-11-23** — the API needs a
+credential, so this is a recorded observation, not something a reader can
+re-verify from an unauthenticated checkout. Re-read it before relying on it.
+
+**1. Secret-scope resolution is not fail-closed — an environment declaration
+does not pin the key's provenance.** GitHub resolves an environment secret in
+preference to a same-named repository secret, but when the environment does
+*not* define the name, the job silently falls back to the repository-level
+secret. So while `GH_RELEASE_SIGNING_KEY` exists at repository scope (it does)
+and is absent from `signing` (it is, §0), a tag run's `sign` job resolves the
+**repository** copy after the approval wait: the approval is real, but the key
+used is the unscoped one. This is the same resolution order that produced the
+demonstrated fail-open on 2026-11-22 (§1b: an environment with no secret fell
+back to the repository copy and signed without any approval). The gate only
+becomes fail-closed for the key's provenance once the environment secret is set
+*and* the repository-level copy is deleted (§3); the second dry run is the proof,
+and until then the repository-level copy must be treated as the effective key.
+
+**2. The approval is a deliberate-confirmation step, not two-person control.**
+Environment `signing` has required reviewer `88kbleirad` with
+`prevent_self_review: false` and `can_admins_bypass: true`. Consequences:
+
+- the account that pushed the tag (or dispatched the run) may approve its own
+  deployment, so there is no independent second party in the loop;
+- a repository admin can bypass the reviewer entirely.
+
+What the gate therefore guarantees: nothing is signed without a human decision
+on that specific run, and an unattended tag push cannot publish. What it does
+not guarantee: a second pair of eyes, or that a compromised maintainer account
+cannot self-approve. Treat it as a deliberate-click speed bump; keep `main`
+protected (review-required) and the admin set minimal if independence matters.
 
 ## 1. State at handover (2026-11-22)
 
@@ -281,8 +334,10 @@ workflow, and record the result in issue #100:
 - Contributors with **write** access can push branches and open PRs;
   environment approval still gates signing, and `main` should keep
   requiring review + the release-path status checks.
-- The environment's `can_admins_bypass` is `true`: a repository admin can
-  bypass the required reviewer. Keep the admin set small.
+- The environment's `can_admins_bypass` is `true` and `prevent_self_review` is
+  `false`: a repository admin can bypass the required reviewer, and the trigger
+  account can approve its own deployment. The approval is deliberate
+  confirmation, not two-person control — see §0.3. Keep the admin set small.
 - `apk-sign.yml` / environment `signing` are out of scope here and were
   not modified.
 

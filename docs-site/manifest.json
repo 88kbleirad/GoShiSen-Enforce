@@ -215,6 +215,16 @@
   "title": "GoShiSen-Enforce — Evidence Index"
  },
  {
+  "slug": "docs-release-f02-environment-migration",
+  "path": "../docs/release/f02-environment-migration.md",
+  "title": "F-02 — CLI release signing key moved behind a protected environment"
+ },
+ {
+  "slug": "docs-release-f02-recheck-evidence",
+  "path": "../docs/release/f02-recheck-evidence.md",
+  "title": "F-02 re-check — PR #114 + #115 merged; environment secret re-set; dry run re-dispatch pending approval"
+ },
+ {
   "slug": "docs-release-final-ci-gate",
   "path": "../docs/release/final-ci-gate.md",
   "title": "Final NFQUEUE/Conntrack End-to-End Verification & CI Gate"
@@ -470,9 +480,24 @@
   "title": "v0.2.7 upgrade/forwarding evidence (item 2c re-measurement) — 2026-11-21"
  },
  {
+  "slug": "docs-release-v0.2.8-build-evidence",
+  "path": "../docs/release/v0.2.8-build-evidence.md",
+  "title": "v0.2.8 build, signing and smoke evidence"
+ },
+ {
   "slug": "docs-release-v0.2.8-notes-draft",
   "path": "../docs/release/v0.2.8-notes-draft.md",
   "title": "GoShiSen-Enforce v0.2.8 — Release Notes (DRAFT)"
+ },
+ {
+  "slug": "docs-release-v0.2.8-notes",
+  "path": "../docs/release/v0.2.8-notes.md",
+  "title": "GoShiSen-Enforce v0.2.8 — Release Notes"
+ },
+ {
+  "slug": "docs-release-v0.2.9-notes-draft",
+  "path": "../docs/release/v0.2.9-notes-draft.md",
+  "title": "GoShiSen-Enforce v0.2.9 — Release Notes (DRAFT)"
  },
  {
   "slug": "docs-release-v023-release-evidence",
