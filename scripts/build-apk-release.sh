@@ -30,9 +30,12 @@
 #                        bin/go sha256 must equal GO_TOOLCHAIN_BIN_GO_SHA256
 #                        (packaging/go-toolchain.env). Without --go-root the
 #                        pinned tarball is downloaded and sha256-verified.
-#   --pkg-version <v>    TEST builds only: override PKG_VERSION (e.g.
-#                        0.2.9-test) so a local run does not look like the
-#                        release artifact. Recorded in the manifest.
+#   --pkg-version <v>    override PKG_VERSION (release builds: normally left at
+#                        the committed value). Digits and dots only — apk
+#                        mkpkg rejects suffixes like `-test`, so a TEST build
+#                        must use --pkg-release instead.
+#   --pkg-release <n>    override PKG_RELEASE (e.g. 99 for a clearly-labelled
+#                        local test build: version 0.2.9-r99 instead of r1)
 #   --pkg-source-version <sha>  override PKG_SOURCE_VERSION (TEST builds of
 #                        a tree whose pin is not the commit being tested).
 #   --mirror-hash <sha256>      expected PKG_MIRROR_HASH; when omitted it is
@@ -50,7 +53,7 @@
 # disk watchdog trip. It never publishes, signs or tags anything.
 #
 # Usage (two independent builds, then compare):
-#   scripts/build-apk-release.sh --commit HEAD --pkg-version 0.2.9-test \
+#   scripts/build-apk-release.sh --commit HEAD --pkg-release 99 \
 #     --go-root /data/toolchain/go1.27.4 --label A --out /data/v029-build/out \
 #     --work /data/v029-build/wA
 #   ... --label B --work /data/v029-build/wB
@@ -68,6 +71,7 @@ COMMIT="HEAD"
 SDK_IMAGE=""
 GO_ROOT=""
 PKG_VERSION_OVERRIDE=""
+PKG_RELEASE_OVERRIDE=""
 PKG_SOURCE_OVERRIDE=""
 MIRROR_HASH=""
 OUT=""
@@ -91,6 +95,7 @@ while [ $# -gt 0 ]; do
     --sdk-image) SDK_IMAGE="${2:?}"; shift 2 ;;
     --go-root) GO_ROOT="${2:?}"; shift 2 ;;
     --pkg-version) PKG_VERSION_OVERRIDE="${2:?}"; shift 2 ;;
+    --pkg-release) PKG_RELEASE_OVERRIDE="${2:?}"; shift 2 ;;
     --pkg-source-version) PKG_SOURCE_OVERRIDE="${2:?}"; shift 2 ;;
     --mirror-hash) MIRROR_HASH="${2:?}"; shift 2 ;;
     --out) OUT="${2:?}"; shift 2 ;;
@@ -215,11 +220,19 @@ PY
     '. + [{key:$k, value:$v, rule:("s/^" + $k + ":=.*/" + $k + ":=" + $v + "/")}]' <<<"$SUBS_JSON")"
 }
 [ -n "$PKG_VERSION_OVERRIDE" ] && subst PKG_VERSION "$PKG_VERSION_OVERRIDE"
+[ -n "$PKG_RELEASE_OVERRIDE" ] && subst PKG_RELEASE "$PKG_RELEASE_OVERRIDE"
 [ -n "$PKG_SOURCE_OVERRIDE" ] && subst PKG_SOURCE_VERSION "$PKG_SOURCE_OVERRIDE"
 
 pkg_var() { sed -nE "s/^PKG_$1[[:space:]]*:=?[[:space:]]*(.*)/\1/p" "$MAKEFILE" | head -n1; }
 PKG_VERSION="$(pkg_var VERSION)"
 PKG_RELEASE="$(pkg_var RELEASE)"
+# apk mkpkg rejects an upstream version with a free-form suffix
+# ("package version is invalid" for 0.2.9-test): an apk version is
+# <digits[.digits]*-r<integer>]. Fail closed HERE, before the container
+# work, instead of after the dependency closure has been built.
+[[ "$PKG_VERSION" =~ ^[0-9]+(\.[0-9]+)*$ ]] \
+  || die "PKG_VERSION '$PKG_VERSION' is not a valid apk version (digits and dots only; apk mkpkg rejects '-test'-style suffixes — use --pkg-release <n> to mark a test build)"
+[[ "$PKG_RELEASE" =~ ^[0-9]+$ ]] || die "PKG_RELEASE '$PKG_RELEASE' must be an integer"
 PKG_SOURCE_VERSION="$(pkg_var SOURCE_VERSION)"
 PKG_SOURCE_RESOLVED="$(git -C "$ROOT" rev-parse --verify --quiet "$PKG_SOURCE_VERSION^{commit}")" \
   || die "PKG_SOURCE_VERSION $PKG_SOURCE_VERSION is not a commit in this repo"
