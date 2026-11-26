@@ -100,3 +100,29 @@ Trạng thái và lịch sử đáng chú ý của GoShiSen-Enforce. Chi tiết 
   bại nhanh với `ENV: metrics listener unreachable` khi snapshot không
   lấy được metrics, thay vì thông báo gây hiểu lầm "no daemon DROP
   verdicts recorded". Kiểm thử: `TestProvisionLabMetricsPort`.
+
+## Chưa phát hành (sau v0.2.8)
+
+- **Hai cổng S-005 govulncheck đã "fail open" khi bản quét hỏng (bản sửa bảo mật):**
+  cả hai cổng trên đường ký — `scripts/check-apk-payload-govuln.sh` và
+  `scripts/check-cli-archive-govuln.sh` — mang bản sao của cùng logic phán quyết,
+  và bản sao đó có thể in `S-005-…-GOVULN-GATE-PASS` cho một bản quét đã phát
+  hiện lỗ hổng hoặc chưa hề hoàn tất. Đo trên các script trước khi sửa với
+  `govulncheck` giả lập: exit 3 với luồng rỗng, exit 3 với một mục finding không
+  mang OSV id, và exit 137 (SIGKILL) đều PASS, tất cả đều được báo là "findings
+  are allowlisted", vì phép so khớp allowlist chạy `"${findings[@]:-}"` với
+  `"${allowed[@]:-}"` — trên mảng RỖNG, biểu thức này mở rộng thành một từ rỗng,
+  nên `[ "" = "" ]` khớp. Cả hai cổng nay dùng chung một bản cài đặt,
+  `scripts/lib/govuln-verdict.sh`, phán quyết dựa trên luồng đã phân tích chứ
+  không dựa vào rc: luồng không phân tích được hoặc rỗng, mục finding không có
+  OSV id, finding không nằm trong `packaging/govulncheck-allowlist.txt`,
+  `govulncheck` thiếu hoặc không thực thi được, và mọi mã thoát khác 0/3 đều làm
+  cổng thất bại; findings được in dù cổng đạt hay không đạt. Mã dùng chung cũng
+  bỏ giả định rằng `-mode=binary -format json` thoát với mã 3 khi phát hiện lỗ
+  hổng — govulncheck ghi rõ là thoát 0 trong trường hợp đó
+  (`cmd/govulncheck/doc.go`, v1.9.0) và thực tế thoát 0, nên findings đến với
+  rc 0. Bao phủ hồi quy: ma trận kết quả với tool giả lập trong
+  `tests/ci/check-apk-payload-govuln-test.sh` (rc 0/3 × luồng sạch / không nằm
+  allowlist / nằm allowlist / không có OSV id / rỗng / không phân tích được, cùng
+  tool thiếu và tool không thực thi được) và các fixture dùng tool thật trong cả
+  hai test cổng. Không artifact nào đã phát hành thay đổi — chỉ cổng và CI.

@@ -169,3 +169,32 @@ Status and notable history for GoShiSen-Enforce. Per-release detail lives in `do
   `ENV: metrics listener unreachable` when a snapshot cannot fetch
   metrics, instead of the misleading "no daemon DROP verdicts recorded".
   Guard: `TestProvisionLabMetricsPort`.
+
+## Unreleased (after v0.2.8)
+
+- **S-005 govulncheck gates failed OPEN on a broken scan (security fix):**
+  both signing-path gates — `scripts/check-apk-payload-govuln.sh` and
+  `scripts/check-cli-archive-govuln.sh` — carried a copy of the same
+  verdict code, and that copy could print
+  `S-005-…-GOVULN-GATE-PASS` for a scan that found vulnerabilities or
+  never completed. Measured against the pre-fix scripts with a stubbed
+  `govulncheck`: exit 3 with an empty stream, exit 3 with a finding
+  entry that carried no OSV id, and exit 137 (SIGKILL) all PASSed, each
+  reported as "findings are allowlisted", because the allowlist
+  comparison ran `"${findings[@]:-}"` against `"${allowed[@]:-}"` — over
+  an EMPTY array that expands to one empty word, so `[ "" = "" ]`
+  matched. Both gates now source one implementation,
+  `scripts/lib/govuln-verdict.sh`, which keys the verdict off the parsed
+  stream rather than off rc: an unparsable or empty stream, a finding
+  entry with no OSV id, a finding that is not on
+  `packaging/govulncheck-allowlist.txt`, a missing or non-executable
+  `govulncheck`, and any exit code other than 0/3 all fail the gate;
+  findings are printed whether it passes or fails. The shared code also
+  drops the assumption that `-mode=binary -format json` exits 3 when it
+  finds vulnerabilities — govulncheck documents exit 0 in that case
+  (`cmd/govulncheck/doc.go`, v1.9.0) and exits 0, so findings arrive on
+  rc 0. Regression coverage: the stub outcome matrix in
+  `tests/ci/check-apk-payload-govuln-test.sh` (rc 0/3 × clean /
+  unlisted / allowlisted / no-OSV-id / empty / unparsable, plus missing
+  and non-executable tool) together with the real-tool fixtures in both
+  gate tests. No released artifact changes — gates and CI only.
