@@ -24,6 +24,11 @@ trap 'rm -rf "$TMP"' EXIT
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
+# Shared clean-stream assertion (one implementation for both gate tests):
+# fixture 1's PASS must come from a real, fully decoded scan, not from an
+# object-less or finding-less stream.
+. "$(dirname "$0")/lib/govuln-clean-stream.sh"
+
 command -v govulncheck >/dev/null 2>&1 || fail "govulncheck not installed (needed for S-005 payload gate tests)"
 command -v python3 >/dev/null 2>&1 || fail "python3 not installed (needed for S-005 payload gate tests)"
 
@@ -38,6 +43,8 @@ cp "$TMP/goodbin" "$TMP/good/usr/sbin/goshisen"
 if ! bash "$GATE" "$TMP/good.apk" --allowlist "$ALLOW" >/dev/null 2>&1; then
   fail "current-toolchain payload was REJECTED"
 fi
+assert_clean_govuln_stream "$TMP/goodbin" "current-toolchain payload" \
+  || fail "the clean payload's govulncheck stream does not prove a real scan"
 
 # ---------------------------------------------------------------------------
 # Fixture 2: go1.27.1 payload (must fail; this is the S-005 finding)
