@@ -197,4 +197,9 @@ Status and notable history for GoShiSen-Enforce. Per-release detail lives in `do
   `tests/ci/check-apk-payload-govuln-test.sh` (rc 0/3 × clean /
   unlisted / allowlisted / no-OSV-id / empty / unparsable, plus missing
   and non-executable tool) together with the real-tool fixtures in both
-  gate tests. No released artifact changes — gates and CI only.
+  gate tests; each fixture 1 now also asserts the clean control's stream
+  shape — at least one `osv` record and zero `finding` records, via
+  `tests/ci/lib/govuln-clean-stream.sh` — so the control passes for the
+  right reason, and the CLI gate's fixtures run in CI as the
+  `cli-archive-govuln-gate (S-005)` job (they were unrun in CI before).
+  No released artifact changes — gates and CI only.

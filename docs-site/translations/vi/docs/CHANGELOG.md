@@ -125,4 +125,9 @@ Trạng thái và lịch sử đáng chú ý của GoShiSen-Enforce. Chi tiết 
   `tests/ci/check-apk-payload-govuln-test.sh` (rc 0/3 × luồng sạch / không nằm
   allowlist / nằm allowlist / không có OSV id / rỗng / không phân tích được, cùng
   tool thiếu và tool không thực thi được) và các fixture dùng tool thật trong cả
-  hai test cổng. Không artifact nào đã phát hành thay đổi — chỉ cổng và CI.
+  hai test cổng; fixture 1 ở cả hai test nay còn khẳng định hình dạng luồng của
+  đối chứng sạch — có ít nhất một bản ghi `osv` và không có bản ghi `finding`
+  nào, qua `tests/ci/lib/govuln-clean-stream.sh` — nên đối chứng đạt vì đúng lý
+  do, và các fixture của cổng CLI chạy trong CI với tên job
+  `cli-archive-govuln-gate (S-005)` (trước đây không chạy trong CI). Không
+  artifact nào đã phát hành thay đổi — chỉ cổng và CI.
