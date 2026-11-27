@@ -196,10 +196,26 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Install jq (manifest fixtures parse and mutate JSON)
+        with:
+          # The checker requires the Makefile's PKG_SOURCE_VERSION pin to be a
+          # commit in the checkout, so actions/checkout's default depth of 1
+          # fails the fixtures with
+          # "FAIL: pkg.source_version <sha> is not a commit in <repo>";
+          # reproduced with `git clone --depth 1` (one-commit history).
+          fetch-depth: 0
+      - name: Install jq and patch(1) (fixtures mutate JSON, replay with patch)
+        # The fixtures generator replays the recipe with patch(1)+sed(1) on
+        # purpose (not the checker's git apply+python), so the test's first
+        # check is for patch(1) and it exits 1 without it. The ubuntu-24.04
+        # runner image ships none: `patch` is absent from its published apt
+        # package list between `parallel` and `patchelf`, and the base
+        # ubuntu:24.04 image has none either. `patch` is in noble `main`
+        # (2.7.6-7build3), so no extra apt source is needed. jq is preinstalled
+        # on the runner but is installed explicitly so its version cannot
+        # drift silently.
         run: |
           sudo apt-get $APT_BOUNDED update
-          sudo apt-get $APT_BOUNDED install -y --no-install-recommends jq
+          sudo apt-get $APT_BOUNDED install -y --no-install-recommends jq patch
       - name: Build-manifest fixtures must fail closed for the right reason
         run: bash tests/ci/apk-build-manifest-test.sh
 
