@@ -146,6 +146,27 @@ jobs:
           export PATH="$(go env GOPATH)/bin:$PATH"
           bash tests/ci/check-apk-payload-govuln-test.sh
 
+  cli-archive-govuln-gate:
+    # S-005 regression gate: the CLI/daemon release archives must pass
+    # govulncheck binary-mode with an empty (or explicitly reviewed)
+    # allowlist. release.yml runs the gate on the real archives before
+    # signing; this job keeps the gate, its fixtures and the clean-stream
+    # shape assertion from regressing.
+    name: cli-archive-govuln-gate (S-005)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: "1.27.4"
+          cache: true
+      - name: Install govulncheck (pinned, reviewed)
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+      - name: govulncheck CLI-archive gate fixtures must fail closed
+        run: |
+          export PATH="$(go env GOPATH)/bin:$PATH"
+          bash tests/ci/check-cli-archive-govuln-test.sh
+
   check-backup-key:
     # F-02 (issue #100): the offline check the maintainer runs on a personal
     # machine before re-setting GH_RELEASE_SIGNING_KEY must keep working and

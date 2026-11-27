@@ -20,6 +20,11 @@ trap 'rm -rf "$TMP"' EXIT
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
+# Shared clean-stream assertion (one implementation for both gate tests):
+# fixture 1's PASS must come from a real, fully decoded scan, not from an
+# object-less or finding-less stream.
+. "$(dirname "$0")/lib/govuln-clean-stream.sh"
+
 command -v govulncheck >/dev/null 2>&1 || fail "govulncheck not installed (needed for S-005 CLI gate tests)"
 command -v jq >/dev/null 2>&1 || fail "jq not installed (needed for S-005 CLI gate tests)"
 
@@ -34,6 +39,8 @@ cp "$TMP/goodbin" "$TMP/good/goshisen-linux-amd64/goshisen"
 if ! bash "$GATE" "$TMP/good.tar.gz" --allowlist "$ALLOW" >/dev/null 2>&1; then
   fail "current-toolchain CLI archive was REJECTED"
 fi
+assert_clean_govuln_stream "$TMP/goodbin" "current-toolchain CLI archive" \
+  || fail "the clean archive's govulncheck stream does not prove a real scan"
 
 # ---------------------------------------------------------------------------
 # Fixture 2: go1.25.14 binary (must fail; this is the S-005 CLI finding)

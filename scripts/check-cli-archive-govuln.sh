@@ -12,10 +12,16 @@
 # entry requires maintainer review).
 #
 # Usage: bash scripts/check-cli-archive-govuln.sh <archive.tar.gz> [--allowlist path]
-#   exit 0: no reachable vulnerabilities, or only allowlisted ones
-#           (allowlisted findings are reported on stdout)
-#   exit 1: archive missing/unreadable, govulncheck failed, or
-#           un-allowlisted reachable findings exist
+#   exit 0: a fully parsed, non-empty stream with no reachable finding, or
+#           with findings that are ALL on the reviewed allowlist (findings are
+#           reported on stdout either way)
+#   exit 1: archive/binary missing/unreadable/empty, govulncheck missing or not
+#           executable, stream unparsable or empty, a finding entry with no
+#           OSV id, an un-allowlisted finding, or an exit code other than 0/3.
+#           (Verdicts are decided by scripts/lib/govuln-verdict.sh, shared with
+#           the apk payload gate. Note that `-format json` always exits 0, so
+#           findings normally arrive on rc 0 — the verdict keys off the parsed
+#           stream, not off rc.)
 set -euo pipefail
 
 archive="${1:?usage: check-cli-archive-govuln.sh <archive.tar.gz> [--allowlist path]}"
@@ -26,8 +32,14 @@ fi
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
-command -v govulncheck >/dev/null 2>&1 || fail "'govulncheck' not found (install golang.org/x/vuln/cmd/govulncheck, pinned version; see ci.yml)"
-command -v jq >/dev/null 2>&1 || fail "'jq' not found (required to parse govulncheck JSON)"
+# Shared verdict logic (one implementation for both S-005 govuln gates):
+# scripts/lib/govuln-verdict.sh. It fails closed on every non-clean outcome.
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=lib/govuln-verdict.sh
+. "$ROOT_DIR/scripts/lib/govuln-verdict.sh"
+
+command -v python3 >/dev/null 2>&1 || fail "'python3' not found (required to parse govulncheck output)"
+govuln_require_tool || exit 1
 
 [ -f "$archive" ] || fail "archive '$archive' not found"
 
@@ -37,47 +49,21 @@ trap 'rm -rf "$tmp"' EXIT
 tar -xzf "$archive" -C "$tmp" || fail "cannot extract '$archive'"
 bin="$(find "$tmp" -type f -name goshisen | head -1)"
 [ -n "$bin" ] && [ -f "$bin" ] || fail "no goshisen binary in '$archive'"
+[ -r "$bin" ] || fail "binary '$bin' is not readable"
+[ -s "$bin" ] || fail "binary '$bin' is empty"
 
-# Binary-mode scan; JSON output is a newline-delimited stream.
-# govulncheck exit codes: 0 = no vulns, 3 = vulns found, anything
-# else = scan failure (fail closed).
+# Binary-mode scan. The verdict rule set lives in scripts/lib/govuln-verdict.sh
+# and fails closed: an unparsable or empty stream, a finding entry without an
+# OSV id, any un-allowlisted finding, and any exit code other than 0/3 all fail
+# the gate. govulncheck exits 0 under `-format json` even when it found
+# vulnerabilities, so the stream — not rc — carries the findings.
 set +e
 govulncheck -mode=binary -format json "$bin" >"$tmp/govuln.jsonl" 2>"$tmp/govuln.err"
 rc=$?
 set -e
-[ "$rc" -ne 1 ] || fail "govulncheck could not read the binary's Go buildinfo: $(head -1 "$tmp/govuln.err")"
 
-if [ -s "$tmp/govuln.jsonl" ]; then
-  mapfile -t findings < <(jq -r 'select(has("finding")) | .finding.osv' "$tmp/govuln.jsonl" 2>/dev/null | sort -u || true)
-else
-  findings=()
-fi
-
-if [ -f "$allowlist" ]; then
-  mapfile -t allowed < <(sed -E 's/[[:space:]]*#.*$//' "$allowlist" | grep -oE 'GO-[0-9]+-[0-9]+' | sort -u || true)
-else
-  allowed=()
-fi
-
-blocked=()
-for f in "${findings[@]:-}"; do
-  keep=1
-  for a in "${allowed[@]:-}"; do
-    if [ "$f" = "$a" ]; then keep=0; break; fi
-  done
-  if [ "$keep" = 1 ]; then blocked+=("$f"); fi
-done
-
-if [ "$rc" = 0 ] && [ "${#findings[@]}" = 0 ]; then
-  echo "OK: govulncheck binary-mode found no reachable vulnerabilities in $(basename "$archive")"
-elif [ "${#blocked[@]}" = 0 ]; then
-  echo "OK: govulncheck binary-mode findings are allowlisted in $allowlist:"
-  printf '  %s\n' "${findings[@]:-}"
-else
-  echo "FAIL: govulncheck binary-mode found reachable vulnerabilities NOT allowlisted in $(basename "$archive"):"
-  printf '  %s\n' "${blocked[@]:-}"
-  echo "(allowlist: $allowlist; findings IDs are GO-<year>-<n>, see pkg.go.dev/vuln/<id>)"
-  exit 1
-fi
+govuln_parse_stream "$tmp/govuln.jsonl" "$tmp/parse.txt" \
+  || fail "cannot parse the govulncheck output for '$archive' (python3 did not run)"
+govuln_verdict "$rc" "$tmp/parse.txt" "$allowlist" "$(basename "$archive")" "$tmp/govuln.err" || exit 1
 
 echo "S-005-CLI-ARCHIVE-GOVULN-GATE-PASS"
