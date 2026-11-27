@@ -495,6 +495,11 @@
   "title": "GoShiSen-Enforce v0.2.8 — Release Notes"
  },
  {
+  "slug": "docs-release-v0.2.9-apk-build-recipe",
+  "path": "../docs/release/v0.2.9-apk-build-recipe.md",
+  "title": "v0.2.9 apk build recipe — reconstruction of v0.2.8 and the committed recipe"
+ },
+ {
   "slug": "docs-release-v0.2.9-notes-draft",
   "path": "../docs/release/v0.2.9-notes-draft.md",
   "title": "GoShiSen-Enforce v0.2.9 — Release Notes (DRAFT)"

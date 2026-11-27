@@ -131,3 +131,32 @@ Trạng thái và lịch sử đáng chú ý của GoShiSen-Enforce. Chi tiết 
   do, và các fixture của cổng CLI chạy trong CI với tên job
   `cli-archive-govuln-gate (S-005)` (trước đây không chạy trong CI). Không
   artifact nào đã phát hành thay đổi — chỉ cổng và CI.
+- **Recipe dựng apk đã được commit và artifact được gắn với nó bằng manifest
+  (#146):** các apk v0.2.6–v0.2.8 được dựng từ một bản sao recipe *cục bộ, chưa
+  commit* (tắt phụ thuộc `golang/host` của SDK và mount toolchain go1.27.4 chính
+  thức), nên không ai khác tái lập được.
+  `packaging/apk-build/no-golang-host.patch` là thay đổi recipe duy nhất đó dưới
+  dạng patch đã commit, `packaging/apk-build/sdk-x86_64.config` là mảnh config
+  SDK dùng cho apk v0.2.8 đã công bố, và `packaging/go-toolchain.env` ghim
+  `GO_TOOLCHAIN_*` (sha256 của tarball go1.27.4 và `bin/go`).
+  `scripts/build-apk-release.sh` dựng gói chưa ký chỉ từ đầu vào đã commit: nó
+  `git archive` theo `--commit`, áp overlay lên bản sao scratch (không bao giờ
+  lên `openwrt/Makefile` trong cây làm việc), tự suy ra hoặc kiểm tra
+  `PKG_MIRROR_HASH`, dùng digest SDK ghim trong `apk-sign.yml`, kiểm tra hash
+  tarball/`bin/go` của Go, khẳng định gói chưa ký ngay trong container
+  (`apk verify` → `UNTRUSTED signature`), và ghi `build-manifest-<label>.json`.
+  `scripts/check-apk-build-manifest.sh` tái suy ra mọi khẳng định trong manifest
+  từ commit — hash recipe, overlay và config SDK, replay recipe tới hash Makefile
+  đã ghi, quan hệ tổ tiên của pin, ghim Go và SDK, hash artifact, trạng thái
+  chưa ký, và (với `--compare`) sự đồng thuận A/B.
+  `scripts/release-pin-gate.sh` có thêm bước 9 tùy chọn (`--manifest` /
+  `GATE_MANIFEST`) để một bản phát hành có thể bắt buộc bước này, và CI chạy
+  `tests/ci/apk-build-manifest-test.sh` (fixture sinh tự động; mọi ca âm đều bị
+  từ chối với lý do được nêu tên) với tên job `apk-build-manifest-gate (F-01)`.
+  Đã xác minh trước khi merge: hai bản dựng độc lập trên cùng một commit cho
+  hash apk (`fa3b9530...`, 3.286.016 B) và payload (`ba8183b1...`) giống nhau,
+  và chính script đó dựng lại đầu vào v0.2.8 tái tạo apk trước khi ký đã công bố
+  `b97f0da4...` giống hệt từng byte. Đây không phải bản dựng SDK nguyên sạch
+  (toolchain Go nằm ngoài cây SDK) và mirror hash phụ thuộc toolchain —
+  `docs/release/v0.2.9-apk-build-recipe.md` ghi lại các lần chạy và những giới
+  hạn đó. Không thay đổi mã runtime; chỉ đóng gói, CI và tài liệu.
