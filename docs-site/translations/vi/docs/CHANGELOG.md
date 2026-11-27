@@ -2,10 +2,63 @@
 
 Trạng thái và lịch sử đáng chú ý của GoShiSen-Enforce. Chi tiết theo từng bản phát hành nằm trong `docs/release/` (vd: `v0.2.6-notes.md`, `proposal-next-version-scope.md`).
 
-## Trạng thái phát hành (ảnh chụp, 2026-11-22)
+## Trạng thái phát hành (ảnh chụp, 2026-11-27)
 
-- **v0.2.8** — bản phát hành mới nhất (đã công bố 2026-11-22): bản phát hành bảo mật/làm cứng — đọc file có giới hạn ở mọi chỗ đọc đầu vào của người vận hành, policy store riêng tư (0700/0600) với listener metrics có giới hạn thời gian, UCI `api_token` được ghi 0600, các tùy chọn yêu cầu xác thực khi đọc (D1), cân bằng lại govulncheck (D2). Ghi chú: `docs/release/v0.2.8-notes.md`; asset: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.8).
-- **v0.2.7** — bản phát hành trước (đã công bố 2026-11-21): bản phát hành làm cứng — ngữ nghĩa port-zero (khoảng trống tài liệu v0.2.6), bảo vệ vòng lặp `api_host`, làm cứng phương thức metrics, sửa tài liệu listener-defaults. Ghi chú phát hành và asset: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.7).
+- **v0.2.9** — bản phát hành mới nhất (đã công bố 2026-11-27): bản phát hành về kỹ thuật phát hành / làm cứng CI với **không thay đổi runtime** (CLI hoạt động y hệt v0.2.8): cổng phê duyệt F-02 cho job `sign`, harness e2e OpenWrt được làm cứng, các bước mạng trong CI có giới hạn, gate S-005 govulncheck fail-closed, công thức build apk được đưa vào repo kèm gate build manifest, và PR pin sau tag + neo recipe ở bước 9. Ghi chú: `docs/release/v0.2.9-notes.md`; asset: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.9).
+- **v0.2.8** — bản phát hành trước (đã công bố 2026-11-22): bản phát hành bảo mật/làm cứng — đọc file có giới hạn ở mọi chỗ đọc đầu vào của người vận hành, policy store riêng tư (0700/0600) với listener metrics có giới hạn thời gian, UCI `api_token` được ghi 0600, các tùy chọn yêu cầu xác thực khi đọc (D1), cân bằng lại govulncheck (D2). Ghi chú: `docs/release/v0.2.8-notes.md`; asset: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.8).
+
+## v0.2.9 (đã công bố 2026-11-27)
+
+Bản phát hành về kỹ thuật phát hành và làm cứng CI. **Không có thay đổi mã daemon
+kể từ v0.2.8** (`git diff 'v0.2.8^{}'..'v0.2.9^{}' -- '*.go' internal cmd go.mod
+go.sum` rỗng): CLI không đổi và payload apk chỉ khác ở dấu phiên bản nhúng trong
+binary. Chi tiết: `docs/release/v0.2.9-notes.md`.
+
+- **F-02 (#132):** job `sign` trong `release.yml` khai báo `environment: signing`
+  (có required reviewer, policy `main`/`v*`), nên một bản phát hành theo tag sẽ
+  dừng chờ phê duyệt trước khi đọc `GH_RELEASE_SIGNING_KEY`; guard rule mới
+  `environment-scoped` cùng fixture âm `bad-sign-no-environment.yml` làm CI fail
+  nếu một job `sign` mất cổng; environment `release-cli` thừa đã bị xóa. Bản
+  thân **key CLI vẫn ở repo scope** — cổng bảo vệ job, không bảo vệ key
+  (`gh secret list --env signing` chỉ có `GH_RELEASE_APK_SIGNING_KEY`); các bước
+  còn lại trong `docs/release/f02-environment-migration.md` §0/§3.
+- **Harness e2e OpenWrt (#134):** lab khởi động daemon tường minh khi `rc.local`
+  thua cuộc đua lúc boot (kiểm tra readiness theo proc trước, fallback `setsid`,
+  thăm dò lại 120 giây) và thu thập chẩn đoán *trước* `lab down`.
+- **Các bước mạng trong CI có giới hạn (#135):** `CURL_BOUNDED`/`APT_BOUNDED` +
+  timeout cho từng job; đo được: `sign + verify` 37m16s → 46–58 giây,
+  `integration` hơn 50 phút → khoảng 3 phút.
+- **Gate S-005 govulncheck fail-closed (#137):** `-format json` trả mã 0 dù có
+  phát hiện, nên gate cũ có thể cho qua một lượt quét hỏng hoặc có lỗ hổng
+  (stream rỗng bị coi là sạch, `${arr[@]:-}` khớp với một mục allowlist rỗng).
+  Hai gate nay dùng chung `scripts/lib/govuln-verdict.sh` và fail khi mã trả về
+  bất thường, stream không phân tích được/rỗng, phát hiện không có `osv`, hoặc
+  phát hiện không nằm trong allowlist; thêm job CI chạy fixture cho CLI archive.
+  Các artifact đã công bố v0.2.6–v0.2.8 được quét lại thô bằng
+  `govulncheck -mode=binary` (9 artifact, 0 bản ghi finding) — **không có gì bị
+  che giấu**.
+- **Công thức build apk được đưa vào repo + gate manifest (#146), pin sau tag
+  (#148), neo recipe ở bước 9 (#149):** `scripts/build-apk-release.sh` build apk
+  chưa ký chỉ từ đầu vào đã commit (SDK ghim theo digest đọc từ `apk-sign.yml`,
+  go1.27.4 ghim sha256, mirror hash dẫn xuất bằng hai lượt zero-hash) và ghi
+  `build-manifest-<label>.json`; `scripts/check-apk-build-manifest.sh` dẫn xuất
+  lại manifest, bước 9 của `release-pin-gate.sh` neo recipe vào tag (cách nối cũ
+  từ chối luồng pin-commit đã tài liệu hóa; fixture nay bao phủ `F != T` cùng
+  hai ca âm về trôi recipe sau tag).
+- **Artifact (20):** apk `goshisen-0.2.9-r1.apk`
+  `1604a6802de6784b769075a98f437b2a6ea8375e1266f79221acd48d3102dfd7` được ký bằng
+  anchor EC P-256 (fingerprint `542bb7ae…`; payload `ba8183b1…`, go1.27.4); CLI
+  `b6c5b8cd…` (amd64) / `50c0892e…` (arm64) / sbom `c25f868a…`. Apk cố ý không
+  nằm trong `checksums.txt` (miền khóa riêng) — `scripts/verify-release-assets.sh`
+  kiểm toàn bộ bộ asset và fail-closed với apk chưa ký.
+- **Kiểm chứng trên VM:** cài apk đã ký không dùng `--allow-untrusted`, queue
+  100/101, cặp kiểm soát DROP/ACCEPT và dọn dẹp `apk del` đều PASS; nâng cấp
+  v0.2.8 → v0.2.9 dưới thăm dò liên tục cho thấy **khoảng trống fail-closed ~0,4
+  giây** lúc restart (hook vẫn được giữ trong khi queue gắn lại — kết nối mới bị
+  drop, không có gói nào được chấp nhận trái policy).
+- **Giới hạn đã biết:** tag phát hành là annotated nhưng chưa ký; `main` và các
+  tag không có bảo vệ (ruleset rỗng); PR #150 (readiness cho test NAT) đang mở và
+  chỉ sửa test.
 
 ## v0.2.8 (đã công bố 2026-11-22)
 

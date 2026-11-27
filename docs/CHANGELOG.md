@@ -2,10 +2,64 @@
 
 Status and notable history for GoShiSen-Enforce. Per-release detail lives in `docs/release/` (e.g. `v0.2.6-notes.md`, `proposal-next-version-scope.md`).
 
-## Release status (snapshot, 2026-11-22)
+## Release status (snapshot, 2026-11-27)
 
-- **v0.2.8** — latest release (published 2026-11-22): security/hardening release — bounded file reads everywhere operator input is read, private policy store (0700/0600) with bounded metrics listener, OpenWrt `api_token` written 0600, authenticated-read opt-ins (D1), govulncheck re-balanced (D2). Notes: [`docs/release/v0.2.8-notes.md`](release/v0.2.8-notes.md); assets: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.8).
-- **v0.2.7** — previous release (published 2026-11-21): hardening release — port-zero semantics (v0.2.6 docs-gap), `api_host` loopback guard, metrics method hardening, listener-defaults docs correction. Release notes and assets: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.7).
+- **v0.2.9** — latest release (published 2026-11-27): release-engineering / CI-hardening release with **no runtime change** (the CLI behaves exactly as v0.2.8): F-02 approval gate on the `sign` job, hardened OpenWrt e2e harness, bounded CI network steps, fail-closed S-005 govulncheck gates, the codified apk build recipe + build manifest gate, and the post-tag pin + step-9 recipe anchor. Notes: [`docs/release/v0.2.9-notes.md`](release/v0.2.9-notes.md); assets: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.9).
+- **v0.2.8** — previous release (published 2026-11-22): security/hardening release — bounded file reads everywhere operator input is read, private policy store (0700/0600) with bounded metrics listener, OpenWrt `api_token` written 0600, authenticated-read opt-ins (D1), govulncheck re-balanced (D2). Notes: [`docs/release/v0.2.8-notes.md`](release/v0.2.8-notes.md); assets: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.8).
+
+## v0.2.9 (published 2026-11-27)
+
+Release-engineering and CI-hardening release. **No daemon code change since
+v0.2.8** (`git diff 'v0.2.8^{}'..'v0.2.9^{}' -- '*.go' internal cmd go.mod
+go.sum` empty): the CLI is unchanged and the apk payload differs only in the
+embedded version stamp. Detail: [`docs/release/v0.2.9-notes.md`](release/v0.2.9-notes.md).
+
+- **F-02 (#132):** `release.yml`'s `sign` job declares `environment: signing`
+  (required reviewer, `main`/`v*` policies), so a tag release pauses for
+  approval before `GH_RELEASE_SIGNING_KEY` is read; new guard rule
+  `environment-scoped` + `bad-sign-no-environment.yml` negative fixture fail CI
+  if a `sign` job loses the gate; the stray `release-cli` environment was
+  deleted. The CLI key itself is **still repository-scoped** — the gate protects
+  the job, not the key (`gh secret list --env signing` holds only
+  `GH_RELEASE_APK_SIGNING_KEY`); remaining steps in
+  `docs/release/f02-environment-migration.md` §0/§3.
+- **OpenWrt e2e harness (#134):** the lab starts the daemon explicitly when
+  `rc.local` loses the boot race (proc-first readiness, `setsid` fallback, 120 s
+  re-poll) and collects diagnostics *before* `lab down`.
+- **Bounded CI network steps (#135):** `CURL_BOUNDED`/`APT_BOUNDED` + job
+  timeouts; measured `sign + verify` 37m16s → 46–58 s, `integration` 50+ min →
+  ~3 min.
+- **S-005 govulncheck gates fail closed (#137):** `-format json` exits 0 with
+  findings, so the old gates could pass a broken or vulnerable scan (empty
+  stream treated as clean, `${arr[@]:-}` matching an empty allowlist entry).
+  The gates now share `scripts/lib/govuln-verdict.sh` and fail on a bad rc, an
+  unparsable/empty stream, a finding without an `osv` id, or an unallowlisted
+  finding; a new CI job runs the CLI-archive fixtures. Published v0.2.6–v0.2.8
+  artifacts re-audited with raw `govulncheck -mode=binary` (9 artifacts, 0
+  finding records) — **nothing was masked**.
+- **Codified apk build + manifest gate (#146), post-tag pin (#148), step-9
+  recipe anchor (#149):** `scripts/build-apk-release.sh` builds the unsigned apk
+  from committed inputs only (digest-pinned SDK read from `apk-sign.yml`,
+  sha256-pinned go1.27.4, zero-hash two-pass mirror hash) and writes
+  `build-manifest-<label>.json`; `scripts/check-apk-build-manifest.sh`
+  re-derives it, `release-pin-gate.sh` step 9 anchors the recipe to the tag (the
+  previous wiring rejected the documented pin-commit flow; fixture now covers
+  `F != T` plus two post-tag drift negatives).
+- **Artifacts (20):** apk `goshisen-0.2.9-r1.apk`
+  `1604a6802de6784b769075a98f437b2a6ea8375e1266f79221acd48d3102dfd7` signed with
+  the EC P-256 anchor (fingerprint `542bb7ae…`; payload `ba8183b1…`, go1.27.4);
+  CLI `b6c5b8cd…` (amd64) / `50c0892e…` (arm64) / sbom `c25f868a…`. The apk is
+  intentionally not in `checksums.txt` (separate key domain) —
+  `scripts/verify-release-assets.sh` verifies the whole set and fails closed on
+  the unsigned apk.
+- **VM verification:** signed install with no `--allow-untrusted`, queues
+  100/101, paired DROP/ACCEPT controls and `apk del` cleanup PASS; the
+  v0.2.8 → v0.2.9 upgrade under continuous probes shows a **~0.4 s fail-closed
+  gap** during the restart (hook stays installed while the queue rebinds — new
+  connections dropped, nothing accepted that the policy would deny).
+- **Known limitations:** release tags are annotated but unsigned; `main` and the
+  tags have no protection (rulesets empty); PR #150 (NAT test readiness) is open
+  and touches tests only.
 
 ## v0.2.8 (published 2026-11-22)
 

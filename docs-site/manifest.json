@@ -505,6 +505,11 @@
   "title": "GoShiSen-Enforce v0.2.9 — Release Notes (DRAFT)"
  },
  {
+  "slug": "docs-release-v0.2.9-notes",
+  "path": "../docs/release/v0.2.9-notes.md",
+  "title": "GoShiSen-Enforce v0.2.9 — Release Notes"
+ },
+ {
   "slug": "docs-release-v023-release-evidence",
   "path": "../docs/release/v023-release-evidence.md",
   "title": "v0.2.3 release execution evidence"
