@@ -203,3 +203,36 @@ Status and notable history for GoShiSen-Enforce. Per-release detail lives in `do
   right reason, and the CLI gate's fixtures run in CI as the
   `cli-archive-govuln-gate (S-005)` job (they were unrun in CI before).
   No released artifact changes — gates and CI only.
+- **The apk build recipe is committed and the artifact is tied to it by a
+  manifest (#146):** the v0.2.6–v0.2.8 apks were built from a *local,
+  uncommitted* recipe copy (the SDK's `golang/host` dependency disabled
+  plus a mounted official go1.27.4), so nobody else could reproduce
+  them. `packaging/apk-build/no-golang-host.patch` is that single recipe
+  change as a committed patch, `packaging/apk-build/sdk-x86_64.config`
+  the SDK config fragment used for the published v0.2.8 apk, and
+  `packaging/go-toolchain.env` pins `GO_TOOLCHAIN_*` (go1.27.4 tarball
+  and `bin/go` sha256). `scripts/build-apk-release.sh` builds the
+  unsigned package from committed inputs only: it `git archive`s
+  `--commit`, applies the overlay to a scratch copy (never the working
+  tree's `openwrt/Makefile`), derives or verifies `PKG_MIRROR_HASH`,
+  uses the SDK digest pinned in `apk-sign.yml`, verifies the Go
+  tarball/`bin/go` hashes, asserts the package is unsigned inside the
+  container (`apk verify` → `UNTRUSTED signature`), and writes
+  `build-manifest-<label>.json`. `scripts/check-apk-build-manifest.sh`
+  re-derives every claim in that manifest from the commit — recipe,
+  overlay and SDK-config hashes, replay of the recipe to the recorded
+  Makefile hash, pin ancestry, Go and SDK pins, artifact hashes,
+  unsigned state, and (with `--compare`) A/B agreement.
+  `scripts/release-pin-gate.sh` gained opt-in step 9 (`--manifest` /
+  `GATE_MANIFEST`) so a release can require it, and CI runs
+  `tests/ci/apk-build-manifest-test.sh` (generated fixtures; every
+  negative case rejected for a named reason) as
+  `apk-build-manifest-gate (F-01)`. Verified before merge: two
+  independent builds at one commit produced identical apk
+  (`fa3b9530...`, 3,286,016 B) and payload (`ba8183b1...`) hashes, and
+  the same script rebuilding the v0.2.8 inputs reproduced the published
+  pre-signing apk `b97f0da4...` byte-for-byte. This is not a pristine-SDK
+  build (the Go toolchain comes from outside the SDK tree) and the mirror
+  hash is toolchain-specific — `docs/release/v0.2.9-apk-build-recipe.md`
+  records the runs and those limits. No runtime code changes; packaging,
+  CI and docs only.
