@@ -14,9 +14,8 @@ PKG_NAME:=goshisen
 PKG_VERSION:=0.2.9
 # Package version is independent of the CLI release, but for this release
 # it is aligned with the CLI tag (v0.2.9). The daemon source is pinned by
-# PKG_SOURCE_VERSION below; until the post-tag pin PR lands it still names
-# the previous release's commit (v0.2.8, 2bbf53c) — a tag cannot contain
-# its own hash, so the pin is a POST-tag step (F-01 pre-tag gate).
+# PKG_SOURCE_VERSION below (the v0.2.9 tag commit; set by the post-tag pin
+# PR after the tag exists — a tag cannot contain its own hash).
 # PKG_RELEASE=1 restarts the package release counter for the new
 # PKG_VERSION (0.2.9-r1 > 0.2.8-r1 under apk ordering).
 PKG_RELEASE:=1
@@ -28,17 +27,18 @@ PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/88kbleirad/GoShiSen-Enforce.git
-# Daemon source SHA = the v0.2.8 tag commit (2bbf53c); the post-tag pin PR
-# for v0.2.9 moves this to the v0.2.9 tag commit.
+# Daemon source SHA = the v0.2.9 tag commit (8e2ae79, tag object aca4823),
+# set by the post-tag pin PR after the tag exists.
 # This is the ONLY daemon source pin; the packaging recipe lives in this
 # checkout (Makefile + files/) and is versioned independently.
-PKG_SOURCE_VERSION:=2bbf53cfda3811ce7278601ac9ac1037cb000b1f
+PKG_SOURCE_VERSION:=8e2ae79f6800188d621d292d2311be75f1f2d00a
 # sha256 of the source tarball the SDK produces from a git clone of the
 # pinned commit (PKG_SOURCE_PROTO=git); lets the SDK verify the download
-# (mirror hash). Derived via the empty-hash SDK path: `make
-# package/feeds/goshisen/download V=s` then sha256sum of
-# dl/goshisen-0.2.8.tar.zst (after the post-tag pin).
-PKG_MIRROR_HASH:=c58a2dd54ec4037530b52c124b4f6c51d6f9583448d798a49b437814271a61c3
+# (mirror hash). Derived with the committed recipe in the digest-pinned SDK
+# container (scripts/build-apk-release.sh, zero-hash two-pass): pass 1
+# reports `got <hash>`, pass 2 exits 0 with sha256sum of
+# dl/goshisen-0.2.9.tar.zst (516,776 B) equal to the pin.
+PKG_MIRROR_HASH:=590c129f01fcc0fe0fc814b960b140dcc0545ff8758e383ee13cf9acb2e16a64
 PKG_SOURCE_SUBDIR:=$(PKG_NAME)-$(PKG_VERSION)
 
 # Go binary architecture for the SDK target (amd64 for x86/64, arm64 for
