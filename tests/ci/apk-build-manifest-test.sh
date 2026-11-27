@@ -52,8 +52,9 @@ gen_manifest() {
   overlay_sha="$(sha256sum "$out/replay/packaging/apk-build/no-golang-host.patch" | cut -d' ' -f1)"
   cfg_sha="$(sha256sum "$out/replay/packaging/apk-build/sdk-x86_64.config" | cut -d' ' -f1)"
   mk_sha="$(sha256sum "$out/replay/openwrt/Makefile" | cut -d' ' -f1)"
-  local src_ver
+  local src_ver mirror_hash
   src_ver="$(sed -nE 's/^PKG_SOURCE_VERSION:=(.*)/\1/p' "$out/replay/openwrt/Makefile" | head -1)"
+  mirror_hash="$(sed -nE 's/^PKG_MIRROR_HASH:=(.*)/\1/p' "$out/replay/openwrt/Makefile" | head -1)"
 
   # Synthetic, clearly-fake artifacts (no signing, no SDK container).
   mkdir -p "$out/apkx/usr/sbin"
@@ -65,6 +66,7 @@ gen_manifest() {
   jq -n \
     --arg gensha "$GEN_SHA" \
     --arg commit "$commit" --arg version "$version" --arg srcver "$src_ver" \
+    --arg mirror "$mirror_hash" \
     --argjson recipe "$recipe_json" --arg ovlsha "$overlay_sha" --arg cfgsha "$cfg_sha" \
     --arg mksha "$mk_sha" --arg sdk "$SDK_PIN" \
     --arg gover "$(policy_get GO_TOOLCHAIN_VERSION)" \
@@ -78,7 +80,7 @@ gen_manifest() {
       generator: "tests/ci/apk-build-manifest-test.sh",
       source: {commit: $commit, commit_subject: "fixture", tree_clean: true},
       pkg: {name: "goshisen", version: $version, release: "1",
-            source_version: $srcver, mirror_hash: "0000000000000000000000000000000000000000000000000000000000000001",
+            source_version: $srcver, mirror_hash: $mirror,
             mirror_hash_derived: true},
       recipe: {dir: "openwrt", committed_sha256: $recipe,
                overlay: {path: "packaging/apk-build/no-golang-host.patch", sha256: $ovlsha},
@@ -251,11 +253,16 @@ sed -E 's/^PKG_VERSION:=.*/PKG_VERSION:=0.2.9/; s/^PKG_RELEASE:=.*/PKG_RELEASE:=
 cp "$ROOT/packaging/apk-build/no-golang-host.patch" "$SCRATCH/packaging/apk-build/"
 cp "$ROOT/packaging/apk-build/sdk-x86_64.config" "$SCRATCH/packaging/apk-build/"
 git -C "$SCRATCH" add -A && git -C "$SCRATCH" commit -qm "fixture runtime"
-PIN="$(git -C "$SCRATCH" rev-parse HEAD)"
-sed -E -i "s|^PKG_SOURCE_VERSION:=.*|PKG_SOURCE_VERSION:=$PIN|" "$SCRATCH/openwrt/Makefile"
+RUNTIME="$(git -C "$SCRATCH" rev-parse HEAD)"
+# The real flow tags T first, then commits the pin F (Makefile only:
+# PKG_SOURCE_VERSION:=T plus the derived PKG_MIRROR_HASH) and builds at F.
+# The tag therefore does NOT contain the pin: F != T, which is the case the
+# gate used to reject and CI never exercised.
+sed -E -i "s|^PKG_SOURCE_VERSION:=.*|PKG_SOURCE_VERSION:=$RUNTIME|; s|^PKG_MIRROR_HASH:=.*|PKG_MIRROR_HASH:=1111111111111111111111111111111111111111111111111111111111111111|" \
+  "$SCRATCH/openwrt/Makefile"
 git -C "$SCRATCH" add -A && git -C "$SCRATCH" commit -qm "fixture recipe (pin)"
 TIP="$(git -C "$SCRATCH" rev-parse HEAD)"
-git -C "$SCRATCH" tag v0.2.9 "$TIP"
+git -C "$SCRATCH" tag v0.2.9 "$RUNTIME"
 
 SOUT="$TMP/scratch-out"
 gen_manifest "$SCRATCH" "$TIP" "0.2.9" "$SOUT"
@@ -265,8 +272,10 @@ GATE_REPO="$SCRATCH" bash "$GATE" \
   --apk "$SOUT/goshisen-0.2.9-r1.apk" --tag v0.2.9 \
   --payload "$SOUT/daemon-A.bin" --manifest "$SOUT/build-manifest-A.json" >"$TMP/gate.log" 2>&1 \
   || { tail -20 "$TMP/gate.log"; fail "pin gate with a valid manifest did not PASS"; }
-grep -q "apk build manifest describes this commit" "$TMP/gate.log" \
+grep -q "apk build manifest describes the tag's recipe" "$TMP/gate.log" \
   || fail "pin gate step 9 did not run"
+grep -q "recipe is the anchor commit's recipe" "$TMP/gate.log" \
+  || fail "pin gate step 9 did not anchor the recipe to the tag"
 grep -q "PASS: release pin/version agreement gate passed" "$TMP/gate.log" || fail "pin gate did not PASS"
 echo "  ok: pin gate ran step 9 and PASSed"
 
@@ -279,6 +288,40 @@ GATE_REPO="$SCRATCH" bash "$GATE" --apk "$SOUT/goshisen-0.2.9-r1.apk" --tag v0.2
 grep -q "apk build manifest check failed" "$TMP/gate-bad.log" \
   || fail "pin gate failed for the wrong reason: $(tail -3 "$TMP/gate-bad.log")"
 echo "  ok: pin gate fails closed on a bad manifest"
+
+# --- step 9 anchors the recipe to the tag -------------------------------
+# A build at the pin commit passes (above, F != T). A post-tag recipe edit
+# must still fail, even when the manifest is perfectly self-consistent with
+# the commit it was built at.
+echo "== post-tag recipe edits fail closed =="
+printf 'y\n' > "$SCRATCH/openwrt/files/etc/goshisen/policy.yaml"
+git -C "$SCRATCH" add -A && git -C "$SCRATCH" commit -qm "post-tag recipe edit"
+EDIT="$(git -C "$SCRATCH" rev-parse HEAD)"
+gen_manifest "$SCRATCH" "$EDIT" "0.2.9" "$TMP/edit-out"
+cp "$TMP/edit-out/goshisen-0.2.9-r1-A.apk" "$TMP/edit-out/goshisen-0.2.9-r1.apk"
+rc=0
+GATE_REPO="$SCRATCH" bash "$GATE" --apk "$TMP/edit-out/goshisen-0.2.9-r1.apk" --tag v0.2.9 \
+  --payload "$TMP/edit-out/daemon-A.bin" --manifest "$TMP/edit-out/build-manifest-A.json" \
+  >"$TMP/gate-edit.log" 2>&1 || rc=$?
+[ "$rc" -ne 0 ] || fail "pin gate ACCEPTED a post-tag recipe edit"
+grep -q "changed after the recipe anchor" "$TMP/gate-edit.log" \
+  || fail "post-tag recipe edit failed for the wrong reason: $(tail -3 "$TMP/gate-edit.log")"
+echo "  ok: post-tag recipe file edit fails closed"
+
+git -C "$SCRATCH" checkout -q "$TIP" -- openwrt/files/etc/goshisen/policy.yaml
+printf 'PKG_BUILD_PARALLEL:=1\n' >> "$SCRATCH/openwrt/Makefile"
+git -C "$SCRATCH" add -A && git -C "$SCRATCH" commit -qm "post-tag Makefile edit"
+EDIT2="$(git -C "$SCRATCH" rev-parse HEAD)"
+gen_manifest "$SCRATCH" "$EDIT2" "0.2.9" "$TMP/edit2-out"
+cp "$TMP/edit2-out/goshisen-0.2.9-r1-A.apk" "$TMP/edit2-out/goshisen-0.2.9-r1.apk"
+rc=0
+GATE_REPO="$SCRATCH" bash "$GATE" --apk "$TMP/edit2-out/goshisen-0.2.9-r1.apk" --tag v0.2.9 \
+  --payload "$TMP/edit2-out/daemon-A.bin" --manifest "$TMP/edit2-out/build-manifest-A.json" \
+  >"$TMP/gate-edit2.log" 2>&1 || rc=$?
+[ "$rc" -ne 0 ] || fail "pin gate ACCEPTED a post-tag Makefile edit"
+grep -q "outside the pin changed after the anchor" "$TMP/gate-edit2.log" \
+  || fail "post-tag Makefile edit failed for the wrong reason: $(tail -3 "$TMP/gate-edit2.log")"
+echo "  ok: post-tag Makefile edit outside the pin fails closed"
 
 # --- the gate must stay opt-in (no manifest => no manifest check) --------
 echo "== step 9 is opt-in =="

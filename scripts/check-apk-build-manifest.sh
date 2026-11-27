@@ -38,19 +38,30 @@
 #      `goshisen <pkg.version>`;
 #   9. with --compare, a second manifest (the A/B partner) has identical
 #      artifact hashes and identical inputs.
+#  10. with --recipe-commit REF (the pin gate passes the release tag), the
+#      built recipe is the ANCHOR's recipe: every recipe file except
+#      openwrt/Makefile is byte-identical at REF, the overlay and SDK
+#      config are the anchor's, and rebuilding REF's Makefile with the
+#      manifest's pin values (pkg.source_version, pkg.mirror_hash) plus the
+#      recorded substitutions yields the compiled Makefile's executable
+#      lines (comments may differ: pin PRs update them). This is what lets
+#      the documented flow build at the post-tag PIN commit (whose only
+#      recipe change is the pin) without accepting a post-tag recipe edit.
 #
 # What it does NOT prove:
 #   - that mirrors/downloads were uncompromised beyond sha256 verification
 #     (the SDK verifies the source tarball against PKG_MIRROR_HASH);
 #   - that the apk is trustworthy for installation — that is the signature
 #     anchor's job (scripts/apk-verify.sh / apk-sign.yml);
-#   - that the build ran on the tagged commit: the caller must point
-#     --commit/--tag at the commit that was actually built.
+#   - that the build ran on the commit named by --commit: the manifest is
+#     self-consistent with its own recorded commit; pass --recipe-commit at
+#     the commit whose recipe the build must use (the pin gate does).
 #
 # Usage:
 #   scripts/check-apk-build-manifest.sh --manifest build-manifest-A.json \
 #     [--apk goshisen-0.2.9-r1.apk] [--payload daemon.bin] \
-#     [--commit SHA | --tag vX.Y.Z] [--repo DIR] [--compare build-manifest-B.json]
+#     [--commit SHA | --tag vX.Y.Z] [--recipe-commit SHA|vX.Y.Z] \
+#     [--repo DIR] [--compare build-manifest-B.json]
 #
 # Exit codes: 0 PASS, 1 FAIL (reason named on stderr), 2 usage, 3 ENV
 # (missing jq/git/python3).
@@ -62,10 +73,11 @@ MANIFEST=""
 APK=""
 PAYLOAD=""
 REF=""
+RECIPE_REF=""
 COMPARE=""
 
 usage() {
-  echo "usage: $0 --manifest FILE [--apk FILE] [--payload FILE] [--commit SHA|--tag vX.Y.Z] [--repo DIR] [--compare FILE]" >&2
+  echo "usage: $0 --manifest FILE [--apk FILE] [--payload FILE] [--commit SHA|--tag vX.Y.Z] [--recipe-commit SHA|vX.Y.Z] [--repo DIR] [--compare FILE]" >&2
   exit 2
 }
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -77,6 +89,7 @@ while [ $# -gt 0 ]; do
     --apk) APK="${2:?}"; shift 2 ;;
     --payload) PAYLOAD="${2:?}"; shift 2 ;;
     --commit|--tag) REF="${2:?}"; shift 2 ;;
+    --recipe-commit) RECIPE_REF="${2:?}"; shift 2 ;;
     --repo) REPO="${2:?}"; shift 2 ;;
     --compare) COMPARE="${2:?}"; shift 2 ;;
     -h|--help) usage ;;
@@ -171,18 +184,10 @@ OVL_GOT="$(git -C "$REPO" show "$M_COMMIT:$OVL_REL" | sha256sum | cut -d' ' -f1)
 [ "$OVL_GOT" = "$OVL_WANT" ] || fail "overlay $OVL_REL: committed sha256 $OVL_GOT != manifest $OVL_WANT"
 ok "overlay hash matches the committed patch ($OVL_REL)"
 
-# --- 5. replay the recipe (committed Makefile + overlay + substitutions) -
-TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
-git -C "$REPO" archive "$M_COMMIT" openwrt | tar -x -C "$TMP"
-git -C "$REPO" show "$M_COMMIT:$OVL_REL" > "$TMP/overlay.patch"
-(cd "$TMP" && git apply "$TMP/overlay.patch") \
-  || fail "the committed overlay does not apply to the committed openwrt/Makefile at $M_COMMIT"
-jq -c '.recipe.substitutions[]?' "$MANIFEST" | while IFS= read -r sub; do
-  key="$(jq -r '.key' <<<"$sub")"
-  val="$(jq -r '.value' <<<"$sub")"
-  python3 - "$TMP/openwrt/Makefile" "$key" "$val" <<'PY' \
-    || fail "cannot apply recorded substitution $key"
+# --- helpers: apply one KEY:=VALUE line / all recorded substitutions -----
+subst_into() { # subst_into <makefile> <key> <value>
+  local mk="$1" key="$2" val="$3"
+  python3 - "$mk" "$key" "$val" <<'PY'
 import re, sys
 path, key, val = sys.argv[1], sys.argv[2], sys.argv[3]
 text = open(path, encoding='utf-8').read()
@@ -191,12 +196,84 @@ if n != 1:
     sys.exit(1)
 open(path, 'w', encoding='utf-8').write(new)
 PY
-done
+}
+apply_recorded_subs() { # apply_recorded_subs <makefile>
+  local mk="$1" sub key val
+  while IFS= read -r sub; do
+    key="$(jq -r '.key' <<<"$sub")"
+    val="$(jq -r '.value' <<<"$sub")"
+    subst_into "$mk" "$key" "$val" || fail "cannot apply recorded substitution $key"
+  done < <(jq -c '.recipe.substitutions[]?' "$MANIFEST")
+}
+
+# --- 5. replay the recipe (committed Makefile + overlay + substitutions) -
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+git -C "$REPO" archive "$M_COMMIT" openwrt | tar -x -C "$TMP"
+git -C "$REPO" show "$M_COMMIT:$OVL_REL" > "$TMP/overlay.patch"
+(cd "$TMP" && git apply "$TMP/overlay.patch") \
+  || fail "the committed overlay does not apply to the committed openwrt/Makefile at $M_COMMIT"
+apply_recorded_subs "$TMP/openwrt/Makefile"
 REPLAYED="$(sha256sum "$TMP/openwrt/Makefile" | cut -d' ' -f1)"
 WANT_MK="$(jq -r '.recipe.makefile_final_sha256' "$MANIFEST")"
 [ "$REPLAYED" = "$WANT_MK" ] \
   || fail "replayed recipe sha256 $REPLAYED != manifest makefile_final_sha256 $WANT_MK (the committed recipe cannot produce the built Makefile)"
 ok "recipe replays to the manifest's makefile_final_sha256"
+
+# --- 5b. recipe origin: the built recipe must be the anchor's recipe ----
+# The documented release flow tags T, then commits the pin F (Makefile only:
+# PKG_SOURCE_VERSION:=T + the derived PKG_MIRROR_HASH) and builds at F. Step
+# 9 therefore anchors the RECIPE to the tag: everything except the Makefile
+# must be byte-identical there, and the tag's Makefile plus the manifest's
+# stated pin values must rebuild the Makefile that was actually compiled.
+if [ -n "$RECIPE_REF" ]; then
+  A_SHA="$(git -C "$REPO" rev-parse --verify --quiet "$RECIPE_REF^{commit}")" \
+    || fail "recipe anchor '$RECIPE_REF' not found in $REPO"
+  A_PIN="$(jq -r '.pkg.source_version' "$MANIFEST")"
+  A_MIRROR="$(jq -r '.pkg.mirror_hash' "$MANIFEST")"
+  [[ "$A_PIN" =~ ^[0-9a-f]{40,64}$ ]] || fail "pkg.source_version '$A_PIN' is not a commit id"
+  [[ "$A_MIRROR" =~ ^[0-9a-f]{64}$ ]] || fail "pkg.mirror_hash '$A_MIRROR' is not a sha256"
+  while IFS= read -r rel; do
+    [ "$rel" = "openwrt/Makefile" ] && continue
+    git -C "$REPO" cat-file -e "$A_SHA:$rel" 2>/dev/null \
+      || fail "recipe file $rel does not exist at the recipe anchor $A_SHA"
+    got="$(git -C "$REPO" show "$A_SHA:$rel" | sha256sum | cut -d' ' -f1)"
+    want="$(jq -r --arg p "$rel" '.recipe.committed_sha256[$p]' "$MANIFEST")"
+    [ "$got" = "$want" ] \
+      || fail "recipe file $rel was changed after the recipe anchor $A_SHA (built $want, anchor $got)"
+  done < <(printf '%s\n' "$RECORDED")
+  A_CFG_REL="$(jq -r '.recipe.sdk_config.path // empty' "$MANIFEST")"
+  A_CFG_WANT="$(jq -r '.recipe.sdk_config.sha256 // empty' "$MANIFEST")"
+  for pair in "$OVL_REL=$OVL_WANT" "$A_CFG_REL=$A_CFG_WANT"; do
+    rel="${pair%%=*}"; want="${pair#*=}"
+    [ -n "$rel" ] && [ -n "$want" ] || continue
+    git -C "$REPO" cat-file -e "$A_SHA:$rel" 2>/dev/null \
+      || fail "recipe file $rel does not exist at the recipe anchor $A_SHA"
+    got="$(git -C "$REPO" show "$A_SHA:$rel" | sha256sum | cut -d' ' -f1)"
+    [ "$got" = "$want" ] \
+      || fail "recipe file $rel was changed after the recipe anchor $A_SHA (built $want, anchor $got)"
+  done
+  mkdir -p "$TMP/anchor"
+  git -C "$REPO" archive "$A_SHA" openwrt | tar -x -C "$TMP/anchor"
+  git -C "$REPO" show "$A_SHA:$OVL_REL" > "$TMP/anchor-overlay.patch"
+  (cd "$TMP/anchor" && git apply "$TMP/anchor-overlay.patch") \
+    || fail "the overlay does not apply to the anchor's openwrt/Makefile at $A_SHA"
+  subst_into "$TMP/anchor/openwrt/Makefile" PKG_SOURCE_VERSION "$A_PIN" \
+    || fail "cannot set PKG_SOURCE_VERSION on the anchor's Makefile"
+  subst_into "$TMP/anchor/openwrt/Makefile" PKG_MIRROR_HASH "$A_MIRROR" \
+    || fail "cannot set PKG_MIRROR_HASH on the anchor's Makefile"
+  apply_recorded_subs "$TMP/anchor/openwrt/Makefile"
+  # Comment lines are excluded: a pin commit legitimately updates the
+  # Makefile's comments (both the v0.2.8 and v0.2.9 pin PRs do). Executable
+  # lines must match exactly — commenting a line OUT removes it from this
+  # comparison, so that edit is still caught.
+  norm_mk() { grep -vE '^[[:space:]]*#' "$1" | sha256sum | cut -d' ' -f1; }
+  A_MK="$(norm_mk "$TMP/anchor/openwrt/Makefile")"
+  B_MK="$(norm_mk "$TMP/openwrt/Makefile")"
+  [ "$A_MK" = "$B_MK" ] \
+    || fail "the recipe anchor $A_SHA rebuilt with the manifest's pin (source $A_PIN, mirror $A_MIRROR) has executable lines $A_MK, != the compiled Makefile's $B_MK (the recipe outside the pin changed after the anchor)"
+  ok "recipe is the anchor commit's recipe + the manifest's pin and substitutions ($A_SHA)"
+fi
 
 # --- 6. pin claim -------------------------------------------------------
 SRC_VER="$(jq -r '.pkg.source_version' "$MANIFEST")"

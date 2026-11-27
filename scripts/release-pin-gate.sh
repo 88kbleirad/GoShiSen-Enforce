@@ -19,11 +19,15 @@
 #   7/8. (opt-in, GATE_S005_CHECKS=1) payload Go >= MIN_GO_VERSION and
 #      govulncheck binary-mode clean.
 #   9. (opt-in, --manifest FILE / GATE_MANIFEST=FILE) the apk's build
-#      manifest describes THIS commit and THIS apk: recipe + overlay
-#      hashes equal the committed files, replaying them reproduces the
-#      recorded recipe hash, the Go and SDK pins equal the repo's policy,
-#      and the artifact hashes match the files. See
-#      scripts/check-apk-build-manifest.sh.
+#      manifest is self-consistent AND its recipe is the TAG's recipe:
+#      every recipe file except openwrt/Makefile is byte-identical at the
+#      tag commit, rebuilding the tag's Makefile with the manifest's stated
+#      pin (pkg.source_version + pkg.mirror_hash) and recorded substitutions
+#      yields the compiled Makefile's executable lines (comments may differ),
+#      the Go and SDK pins equal the repo's policy, and the artifact hashes
+#      match the files. The build may therefore run at the post-tag PIN
+#      commit (the documented flow), but no other post-tag recipe edit is
+#      accepted. See scripts/check-apk-build-manifest.sh (--recipe-commit).
 #
 # What this gate does NOT prove: that the pin is the tag commit itself
 # (impossible by construction — the tag cannot contain its own hash).
@@ -219,17 +223,19 @@ fi
 # 9. apk build manifest (opt-in: --manifest FILE / GATE_MANIFEST=FILE).
 #
 # The pin gate above ties the apk's LABELS to the tag; this step ties the
-# apk's BYTES to the committed recipe, toolchain and SDK image, so a
-# manifest cannot claim a build the repository cannot produce. Recommend
-# running it with GATE_MANIFEST on every release (the release run sets
-# both this and GATE_S005_CHECKS=1).
+# apk's BYTES to the tag's RECIPE (plus the recorded pin lines), so a
+# manifest cannot claim a build from a recipe the tag does not contain, and
+# the documented flow (build at the post-tag pin commit F) is accepted while
+# any other post-tag recipe edit still fails closed. Recommend running it
+# with GATE_MANIFEST on every release (the release run sets both this and
+# GATE_S005_CHECKS=1).
 # ---------------------------------------------------------------------------
 if [ -n "$MANIFEST" ]; then
   bash "$ROOT/scripts/check-apk-build-manifest.sh" \
-    --manifest "$MANIFEST" --commit "$TAG_COMMIT" --repo "$GATE_REPO" \
+    --manifest "$MANIFEST" --recipe-commit "$TAG_COMMIT" --repo "$GATE_REPO" \
     --apk "$APK" --payload "$PAYLOAD" \
     || fail "apk build manifest check failed: $MANIFEST"
-  ok "apk build manifest describes this commit and this apk ($MANIFEST)"
+  ok "apk build manifest describes the tag's recipe and this apk ($MANIFEST)"
 else
   echo "note: apk build-manifest check skipped (pass --manifest FILE or set GATE_MANIFEST)" >&2
 fi

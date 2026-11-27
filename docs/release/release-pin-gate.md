@@ -89,11 +89,35 @@ reconstruction and the exact provenance of that (uncommitted) recipe are in
   clean SDK download/verify step (release checklist §5/OpenWrt release gates).
 - Binary reproducibility or apk signature/anchor validity — that is
   the job of the builds and `scripts/apk-release-gate.sh`.
-- That the release ran on the tagged commit — the gate caller must
-  point `--payload`/`--apk` at the actual artifacts of that run.
+- That the build ran at the tag commit: the manifest is self-consistent with
+  the commit it records, and step 9 anchors its *recipe* to the tag. The
+  caller must point `--apk`/`--payload` at the actual artifacts of the run.
 - (Step 9 only) that the mirror download was uncompromised beyond the
   SDK's sha256 check, or that a *signed* apk is trustworthy — that is
   the anchor's job (`scripts/apk-verify.sh`, `apk-sign.yml`).
+
+## Step 9: the recipe anchor (post-tag pin PR)
+
+Step 9 (`--manifest F` / `GATE_MANIFEST=F`) anchors the artifact's recipe to
+the **tag**, not to whatever commit the build happened at:
+
+- every recipe file except `openwrt/Makefile` must be byte-identical at the
+  tag commit (overlay and SDK config included);
+- rebuilding the **tag's** `openwrt/Makefile` with the manifest's stated pin
+  (`pkg.source_version`, `pkg.mirror_hash`) and the recorded substitutions
+  must yield the compiled Makefile's **executable lines** (comment-only edits
+  are tolerated, because the pin PR updates the pin comments);
+- the manifest stays self-consistent with the commit it records (checks 0–8
+  above), so the manifest still describes the bytes that were built.
+
+That makes the documented flow — tag `T`, then commit the Makefile-only pin
+`F` (`PKG_SOURCE_VERSION:=T` plus the derived `PKG_MIRROR_HASH`), build and
+gate the artifacts from `F` — pass, while any *other* post-tag recipe edit
+still fails closed. `tests/ci/apk-build-manifest-test.sh` covers `F != T` and
+two post-tag drift negatives (a changed recipe file; an edited Makefile line
+outside the pin). Before this anchor existed, step 9 compared
+`manifest.source.commit` with the tag commit, which rejected the documented
+`F`-based flow outright.
 
 ## Next release procedure (v0.2.4)
 
