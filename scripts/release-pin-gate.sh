@@ -14,6 +14,16 @@
 #      otherwise the gate fails and prints the diff.
 #   4. The apk payload binary reports --version == PKG_VERSION.
 #   5. The apk filename version equals PKG_VERSION-r<PKG_RELEASE>.
+#   6. (opt-in, GATE_TAG_SIGN_CHECK=1) the release tag is signed by an
+#      allowed signer.
+#   7/8. (opt-in, GATE_S005_CHECKS=1) payload Go >= MIN_GO_VERSION and
+#      govulncheck binary-mode clean.
+#   9. (opt-in, --manifest FILE / GATE_MANIFEST=FILE) the apk's build
+#      manifest describes THIS commit and THIS apk: recipe + overlay
+#      hashes equal the committed files, replaying them reproduces the
+#      recorded recipe hash, the Go and SDK pins equal the repo's policy,
+#      and the artifact hashes match the files. See
+#      scripts/check-apk-build-manifest.sh.
 #
 # What this gate does NOT prove: that the pin is the tag commit itself
 # (impossible by construction — the tag cannot contain its own hash).
@@ -47,9 +57,10 @@ PKG_MAKEFILE="$GATE_REPO/openwrt/Makefile"
 APK=""
 TAG=""
 PAYLOAD=""
+MANIFEST="${GATE_MANIFEST:-}"
 
 usage() {
-  echo "usage: $0 --apk FILE.apk --tag vX.Y.Z --payload PAYLOAD_BINARY" >&2
+  echo "usage: $0 --apk FILE.apk --tag vX.Y.Z --payload PAYLOAD_BINARY [--manifest build-manifest.json]" >&2
   exit 2
 }
 
@@ -58,6 +69,7 @@ while [ $# -gt 0 ]; do
     --apk) APK="$2"; shift 2 ;;
     --tag) TAG="$2"; shift 2 ;;
     --payload) PAYLOAD="$2"; shift 2 ;;
+    --manifest) MANIFEST="$2"; shift 2 ;;
     *) usage ;;
   esac
 done
@@ -201,6 +213,25 @@ if [ -n "${GATE_S005_CHECKS:-}" ] && [ "$GATE_S005_CHECKS" = "1" ]; then
   ok "S-005 gates passed: payload Go >= $(grep -E '^MIN_GO_VERSION=' "$ROOT/packaging/go-toolchain.env" | cut -d= -f2-) and govulncheck clean"
 else
   echo "note: S-005 payload gates skipped (set GATE_S005_CHECKS=1 to enable)" >&2
+fi
+
+# ---------------------------------------------------------------------------
+# 9. apk build manifest (opt-in: --manifest FILE / GATE_MANIFEST=FILE).
+#
+# The pin gate above ties the apk's LABELS to the tag; this step ties the
+# apk's BYTES to the committed recipe, toolchain and SDK image, so a
+# manifest cannot claim a build the repository cannot produce. Recommend
+# running it with GATE_MANIFEST on every release (the release run sets
+# both this and GATE_S005_CHECKS=1).
+# ---------------------------------------------------------------------------
+if [ -n "$MANIFEST" ]; then
+  bash "$ROOT/scripts/check-apk-build-manifest.sh" \
+    --manifest "$MANIFEST" --commit "$TAG_COMMIT" --repo "$GATE_REPO" \
+    --apk "$APK" --payload "$PAYLOAD" \
+    || fail "apk build manifest check failed: $MANIFEST"
+  ok "apk build manifest describes this commit and this apk ($MANIFEST)"
+else
+  echo "note: apk build-manifest check skipped (pass --manifest FILE or set GATE_MANIFEST)" >&2
 fi
 
 echo "PASS: release pin/version agreement gate passed (tag $TAG)"

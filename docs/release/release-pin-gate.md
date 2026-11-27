@@ -49,6 +49,38 @@ make the published artifact traceable to a single source tree.
    `packaging/govulncheck-allowlist.txt` (empty by default). Runs
    `scripts/check-apk-payload-govuln.sh`. The payload must carry Go
    buildinfo (the v0.2.6 package recipe keeps buildid).
+9. **apk build manifest** (opt-in, `--manifest FILE` /
+   `GATE_MANIFEST=FILE`): the manifest written by
+   `scripts/build-apk-release.sh` must describe THIS commit (the tag
+   commit) and THIS apk. `scripts/check-apk-build-manifest.sh` re-derives
+   every claim: the `openwrt/**` file set and hashes equal the committed
+   bytes, the overlay/`sdk_config` hashes equal the committed files,
+   replaying committed Makefile + committed overlay + the manifest's
+   declared substitutions reproduces `recipe.makefile_final_sha256`,
+   `pkg.source_version` is an ancestor-or-equal of the commit, the Go
+   version/toolchain hashes satisfy `packaging/go-toolchain.env`, the SDK
+   digest equals the digest pinned in `.github/workflows/apk-sign.yml`,
+   and the apk/payload hashes match the files (with `--compare`, the A/B
+   partner must agree on inputs and artifact hashes).
+
+## Build recipe (what produces the artifact this gate inspects)
+
+`scripts/build-apk-release.sh` builds the unsigned apk from committed
+inputs only: it `git archive`s `--commit` into a scratch dir, applies the
+committed overlay `packaging/apk-build/no-golang-host.patch` (never the
+working tree's `openwrt/Makefile`), folds in
+`packaging/apk-build/sdk-x86_64.config`, mounts the digest-pinned SDK
+image and a sha256-verified official go1.27.4, derives (or verifies)
+`PKG_MIRROR_HASH` with the zero-hash two-pass procedure, and writes
+`build-manifest-<label>.json` next to the apk. Two runs (`--label A`,
+`--label B`) must produce identical apk and payload hashes; that A/B
+comparison is the reproducibility claim the notes may make. The release
+run passes `--canonical-name` so the staged asset is named exactly
+`goshisen-<ver>-r<rel>.apk`.
+
+`packaging/apk-build/README.md` explains the two inputs; the v0.2.8
+reconstruction and the exact provenance of that (uncommitted) recipe are in
+`docs/release/v0.2.9-apk-build-recipe.md`.
 
 ## What the gate does NOT prove
 
@@ -59,6 +91,9 @@ make the published artifact traceable to a single source tree.
   the job of the builds and `scripts/apk-release-gate.sh`.
 - That the release ran on the tagged commit — the gate caller must
   point `--payload`/`--apk` at the actual artifacts of that run.
+- (Step 9 only) that the mirror download was uncompromised beyond the
+  SDK's sha256 check, or that a *signed* apk is trustworthy — that is
+  the anchor's job (`scripts/apk-verify.sh`, `apk-sign.yml`).
 
 ## Next release procedure (v0.2.4)
 

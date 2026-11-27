@@ -198,6 +198,48 @@ jobs:
       - name: Release workflow must keep the CLI key scoped to the sign job
         run: bash tests/ci/release-workflow-guard-test.sh
 
+  apk-build-manifest-gate:
+    # The apk build manifest (scripts/build-apk-release.sh) must describe a
+    # build that the COMMITTED recipe can produce: recipe + overlay hashes
+    # equal the committed files at the recorded commit, replaying them
+    # reproduces the recorded Makefile hash, the Go version/toolchain hashes
+    # satisfy packaging/go-toolchain.env, the SDK digest equals apk-sign.yml's
+    # pin, and the artifact hashes match the files. Fixtures only.
+    #
+    # Why CI does not build the apk itself: the build needs the 3.18 GB
+    # digest-pinned OpenWrt SDK image, a network clone of every pinned feed
+    # plus the package source, ~5 GB of scratch space and 10-30 min per build
+    # (twice for A/B), and the smoke test needs privileged QEMU. That is a
+    # release-host step (scripts/build-apk-release.sh); CI runs the fixtures
+    # here and the payload gates (apk-payload-go-gate / apk-payload-govuln-gate)
+    # on any apk artifact, so a recipe/manifest regression still fails on the PR.
+    name: apk-build-manifest-gate (F-01)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The checker requires the Makefile's PKG_SOURCE_VERSION pin to be a
+          # commit in the checkout, so actions/checkout's default depth of 1
+          # fails the fixtures with
+          # "FAIL: pkg.source_version <sha> is not a commit in <repo>";
+          # reproduced with `git clone --depth 1` (one-commit history).
+          fetch-depth: 0
+      - name: Install jq and patch(1) (fixtures mutate JSON, replay with patch)
+        # The fixtures generator replays the recipe with patch(1)+sed(1) on
+        # purpose (not the checker's git apply+python), so the test's first
+        # check is for patch(1) and it exits 1 without it. The ubuntu-24.04
+        # runner image ships none: `patch` is absent from its published apt
+        # package list between `parallel` and `patchelf`, and the base
+        # ubuntu:24.04 image has none either. `patch` is in noble `main`
+        # (2.7.6-7build3), so no extra apt source is needed. jq is preinstalled
+        # on the runner but is installed explicitly so its version cannot
+        # drift silently.
+        run: |
+          sudo apt-get $APT_BOUNDED update
+          sudo apt-get $APT_BOUNDED install -y --no-install-recommends jq patch
+      - name: Build-manifest fixtures must fail closed for the right reason
+        run: bash tests/ci/apk-build-manifest-test.sh
+
   arm64:
     name: arm64 cross-build + static ELF
     runs-on: ubuntu-24.04
