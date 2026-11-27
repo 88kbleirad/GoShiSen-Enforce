@@ -192,9 +192,18 @@ echo "== APK_TOOL signature-state branch =="
 printf '#!/bin/sh\necho "UNTRUSTED signature" >&2\nexit 1\n' > "$TMP/apk-unsigned"
 printf '#!/bin/sh\necho "OK"\nexit 0\n' > "$TMP/apk-signed"
 chmod +x "$TMP/apk-unsigned" "$TMP/apk-signed"
-APK_TOOL="$TMP/apk-unsigned" "$CHECK" --manifest "$OUT/build-manifest-A.json" \
-  --apk "$OUT/goshisen-0.2.9-test-r1-A.apk" 2>&1 | grep -q "UNTRUSTED signature (unsigned, as recorded)" \
-  || fail "unsigned manifest + UNTRUSTED apk verify should PASS"
+# The checker's output is captured, never piped into grep -q: grep -q exits at
+# the match line while the checker still writes after it (the payload line, then
+# APK-BUILD-MANIFEST-CHECK-PASS), so the checker dies of SIGPIPE and - with
+# `set -o pipefail` - a PASSing scan becomes rc 141 (measured: rc 141 with an
+# early-exiting reader, rc 0 for the same invocation captured). Which side wins
+# is scheduling-dependent: this failed both CI runs and passed locally. A
+# capture also prints the checker's own reason when a case does fail.
+out="$(APK_TOOL="$TMP/apk-unsigned" "$CHECK" --manifest "$OUT/build-manifest-A.json" \
+  --apk "$OUT/goshisen-0.2.9-test-r1-A.apk" 2>&1)" \
+  || fail "unsigned manifest + UNTRUSTED apk verify should PASS: $(tail -3 <<<"$out")"
+grep -qF "UNTRUSTED signature (unsigned, as recorded)" <<<"$out" \
+  || fail "unsigned manifest + UNTRUSTED apk verify passed for the wrong reason: $(tail -3 <<<"$out")"
 echo "  ok: unsigned manifest + UNTRUSTED apk verify passes"
 jq '.artifacts.apk.signed = true' "$OUT/build-manifest-A.json" > "$TMP/claims-signed.json"
 rc=0
@@ -204,9 +213,11 @@ out="$(APK_TOOL="$TMP/apk-unsigned" "$CHECK" --manifest "$TMP/claims-signed.json
 grep -qF "manifest says signed, but apk verify failed" <<<"$out" \
   || fail "signed-claim case failed for the wrong reason: $out"
 echo "  ok: signed claim with an UNTRUSTED apk is rejected"
-APK_TOOL="$TMP/apk-signed" "$CHECK" --manifest "$TMP/claims-signed.json" \
-  --apk "$OUT/goshisen-0.2.9-test-r1-A.apk" 2>&1 | grep -q "apk verify: OK (signed, as recorded)" \
-  || fail "signed manifest + OK apk verify should PASS"
+out="$(APK_TOOL="$TMP/apk-signed" "$CHECK" --manifest "$TMP/claims-signed.json" \
+  --apk "$OUT/goshisen-0.2.9-test-r1-A.apk" 2>&1)" \
+  || fail "signed manifest + OK apk verify should PASS: $(tail -3 <<<"$out")"
+grep -qF "apk verify: OK (signed, as recorded)" <<<"$out" \
+  || fail "signed manifest + OK apk verify passed for the wrong reason: $(tail -3 <<<"$out")"
 echo "  ok: signed manifest + OK apk verify passes"
 jq '.artifacts.apk.signed = true' "$OUT/build-manifest-A.json" > "$TMP/claims-signed2.json"
 APK_TOOL="$TMP/apk-signed" "$CHECK" --manifest "$TMP/claims-signed2.json" --apk "$OUT/goshisen-0.2.9-test-r1-A.apk" >/dev/null \
