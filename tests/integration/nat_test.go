@@ -64,7 +64,12 @@ func startFirewallNAT(t *testing.T, natYAML, policyYAML string) {
 			_ = cmd.Process.Kill()
 		}
 	})
-	time.Sleep(900 * time.Millisecond)
+	// Wait for the enforcement path to be fully up (hook incl. NAT rules
+	// installed, queue bound). This used to be a fixed 900 ms sleep, which
+	// lost the race under load: TestNATDnat's SYN arrived before the DNAT
+	// rule was live, hit the router's own closed port, and the RST surfaced
+	// as "connection refused".
+	waitForDaemonReadyNAT(t, filepath.Join(dir, "daemon.log"))
 }
 
 func TestNATDnat(t *testing.T) {

@@ -302,15 +302,41 @@ func startFirewall(t *testing.T, policyYAML string) {
 // unreliable under slow emulation (TCG) or loaded hosts.
 func waitForDaemonReady(t *testing.T, logPath string) {
 	t.Helper()
+	waitForLog(t, logPath, "no NFQUEUE bound in log", "NFQUEUE bound")
+}
+
+// waitForDaemonReadyNAT is waitForDaemonReady plus the nftables hook: the
+// NAT ruleset is installed together with the hook, so a test that connects
+// to a DNAT/MASQUERADE address must wait for `nat_enabled=true` too.
+// Without it a client can race the NAT rules (observed: TestNATDnat's SYN
+// reached the router's own closed port and got RST — "connection refused").
+func waitForDaemonReadyNAT(t *testing.T, logPath string) {
+	t.Helper()
+	waitForLog(t, logPath, "nftables hook with nat_enabled=true or no NFQUEUE bound in log",
+		"nat_enabled=true", "NFQUEUE bound")
+}
+
+// waitForLog polls logPath until it contains every needle.
+func waitForLog(t *testing.T, logPath, what string, needles ...string) {
+	t.Helper()
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
-		data, err := os.ReadFile(logPath)
-		if err == nil && strings.Contains(string(data), "NFQUEUE bound") {
-			return
+		if data, err := os.ReadFile(logPath); err == nil {
+			text := string(data)
+			seen := true
+			for _, needle := range needles {
+				if !strings.Contains(text, needle) {
+					seen = false
+					break
+				}
+			}
+			if seen {
+				return
+			}
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	t.Fatalf("daemon did not become ready (no NFQUEUE bound in log):\n%s", mustReadLog(logPath))
+	t.Fatalf("daemon did not become ready (%s):\n%s", what, mustReadLog(logPath))
 }
 
 func mustReadLog(path string) string {
