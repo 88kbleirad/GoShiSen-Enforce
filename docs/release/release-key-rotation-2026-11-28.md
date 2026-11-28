@@ -98,19 +98,33 @@ Results (2026-11-28, base `9834600`, tree with the rotation applied):
 | `verify-signatures.sh` with the **retired** anchor (negative control) | `VERIFY-FAIL: bad-signature`, exit 4 |
 | `release-sign.sh` with a foreign throwaway key (negative control) | exit 1, key-mismatch, no key material printed |
 
-## 5. Execution log
+## 5. Execution log (executed 2026-11-28)
 
-| # | Step | State |
+| # | Step | Result |
 | --- | --- | --- |
-| 1 | Anchor + archived anchor + 4 pin sites + live docs merged to `main` | pending |
-| 2 | `gh secret set GH_RELEASE_SIGNING_KEY --env signing` with the rotated private key | pending |
-| 3 | Dry run #1 on `main` (`gh workflow run release.yml -f dry_run=true`) — proves the environment secret resolves to the rotated key and matches the committed anchor | pending |
-| 4 | Delete the **repository-level** `GH_RELEASE_SIGNING_KEY` copy (it still holds the retired private key) | pending |
-| 5 | Dry run #2 on `main` — proves the key resolves from the environment scope alone | pending |
-| 6 | Evidence follow-up: run IDs + leak scan recorded here and in `docs/release/evidence-index.md` | pending |
+| 1 | Anchor + archived anchor + 4 pin sites + live docs merged to `main` | PR #152 → squash `2c364bf` (base `9834600`); CI runs `46107252523` / `46107257204` — every job success, incl. `release-workflow-guard (F-02)`, `check-backup-key (F-02)`, `sign + verify release artifacts (test key, fail-closed)` |
+| 2 | `gh secret set GH_RELEASE_SIGNING_KEY --env signing` with the rotated private key | done (`2026-11-28T04:35:08Z`); set only after `check-backup-key.sh` printed `MATCH (e9b4bf11...)` and exit 0; value never echoed |
+| 3 | Dry run #1 on `main` — environment secret must resolve to the rotated key | run [`46108232674`](https://github.com/88kbleirad/GoShiSen-Enforce/actions/runs/46108232674) on `2c364bf`, **success** (waited for the `signing` required reviewer; approved via the deployments API). Proof: `OK: trust anchor fingerprint verified e9b4bf11...`, `VERIFY-PASS`, `OK: dry-run signature verified (public key fingerprint e9b4bf11...)`; leak scan: 0 private-key lines |
+| 4 | Delete the **repository-level** `GH_RELEASE_SIGNING_KEY` copy (it still held the retired private key) | deleted; names-only listings now show the CLI key **only** under environment `signing` (plus the untouched `GH_RELEASE_APK_SIGNING_KEY`) |
+| 5 | Dry run #2 on `main` — key must resolve from the environment scope alone | run [`46108443415`](https://github.com/88kbleirad/GoShiSen-Enforce/actions/runs/46108443415), **success**, same three proof lines; `Download build artifacts` / `Sign release artifacts` / `Upload release assets` all skipped (dry-run path), leak scan clean |
+| 6 | Evidence follow-up: run IDs + leak scan recorded here, in `docs/release/evidence-index.md` and `docs/release/apk-signing-key-custody.md` §6 | this revision |
 
-Between step 1 and step 2/4 a tag push would fail the anchor-mismatch gate
-(fail-closed, no release is created) — no tag is planned in that window.
+### Post-rotation secret state
+
+- Environment `signing` (id `27311707581`, required reviewer `88kbleirad`,
+  custom branch policies) holds **only** the rotated CLI key
+  (`GH_RELEASE_SIGNING_KEY`, `2026-11-28T04:35:08Z`) alongside
+  `GH_RELEASE_APK_SIGNING_KEY`.
+- The repository-level copy is gone — this also completes the F-02 §0.1 step 5
+  that was still outstanding (`docs/release/f02-environment-migration.md`).
+- The **retired private key no longer exists in GitHub**: it is reproducible only
+  from the owner's offline backup. This does not affect verification of published
+  releases, because the retired *public* anchor is committed
+  (`keys/goshisen-release-2026-11-13.pub.pem`) and shipped as each release's
+  `public_key.pem` asset. A rollback that requires *signing* with the retired key
+  is therefore only possible from that offline backup.
+- No tag, release, or published asset was created, moved, or re-signed at any
+  step; the rotation takes effect on the next tag (v0.2.10 on).
 
 ## 6. Rollback
 
