@@ -1,5 +1,16 @@
 # Production APK signing readiness audit
 
+> **Historical record — read it with its date.**
+> **Date:** 2026-11-14, base `94dddac`. It predates two changes: APK package
+> signing shipped in v0.2.3, and the CLI release anchor rotated on 2026-11-28.
+> The trust-anchor row in §1 therefore quotes the **retired** CLI fingerprint
+> `24215e01...`; the current CLI anchor is `e9b4bf11...`
+> (`keys/goshisen-release.pub.pem`, retired anchor archived as
+> `keys/goshisen-release-2026-11-13.pub.pem`) and the APK anchor
+> (`keys/goshisen-apk.pub.pem`, `542bb7ae...`) never rotated. Current state:
+> `docs/release/release-key-rotation-2026-11-28.md` and `docs/openwrt.md`
+> §Signing.
+
 **Status:** complete — **verdict: BLOCKED** (missing production APK
 signing key + package-feed trust-store access; no APK signing step is
 wired in the release workflow). **Date:** 2026-11-14. **Base:** main
