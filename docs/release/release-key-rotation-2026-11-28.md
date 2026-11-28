@@ -117,12 +117,15 @@ Results (2026-11-28, base `9834600`, tree with the rotation applied):
   `GH_RELEASE_APK_SIGNING_KEY`.
 - The repository-level copy is gone — this also completes the F-02 §0.1 step 5
   that was still outstanding (`docs/release/f02-environment-migration.md`).
-- The **retired private key no longer exists in GitHub**: it is reproducible only
-  from the owner's offline backup. This does not affect verification of published
-  releases, because the retired *public* anchor is committed
+- The **retired private key no longer exists in GitHub**: step 4 deleted the
+  repository-level copy and the environment secret now holds the rotated key. The
+  retired private half is **not** in this repository, and this record states no
+  path for any copy of it — whether one still exists is the owner's to confirm.
+  This does not affect verification of published releases, because the
+  retired *public* anchor is committed
   (`keys/goshisen-release-2026-11-13.pub.pem`) and shipped as each release's
   `public_key.pem` asset. A rollback that requires *signing* with the retired key
-  is therefore only possible from that offline backup.
+  therefore needs that private half from outside this repository.
 - No tag, release, or published asset was created, moved, or re-signed at any
   step; the rotation takes effect on the next tag after v0.2.9.
 
@@ -130,9 +133,11 @@ Results (2026-11-28, base `9834600`, tree with the rotation applied):
 
 - **Repin the anchor (preferred):** restore `keys/goshisen-release.pub.pem` from
   `keys/goshisen-release-2026-11-13.pub.pem`, revert the four pins, and re-store
-  the retired private key in the environment secret. The retired key is
-  reproducible only from the owner's offline backup or the secret copy taken
-  before step 4 — take that copy before deleting the repository-level secret.
+  the retired private key in the environment secret. That re-store needs the
+  retired private half, which is **not** in this repository: step 4 deleted the
+  repository-level copy, and this record states no other location. Whether a copy
+  still exists — the owner's own, or one taken before that deletion — is for the
+  owner to confirm.
 - **Rotate again:** generate a fresh Ed25519 key, commit its public half, update
   the four pins, store the new secret. Old releases keep verifying against the
   archived anchors either way.
