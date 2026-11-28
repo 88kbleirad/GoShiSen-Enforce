@@ -78,7 +78,7 @@ lỗi lớn) nếu thiếu:
    (key ID `f955ede984245d64`, khóa tạo 2026-11-13) cho v0.2.1–v0.2.9 — anchor
    cũ vẫn được commit tại
    `keys/goshisen-release-2026-11-13.pub.pem`. Xem
-   [`release-key-rotation-2026-11-28.md`](../release/release-key-rotation-2026-11-28.md).
+   [`docs/release/release-key-rotation-2026-11-28.md`](../../../../docs/release/release-key-rotation-2026-11-28.md).
 
    Anchor đó **chỉ** là khóa phát hành CLI. Gói OpenWrt được ký bằng khóa khác —
    anchor APK `keys/goshisen-apk.pub.pem` (EC P-256,
