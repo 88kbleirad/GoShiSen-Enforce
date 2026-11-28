@@ -7,6 +7,28 @@ Status and notable history for GoShiSen-Enforce. Per-release detail lives in `do
 - **v0.2.9** — latest release (published 2026-11-27): release-engineering / CI-hardening release with **no runtime change** (the CLI behaves exactly as v0.2.8): F-02 approval gate on the `sign` job, hardened OpenWrt e2e harness, bounded CI network steps, fail-closed S-005 govulncheck gates, the codified apk build recipe + build manifest gate, and the post-tag pin + step-9 recipe anchor. Notes: [`docs/release/v0.2.9-notes.md`](release/v0.2.9-notes.md); assets: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.9).
 - **v0.2.8** — previous release (published 2026-11-22): security/hardening release — bounded file reads everywhere operator input is read, private policy store (0700/0600) with bounded metrics listener, OpenWrt `api_token` written 0600, authenticated-read opt-ins (D1), govulncheck re-balanced (D2). Notes: [`docs/release/v0.2.8-notes.md`](release/v0.2.8-notes.md); assets: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.8).
 
+## Unreleased — release-run wrapper (P3.11, issue #142)
+
+`scripts/release-run.sh` codifies one release run as a 12-step plan — pre-tag
+gate → annotated tag → release workflow (draft) → post-tag pin PR → apk build
+A/B → manifest + pin/version gates → unsigned VM smoke → draft upload →
+production apk signing → signed smoke/attach → publish flip → post-publish
+sweep — printing each step's exact commands, its owner (agent or maintainer) and
+the evidence it must produce.
+
+- **Slice 1: `--dry-run` only.** It executes nothing — no tag, build, signing,
+  upload, publish or file written — and `--execute` exits 3 instead of
+  half-running a plan. The remaining slice runs the credential-free steps,
+  stops at every credential-gated step with the exact `gh` command, and writes
+  one evidence file per run under `evidence/release-run/<tag>-<UTC>/`.
+- The tag name goes through `scripts/validate-release-tag.sh` (S-003) before it
+  is used in any printed command; three hard stops are never crossed
+  automatically (F-01 pre-tag gate, A/B hash mismatch, manifest/pin gate).
+- The plan is codified from the v0.2.9 run, not invented; the one step the last
+  run drove with an uncommitted handoff script (the VM smoke) says so.
+- Guarded by `tests/ci/release-run-test.sh` (`release-run dry-run (P3.11)` in
+  CI). Doc: [`docs/release/release-run.md`](release/release-run.md).
+
 ## Release signing anchor rotation (2026-11-28, post-v0.2.9)
 
 The CLI release trust anchor rotated: `keys/goshisen-release.pub.pem` is now the

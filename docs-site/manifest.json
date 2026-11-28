@@ -530,6 +530,11 @@
   "title": "IPv6 queue 101 proof Step 1a (evidence)"
  },
  {
+  "slug": "docs-release-release-run",
+  "path": "../docs/release/release-run.md",
+  "title": "Release-run wrapper (P3.11, issue #142)"
+ },
+ {
   "slug": "docs-release-vm-smoke-evidence",
   "path": "../docs/release/vm-smoke-evidence.md",
   "title": "v0.2.3 fresh-VM smoke evidence (production-signed apk)"
