@@ -1,7 +1,16 @@
 # APK signing key — custody, approval, rotation, revocation (handoff)
 
-**Status: BLOCKED — awaiting owner approval + authorized provisioning.**
-**Base:** main `8b90c7c`. **Date:** 2026-11-14.
+> **Status 2026-11-28: provisioning is done; §1's snapshot is out of date.**
+> `GH_RELEASE_APK_SIGNING_KEY` was provisioned on 2026-11-15 and lives in the
+> environment `signing`; `keys/goshisen-apk.pub.pem` (`542bb7ae…`) is committed
+> and APK signing has been in production since v0.2.3 (§6 history,
+> `docs/release/evidence-index.md` row 38). Nothing here is owed by the owner
+> any more, and this handoff is kept as the record of what was missing then.
+> Unaffected by the 2026-11-28 **CLI** anchor rotation: that is a different key
+> on a different channel — see §2a.
+
+**Historical status at handoff:** BLOCKED — awaiting owner approval + authorized
+provisioning. **Base:** main `8b90c7c`. **Date:** 2026-11-14.
 
 This document is the governance handoff for the production APK signing
 key. The engineering path is complete and fail-closed
@@ -11,7 +20,10 @@ administrative and MUST be performed by the authorized key manager /
 repository owner. The agent does not create, read, export, rotate, or
 revoke private keys, and does not provision secrets.
 
-## 1. Current state (verified 2026-11-14 at `8b90c7c`)
+## 1. State at handoff (verified 2026-11-14 at `8b90c7c`) — historical
+
+Everything in this section describes 2026-11-14 and was superseded by the
+provisioning on 2026-11-15; the current state is the banner above and §6.
 
 | Item | State |
 | --- | --- |
@@ -62,6 +74,18 @@ environment with `apk-sign.yml` are in
 The APK key remains `GH_RELEASE_APK_SIGNING_KEY` in environment
 `signing`; never reuse one key for the other channel.
 
+**No action follows for anyone installing packages.** An entry in
+`/etc/apk/keys/` is fed by the APK anchor only — `keys/goshisen-apk.pub.pem`
+(EC P-256, `542bb7ae9058fee9b4d37ed30b0af44f234ea7cb8866daa1ffc71a7bc37c839d`),
+which has **never** rotated, so an existing trust store keeps installing and
+upgrading `.apk` packages unchanged. The rotated CLI anchor is not an apk
+signing key: it verifies the release tarballs / `checksums.txt` / SBOM through
+`openssl`/`scripts/verify-signatures.sh`, and the key that ships with each
+release as `public_key.pem` is the one to verify *that* release with
+(`docs/installation.md`, `docs/openwrt.md` §Signing). Staging/early apks used
+the separate test key named in `docs/release/apk-signing-path.md` (`9736b23b…`);
+the production APK key has been in use since v0.2.3.
+
 ## 3. Provisioning procedure (authorized personnel only)
 
 1. **Generate** the keypair with the approved tool in the approved
@@ -110,8 +134,9 @@ apk del goshisen                # uninstall
 
 ## 4b. Secret protection (Task 2, Proposal 39)
 
-- `GH_RELEASE_APK_SIGNING_KEY` is currently a **repository-level** secret
-  (no environments exist). Only `apk-sign.yml` references it; it resolves
+- `GH_RELEASE_APK_SIGNING_KEY` was a **repository-level** secret on
+  2026-11-14 (no environments existed then). **Resolved:** it now resolves from
+  the environment `signing`. Only `apk-sign.yml` references it; it resolves
   `secrets.GH_RELEASE_APK_SIGNING_KEY` only when `mode=production`.
 - Proposed (implemented in PR for the repo-file part; settings are manual
   owner actions): a GitHub **Environment `signing`** restricted to `main`
