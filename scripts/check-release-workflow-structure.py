@@ -9,7 +9,8 @@ protected `signing` environment (required reviewer, deploy policy:
 main branch + v* tag). The build job must never see the key.
 
 Rules enforced (each has a negative fixture in
-tests/ci/release-workflow-structure-test.sh):
+tests/ci/fixtures/release-workflow/, driven by
+tests/ci/release-workflow-guard-test.sh):
 
   sign-only-write          `sign` has `contents: write`; validate/build
                            do not (read-only release pipeline).
