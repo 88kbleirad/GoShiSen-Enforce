@@ -39,9 +39,12 @@ repository alone — no trust gap and no re-signing of published artifacts.
 
 - `keys/goshisen-release.pub.pem` — now the rotated anchor (public half only).
 - `keys/goshisen-release-2026-11-13.pub.pem` — **new**: the retired anchor,
-  committed so v0.2.1–v0.2.9 stay verifiable. `scripts/check-backup-key.sh`
-  scans `keys/*.pub.pem`, so a pre-rotation key file is now reported as
-  "matches: goshisen-release-2026-11-13.pub.pem" instead of a bare mismatch.
+  committed so v0.2.1–v0.2.9 stay verifiable. `scripts/check-backup-key.sh` takes a
+  **private** key file via `--key` and scans `keys/*.pub.pem` as the candidate
+  anchors, so a private key file that belongs to the retired anchor is now reported
+  as "matches: goshisen-release-2026-11-13.pub.pem" instead of a bare mismatch. To
+  fingerprint a **public** anchor directly, use `openssl` (see §4) — handed a
+  `keys/*.pub.pem`, that script exits 3 ("is not a readable PEM private key").
 - **Four** fingerprint pins (see `docs/release/f02-environment-migration.md` §0.1
   — that table previously listed only two; the test fixtures are hard pins too):
   `.github/workflows/release.yml` (`expected=` + header comment),
@@ -130,11 +133,14 @@ Results (2026-11-28, base `9834600`, tree with the rotation applied):
 
 ## 6. Rollback
 
-- **Repinning the retired anchor is not available.** It would need the retired
-  private half, and the owner confirms that no copy of it is held (2026-11-28) —
-  see §5 and §7. Do not restore `keys/goshisen-release.pub.pem` from
-  `keys/goshisen-release-2026-11-13.pub.pem` expecting to sign with the retired key
-  again.
+- **Repinning the retired anchor cannot restore signing.** The retired public anchor is
+  still in git (`keys/goshisen-release-2026-11-13.pub.pem`), so the file itself could be
+  restored — but the `sign` job requires `keys/goshisen-release.pub.pem` to carry fingerprint
+  `e9b4bf11...` before any secret use (`.github/workflows/release.yml:209-226`,
+  fail-closed), and the environment secret holds the rotated key, so a repin makes every
+  release fail closed instead of signing with the retired key. A *working* rollback would
+  need the retired private half, and the owner confirms that no copy of it is held
+  (2026-11-28) — see §5 and §7.
 - **Rotate again (the rollback path):** generate a fresh Ed25519 key, commit its
   public half, update the four pins, store the new secret — the same procedure as
   the 2026-11-28 rotation (§5). Old releases keep verifying against the archived
