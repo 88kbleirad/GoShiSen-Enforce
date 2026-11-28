@@ -345,10 +345,10 @@ Rollback is a temporary measure: re-open the F-02 issue with the failure
 output, because the repo-level secret is unscoped and is the exposure
 this change removed.
 
-## 5. Post-first-release check (open — run after the next `v*` tag, v0.2.10)
+## 5. Post-first-release check (open — run after the next `v*` tag)
 
 Run once, after the first real release that goes through the environment-only key
-(v0.2.10; v0.2.9 went through the gate but still resolved the repository-scope
+(v0.2.9 went through the gate but still resolved the repository-scope
 copy, see §7), and record the result in issue #100:
 
 - [ ] `gh run view <run-id> --json jobs` shows `validate` → `build` →
