@@ -74,7 +74,7 @@ if missing:
    in that release's notes:
    `e9b4bf1194ce90d2377720102748460404eacbc7aba9aa8ad48532cd63294fb9`
    (key ID `bdda690b97a4f49e`; SHA-256 of the DER SubjectPublicKeyInfo) for
-   releases from v0.2.10 on, and the pre-rotation
+   releases after v0.2.9, and the pre-rotation
    `24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0`
    (key ID `f955ede984245d64`, key created 2026-11-13) for v0.2.1–v0.2.9 —
    that older anchor stays committed as
