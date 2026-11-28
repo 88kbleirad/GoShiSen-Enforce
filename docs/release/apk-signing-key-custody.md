@@ -52,11 +52,13 @@ APK key above. Since the 2026-11-28 anchor rotation it carries fingerprint
 `e9b4bf11...` (key ID `bdda690b97a4f49e`); before that it was `24215e01...`
 (key ID `f955ede984245d64`). It is scoped to the protected environment `signing` (required
 reviewer `88kbleirad`) and is used only by release.yml's `sign` job (the
-build job never sees it). The migration record, the remaining step (the
-environment secret must hold the key's value; the repository-level copy is
-removed after a green dry run) and the exposure note about sharing the
+build job never sees it). The migration is **complete**: the environment secret
+holds the rotated key and the repository-level copy is deleted, proven by dry
+runs `46108232674` (rotated key in the environment) and `46108443415`
+(environment scope alone). The record and the exposure note about sharing the
 environment with `apk-sign.yml` are in
-`docs/release/f02-environment-migration.md` §0.
+`docs/release/f02-environment-migration.md` §0; the rotation itself in
+`docs/release/release-key-rotation-2026-11-28.md`.
 The APK key remains `GH_RELEASE_APK_SIGNING_KEY` in environment
 `signing`; never reuse one key for the other channel.
 

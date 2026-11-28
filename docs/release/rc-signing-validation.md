@@ -4,6 +4,13 @@
 **Status:** PASS — candidate validated end-to-end; candidate tag + draft release
 removed after validation (cleanup done). No production release modified.
 
+> **Note added 2026-11-28 — this record is not rewritten.** The CLI anchor named
+> in §1 (`24215e01...`, key ID `f955ede984245d64`) was **retired** by the
+> 2026-11-28 rotation. The current anchor is `e9b4bf11...` (key ID
+> `bdda690b97a4f49e`), and the retired anchor is archived as
+> `keys/goshisen-release-2026-11-13.pub.pem` — see
+> `docs/release/release-key-rotation-2026-11-28.md`.
+
 ---
 
 ## 1. Preconditions
