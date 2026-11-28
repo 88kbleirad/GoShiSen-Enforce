@@ -72,11 +72,19 @@ lỗi lớn) nếu thiếu:
    khóa một cách độc lập: `openssl pkey -pubin -in public_key.pem -outform DER |
    sha256sum` phải bằng vân tay in trong release notes của bản đó:
    `e9b4bf1194ce90d2377720102748460404eacbc7aba9aa8ad48532cd63294fb9`
-   (SHA-256 của DER SubjectPublicKeyInfo) cho các bản từ v0.2.10 trở đi, và
+   (key ID `bdda690b97a4f49e`; SHA-256 của DER SubjectPublicKeyInfo) cho các bản
+   từ v0.2.10 trở đi, và
    `24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0`
-   (khóa tạo 2026-11-13) cho v0.2.1–v0.2.9 — anchor cũ vẫn được commit tại
+   (key ID `f955ede984245d64`, khóa tạo 2026-11-13) cho v0.2.1–v0.2.9 — anchor
+   cũ vẫn được commit tại
    `keys/goshisen-release-2026-11-13.pub.pem`. Xem
    [`release-key-rotation-2026-11-28.md`](../release/release-key-rotation-2026-11-28.md).
+
+   Anchor đó **chỉ** là khóa phát hành CLI. Gói OpenWrt được ký bằng khóa khác —
+   anchor APK `keys/goshisen-apk.pub.pem` (EC P-256,
+   `542bb7ae9058fee9b4d37ed30b0af44f234ea7cb8866daa1ffc71a7bc37c839d`), chưa từng
+   xoay và là khóa **duy nhất** thuộc `/etc/apk/keys/` — xem
+   [`openwrt.md`](openwrt.md) §Signing. Không bao giờ đặt anchor phát hành CLI ở đó.
 
 4. Giải nén và cài đặt:
 

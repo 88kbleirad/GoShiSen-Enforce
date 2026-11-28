@@ -73,12 +73,19 @@ if missing:
    public_key.pem -outform DER | sha256sum` must equal the fingerprint printed
    in that release's notes:
    `e9b4bf1194ce90d2377720102748460404eacbc7aba9aa8ad48532cd63294fb9`
-   (SHA-256 of the DER SubjectPublicKeyInfo) for releases from v0.2.10 on, and
-   the pre-rotation
+   (key ID `bdda690b97a4f49e`; SHA-256 of the DER SubjectPublicKeyInfo) for
+   releases from v0.2.10 on, and the pre-rotation
    `24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0`
-   (key created 2026-11-13) for v0.2.1–v0.2.9 — that older anchor stays
-   committed as `keys/goshisen-release-2026-11-13.pub.pem`. See
+   (key ID `f955ede984245d64`, key created 2026-11-13) for v0.2.1–v0.2.9 —
+   that older anchor stays committed as
+   `keys/goshisen-release-2026-11-13.pub.pem`. See
    [`release-key-rotation-2026-11-28.md`](release/release-key-rotation-2026-11-28.md).
+
+   That anchor is the **CLI release** key only. OpenWrt packages are signed with
+   a different key — the APK anchor `keys/goshisen-apk.pub.pem` (EC P-256,
+   `542bb7ae9058fee9b4d37ed30b0af44f234ea7cb8866daa1ffc71a7bc37c839d`), which has
+   never rotated and is the only key that belongs in `/etc/apk/keys/` — see
+   [`openwrt.md`](openwrt.md) §Signing. Never place the CLI release anchor there.
 
 4. Extract and install:
 
