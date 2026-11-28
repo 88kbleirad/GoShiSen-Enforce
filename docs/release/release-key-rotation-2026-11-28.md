@@ -40,7 +40,7 @@ repository alone — no trust gap and no re-signing of published artifacts.
 - `keys/goshisen-release.pub.pem` — now the rotated anchor (public half only).
 - `keys/goshisen-release-2026-11-13.pub.pem` — **new**: the retired anchor,
   committed so v0.2.1–v0.2.9 stay verifiable. `scripts/check-backup-key.sh`
-  scans `keys/*.pub.pem`, so a pre-rotation offline backup is now reported as
+  scans `keys/*.pub.pem`, so a pre-rotation key file is now reported as
   "matches: goshisen-release-2026-11-13.pub.pem" instead of a bare mismatch.
 - **Four** fingerprint pins (see `docs/release/f02-environment-migration.md` §0.1
   — that table previously listed only two; the test fixtures are hard pins too):
@@ -119,28 +119,26 @@ Results (2026-11-28, base `9834600`, tree with the rotation applied):
   that was still outstanding (`docs/release/f02-environment-migration.md`).
 - The **retired private key no longer exists in GitHub**: step 4 deleted the
   repository-level copy and the environment secret now holds the rotated key. The
-  retired private half is **not** in this repository, and this record states no
-  path for any copy of it — whether one still exists is the owner's to confirm.
-  This does not affect verification of published releases, because the
-  retired *public* anchor is committed
-  (`keys/goshisen-release-2026-11-13.pub.pem`) and shipped as each release's
-  `public_key.pem` asset. A rollback that requires *signing* with the retired key
-  therefore needs that private half from outside this repository.
+  owner confirms that no copy of the retired private key is held (2026-11-28), so
+  the retired private half is not available for signing. This does not affect
+  verification of published releases, because the retired *public* anchor is
+  committed (`keys/goshisen-release-2026-11-13.pub.pem`) and shipped as each
+  release's `public_key.pem` asset. A rollback that requires *signing* with the
+  retired key is therefore not available; see §6.
 - No tag, release, or published asset was created, moved, or re-signed at any
   step; the rotation takes effect on the next tag after v0.2.9.
 
 ## 6. Rollback
 
-- **Repin the anchor (preferred):** restore `keys/goshisen-release.pub.pem` from
-  `keys/goshisen-release-2026-11-13.pub.pem`, revert the four pins, and re-store
-  the retired private key in the environment secret. That re-store needs the
-  retired private half, which is **not** in this repository: step 4 deleted the
-  repository-level copy, and this record states no other location. Whether a copy
-  still exists — the owner's own, or one taken before that deletion — is for the
-  owner to confirm.
-- **Rotate again:** generate a fresh Ed25519 key, commit its public half, update
-  the four pins, store the new secret. Old releases keep verifying against the
-  archived anchors either way.
+- **Repinning the retired anchor is not available.** It would need the retired
+  private half, and the owner confirms that no copy of it is held (2026-11-28) —
+  see §5 and §7. Do not restore `keys/goshisen-release.pub.pem` from
+  `keys/goshisen-release-2026-11-13.pub.pem` expecting to sign with the retired key
+  again.
+- **Rotate again (the rollback path):** generate a fresh Ed25519 key, commit its
+  public half, update the four pins, store the new secret — the same procedure as
+  the 2026-11-28 rotation (§5). Old releases keep verifying against the archived
+  anchors either way.
 - Published artifacts are never re-signed or withdrawn by a rollback; a new
   anchor signs the next release only.
 
@@ -151,6 +149,10 @@ Results (2026-11-28, base `9834600`, tree with the rotation applied):
   (`GH_RELEASE_SIGNING_KEY`, required reviewer `88kbleirad`).
 - Public key: `keys/goshisen-release.pub.pem` (committed; also shipped as the
   `public_key.pem` asset of every release).
+- Retired key (key ID `f955ede984245d64`, fingerprint
+  `24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0`): retired;
+  no private copy held (owner-confirmed 2026-11-28); public key archived at
+  `keys/goshisen-release-2026-11-13.pub.pem`.
 - The key is **not** the APK key (`keys/goshisen-apk.pub.pem`, EC P-256) and the
   two channels are never interchanged — see
   `docs/release/apk-signing-key-custody.md`.

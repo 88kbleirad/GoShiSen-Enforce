@@ -285,8 +285,8 @@ parseable PEM private key (empty, base64-encoded, public key, or other).
 The repository-level copy is unaffected (the v0.2.7 tag release used it
 successfully). `scripts/release-sign.sh` now diagnoses the secret's
 *shape* (length + category only, never the value) so a re-run tells us
-exactly what is wrong. The maintainer must re-set the environment secret
-from the offline backup before the dry run is re-run; do **not** copy
+exactly what is wrong. The maintainer re-set the environment secret
+from the offline backup before the dry run was re-run; do **not** copy
 the repository secret's value through any log/artifact in the process.
 
 Also confirm (names only) that the environment secret is present with the
@@ -321,6 +321,11 @@ lists no CLI key, and environment `signing` lists `GH_RELEASE_SIGNING_KEY` +
 `GH_RELEASE_APK_SIGNING_KEY`.
 
 ## 4. Rollback if the next real release fails
+
+**Note added 2026-11-28 — the recovery actions below assume a private half still
+exists** for the key the anchor currently names. For the retired key
+`24215e01...` the owner confirms that no copy is held (2026-11-28), so only a
+rotation applies — see `docs/release/release-key-rotation-2026-11-28.md` §6.
 
 Symptom → cause → action:
 
