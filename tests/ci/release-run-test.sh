@@ -203,6 +203,18 @@ run 0 --tag "$TAG" --dry-run --repo "$FX" --go-root /tmp/go --out /tmp/out
 grep_out "--go-root /tmp/go --out /tmp/out"
 deny_out "<go-root>"
 
+# ---- the signing dispatch's expected_sha256 comes from the build manifest --
+OUTDIR="$TMP/out"; mkdir -p "$OUTDIR"
+APKSHA=1111111111111111111111111111111111111111111111111111111111111111
+cat > "$OUTDIR/build-manifest-A.json" <<JSON
+{"artifacts":{"apk":{"sha256":"$APKSHA"},
+              "payload":{"sha256":"2222222222222222222222222222222222222222222222222222222222222222"}}}
+JSON
+run 0 --tag "$TAG" --dry-run --repo "$FX" --out "$OUTDIR" --assets-dir "$TMP/assets" --go-root /tmp/go
+grep_out "-f expected_sha256=$APKSHA"
+grep_out "--apk-sha256 $APKSHA"
+deny_out "<apk-sha256>"
+
 # ---- execute refuses an agent step whose inputs are unset ----------------
 run 7 --tag "$TAG" --execute --repo "$FX" --from-step 12 --evidence-dir "$TMP/ev3"
 grep_out "STOP — step 12 needs input"
