@@ -47,9 +47,10 @@ The record MUST also state explicitly that `GH_RELEASE_SIGNING_KEY`
 
 ## 2a. CLI release key (F-02, issue #100) — separate environment, separate key
 
-The **CLI release** signing key `GH_RELEASE_SIGNING_KEY` (Ed25519,
-fingerprint `24215e01...`, key ID `f955ede984245d64`) is not the APK key
-above. It is scoped to the protected environment `signing` (required
+The **CLI release** signing key `GH_RELEASE_SIGNING_KEY` (Ed25519) is not the
+APK key above. Since the 2026-11-28 anchor rotation it carries fingerprint
+`e9b4bf11...` (key ID `bdda690b97a4f49e`); before that it was `24215e01...`
+(key ID `f955ede984245d64`). It is scoped to the protected environment `signing` (required
 reviewer `88kbleirad`) and is used only by release.yml's `sign` job (the
 build job never sees it). The migration record, the remaining step (the
 environment secret must hold the key's value; the repository-level copy is
@@ -150,3 +151,4 @@ apk del goshisen                # uninstall
 | 2026-11-14 | handoff created; no key provisioned | — | this document |
 | 2026-11-15 | **first production use** — v0.2.3 release: production signing run `43680663126` (sign + negative-controls SUCCESS), signed `goshisen-0.2.3-r1.apk` (sha256 `948e2e1d…`) published | `542bb7ae9058fee9b4d37ed30b0af44f234ea7cb8866daa1ffc71a7bc37c839d` | `docs/release/v023-release-evidence.md`, `docs/release/v0.2.3-notes.md` |
 | 2026-11-22 | **CLI key scoped (F-02)**: `GH_RELEASE_SIGNING_KEY` moved behind environment `release-cli` (release.yml `sign` job only); APK key/environment `signing` untouched | `24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0` | `docs/release/f02-environment-migration.md`, issue #100 |
+| 2026-11-28 | **CLI release anchor rotated** (owner decision): `keys/goshisen-release.pub.pem` replaced by the new Ed25519 key (key ID `bdda690b97a4f49e`); retired anchor kept as `keys/goshisen-release-2026-11-13.pub.pem`; all four fingerprint pins + live docs updated. Secret re-provisioning + dry-run proof: rotation record §5 | `e9b4bf1194ce90d2377720102748460404eacbc7aba9aa8ad48532cd63294fb9` (was `24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0`) | `docs/release/release-key-rotation-2026-11-28.md` |

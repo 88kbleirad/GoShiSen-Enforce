@@ -57,20 +57,28 @@ if missing:
    grep goshisen-linux-amd64.tar.gz checksums.txt | sha256sum -c -
    ```
 
-3. Verify the Ed25519 signature against the committed release public key:
+3. Verify the Ed25519 signature against the release public key:
 
    ```bash
-   curl -LO https://raw.githubusercontent.com/88kbleirad/GoShiSen-Enforce/main/keys/goshisen-release.pub.pem
-   curl -LO https://github.com/88kbleirad/GoShiSen-Enforce/releases/download/v0.1.0/goshisen-linux-amd64.tar.gz.sig
-   openssl pkeyutl -verify -rawin -pubin -inkey goshisen-release.pub.pem \
+   curl -LO https://github.com/88kbleirad/GoShiSen-Enforce/releases/download/<TAG>/public_key.pem
+   curl -LO https://github.com/88kbleirad/GoShiSen-Enforce/releases/download/<TAG>/goshisen-linux-amd64.tar.gz.sig
+   openssl pkeyutl -verify -rawin -pubin -inkey public_key.pem \
      -in goshisen-linux-amd64.tar.gz -sigfile goshisen-linux-amd64.tar.gz.sig
    ```
 
-   The command must print `Signature Verified Successfully`. Compare the key
-   fingerprint independently: `openssl pkey -pubin -in goshisen-release.pub.pem
-   -outform DER | sha256sum` must equal
+   The command must print `Signature Verified Successfully`. Every release ships
+   the key it was signed with as the `public_key.pem` asset — fetch it from the
+   release you are installing, not from `main`, because the anchor rotates.
+   Compare its fingerprint independently: `openssl pkey -pubin -in
+   public_key.pem -outform DER | sha256sum` must equal the fingerprint printed
+   in that release's notes:
+   `e9b4bf1194ce90d2377720102748460404eacbc7aba9aa8ad48532cd63294fb9`
+   (SHA-256 of the DER SubjectPublicKeyInfo) for releases from v0.2.10 on, and
+   the pre-rotation
    `24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0`
-   (SHA-256 of the DER SubjectPublicKeyInfo; key created 2026-11-13).
+   (key created 2026-11-13) for v0.2.1–v0.2.9 — that older anchor stays
+   committed as `keys/goshisen-release-2026-11-13.pub.pem`. See
+   [`release-key-rotation-2026-11-28.md`](release/release-key-rotation-2026-11-28.md).
 
 4. Extract and install:
 

@@ -375,6 +375,11 @@
   "title": "Release-Candidate Signing Validation — v0.2.1-rc.2"
  },
  {
+  "slug": "docs-release-release-key-rotation-2026-11-28",
+  "path": "../docs/release/release-key-rotation-2026-11-28.md",
+  "title": "CLI release anchor rotation — 2026-11-28"
+ },
+ {
   "slug": "docs-release-release-pin-gate",
   "path": "../docs/release/release-pin-gate.md",
   "title": "Release pin/version agreement gate (issue #49)"

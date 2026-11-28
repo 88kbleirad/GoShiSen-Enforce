@@ -10,7 +10,7 @@
 #   --anchor FILE   expected public anchor
 #                   (default: keys/goshisen-release.pub.pem)
 #   --expect HEX    expected SHA-256(DER SPKI) of the key's public half
-#                   (default: the production CLI fingerprint 24215e01...)
+#                   (default: the production CLI fingerprint e9b4bf11...)
 #   -q, --quiet     print nothing on success (exit status only)
 #
 # Exit codes:
@@ -26,7 +26,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 KEY=""
 ANCHOR="$ROOT/keys/goshisen-release.pub.pem"
 QUIET=0
-EXPECTED=24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0
+EXPECTED=e9b4bf1194ce90d2377720102748460404eacbc7aba9aa8ad48532cd63294fb9
 
 usage() { sed -n '2,20p' "$0"; }
 
@@ -87,7 +87,7 @@ fp=$(openssl pkey -in "$KEY" -pubout -outform DER | sha256sum | awk '{print $1}'
 say "pubkey:   sha256(DER SPKI) = $fp"
 
 if [ "$fp" = "$EXPECTED" ]; then
-  say "MATCH:    this is the production CLI release key (24215e01...)"
+  say "MATCH:    this is the production CLI release key (e9b4bf11...)"
   say "          next: gh secret set GH_RELEASE_SIGNING_KEY --env signing --repo 88kbleirad/GoShiSen-Enforce < <file>"
   exit 0
 fi

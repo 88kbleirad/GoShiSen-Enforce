@@ -4,8 +4,8 @@ name: release
 # requests. PRs validate packaging in ci.yml without publishing.
 #
 # F-02 (issue #100): the CLI release signing key
-# (GH_RELEASE_SIGNING_KEY, fingerprint 24215e01..., key id
-# f955ede984245d64) is used only by the `sign` job; the `build` job
+# (GH_RELEASE_SIGNING_KEY, fingerprint e9b4bf11..., key id
+# bdda690b97a4f49e) is used only by the `sign` job; the `build` job
 # never sees the key and runs with read-only permissions. The
 # approval gate is `environment: signing` on the `sign` job (required
 # reviewer + deployment policies `main` branch / `v*` tag), so a tag
@@ -210,12 +210,15 @@ jobs:
         run: |
           set -euo pipefail
           # The committed trust anchor must be the production CLI release
-          # key: SHA-256 of DER SPKI == 24215e01... Verified before any
+          # key: SHA-256 of DER SPKI == e9b4bf11... Verified before any
           # secret use, so a swapped/mistaken anchor never signs.
+          # Rotated 2026-11-28; the pre-rotation anchor (24215e01...) is
+          # archived as keys/goshisen-release-2026-11-13.pub.pem for
+          # verifying releases up to v0.2.9.
           anchor=keys/goshisen-release.pub.pem
           [ -f "$anchor" ] || { echo "FAIL: trust anchor $anchor missing" >&2; exit 1; }
           fp="$(openssl pkey -pubin -in "$anchor" -outform DER | sha256sum | awk '{print $1}')"
-          expected=24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0
+          expected=e9b4bf1194ce90d2377720102748460404eacbc7aba9aa8ad48532cd63294fb9
           if [ "$fp" != "$expected" ]; then
             echo "FAIL: trust anchor fingerprint mismatch ($anchor: got $fp, expected $expected)" >&2
             exit 1

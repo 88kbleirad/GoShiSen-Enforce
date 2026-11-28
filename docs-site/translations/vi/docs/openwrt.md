@@ -74,9 +74,11 @@ apk add /tmp/goshisen.apk       # apk xác minh chữ ký; không cần --allow-
 ```
 
 Anchor APK là khóa công khai EC P-256
-(`keys/goshisen-apk.pub.pem`, vân tay `542bb7ae…`) và **không phải**
+(`keys/goshisen-apk.pub.pem`, vân tay `542bb7ae...`) và **không phải**
 khóa phát hành CLI (asset `public_key.pem` của phát hành, Ed25519,
-vân tay `24215e01…`, chỉ xác minh các tarball/checksums/SBOM).
+vân tay `e9b4bf11...` kể từ lần xoay anchor 2026-11-28, chỉ xác minh các
+tarball/checksums/SBOM; các bản tới v0.2.9 được ký bằng khóa trước xoay
+`24215e01...`, lưu trữ tại `keys/goshisen-release-2026-11-13.pub.pem`).
 Gói cài đặt tắt mặc định; bật bằng `uci set
 goshisen.main.enabled=1; uci commit goshisen; /etc/init.d/goshisen
 enable && start`.
@@ -251,7 +253,9 @@ uci set goshisen.main.enabled='0'; uci commit goshisen
 **Trạng thái: ký gói APK — production-signed từ v0.2.3.**
 Workflow phát hành ký các kho lưu trữ CLI phát hành (tarball, checksums,
 SBOM) bằng khóa Ed25519 production (vân tay
-`24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0`).
+`e9b4bf1194ce90d2377720102748460404eacbc7aba9aa8ad48532cd63294fb9`
+kể từ lần xoay anchor 2026-11-28; `24215e01...` cho v0.2.1–v0.2.9, anchor cũ
+lưu trữ tại `keys/goshisen-release-2026-11-13.pub.pem`).
 `.apk` OpenWrt được ký production (apk v3) bằng khóa APK có anchor công
 khai `keys/goshisen-apk.pub.pem` (EC P-256, vân tay
 `542bb7ae9058fee9b4d37ed30b0af44f234ea7cb8866daa1ffc71a7bc37c839d`).

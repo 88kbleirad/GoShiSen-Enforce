@@ -24,6 +24,14 @@ different environment (`signing`) — see
 
 ## 0. Current state (2026-11-23) — gate reinstated in `signing`
 
+> **2026-11-28 — the CLI anchor was rotated.** The records in this section
+> describe the pre-rotation state (key `24215e01...`). The committed anchor and
+> every fingerprint pin now carry the new key `e9b4bf11...`
+> (key ID `bdda690b97a4f49e`), the retired anchor stays committed as
+> `keys/goshisen-release-2026-11-13.pub.pem`, and the environment secret in
+> `signing` holds the new key. Full record incl. the repository-level copy
+> removal and the dry-run proof: `docs/release/release-key-rotation-2026-11-28.md`.
+
 | Item | State |
 | --- | --- |
 | `release.yml` `sign` job | `environment: signing`; only `sign` may reference the key, only `sign` may write |
@@ -61,10 +69,18 @@ store the new key in the environment secret, and replace
 **hardcoded** copies of the expected fingerprint (keep the old anchor committed
 so past releases still verify):
 
-| Where | Literal |
+| Where | Literal (before → after the 2026-11-28 rotation) |
 | --- | --- |
-| `.github/workflows/release.yml` (the `sign` job's anchor gate, `expected=`) | `24215e01...` |
-| `scripts/check-backup-key.sh` (`EXPECTED=`, the offline check's default) | `24215e01...` |
+| `.github/workflows/release.yml` (the `sign` job's anchor gate, `expected=`) | `24215e01...` → `e9b4bf11...` |
+| `scripts/check-backup-key.sh` (`EXPECTED=`, the offline check's default) | `24215e01...` → `e9b4bf11...` |
+| `tests/package/production_signing_test.go` (`wantPubFingerprint` / `wantKeyID`) | `24215e01...` / `f955ede984245d64` → `e9b4bf11...` / `bdda690b97a4f49e` |
+| `tests/ci/release-workflow-guard-test.sh` (the dry-run output must print the anchor fingerprint) | `24215e01...` → `e9b4bf11...` |
+
+**Corrected 2026-11-28:** this table previously listed only the two literals
+(workflow + offline check). Two more copies live in the test fixtures above, and
+they are hard pins too — a rotation that misses them fails CI
+(`production_signing` unit test and `release-workflow-guard`) even though the
+workflow itself is correct. A full rotation = all four sites + docs.
 
 There is **no** `keys/release-anchor-fingerprint.txt` on `main` — that name does
 not exist in the repository, and the fingerprint has no single source file. The

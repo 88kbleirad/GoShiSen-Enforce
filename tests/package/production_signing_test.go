@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	wantPubFingerprint = "24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0"
-	wantKeyID          = "f955ede984245d64"
+	wantPubFingerprint = "e9b4bf1194ce90d2377720102748460404eacbc7aba9aa8ad48532cd63294fb9"
+	wantKeyID          = "bdda690b97a4f49e"
 )
 
 func committedPubKey(t *testing.T) string {

@@ -3,7 +3,7 @@
 
 Goal of F-02: the CLI release signing key
 (`secrets.GH_RELEASE_SIGNING_KEY`, production fingerprint
-`24215e01...`, key id `f955ede984245d64`) must be usable only by the
+`e9b4bf11...`, key id `bdda690b97a4f49e`) must be usable only by the
 `sign` job of `.github/workflows/release.yml`, which runs under the
 protected `signing` environment (required reviewer, deploy policy:
 main branch + v* tag). The build job must never see the key.
