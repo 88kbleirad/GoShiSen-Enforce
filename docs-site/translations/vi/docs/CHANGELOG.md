@@ -7,6 +7,36 @@ Trạng thái và lịch sử đáng chú ý của GoShiSen-Enforce. Chi tiết 
 - **v0.2.9** — bản phát hành mới nhất (đã công bố 2026-11-27): bản phát hành về kỹ thuật phát hành / làm cứng CI với **không thay đổi runtime** (CLI hoạt động y hệt v0.2.8): cổng phê duyệt F-02 cho job `sign`, harness e2e OpenWrt được làm cứng, các bước mạng trong CI có giới hạn, gate S-005 govulncheck fail-closed, công thức build apk được đưa vào repo kèm gate build manifest, và PR pin sau tag + neo recipe ở bước 9. Ghi chú: `docs/release/v0.2.9-notes.md`; asset: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.9).
 - **v0.2.8** — bản phát hành trước (đã công bố 2026-11-22): bản phát hành bảo mật/làm cứng — đọc file có giới hạn ở mọi chỗ đọc đầu vào của người vận hành, policy store riêng tư (0700/0600) với listener metrics có giới hạn thời gian, UCI `api_token` được ghi 0600, các tùy chọn yêu cầu xác thực khi đọc (D1), cân bằng lại govulncheck (D2). Ghi chú: `docs/release/v0.2.8-notes.md`; asset: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.8).
 
+## Chưa phát hành — wrapper chạy phát hành (P3.11, issue #142)
+
+`scripts/release-run.sh` hệ thống hoá một lần chạy phát hành thành kế hoạch 12
+bước — gate trước khi gắn thẻ → thẻ có chú thích → workflow phát hành (draft) →
+PR pin sau thẻ → build apk A/B → gate manifest + pin/phiên bản → smoke VM bản
+chưa ký → tải apk chưa ký lên draft → ký apk production → smoke bản đã ký + đính
+kèm → chuyển sang công bố → quét sau khi công bố — in ra lệnh chính xác của từng
+bước, ai thực hiện (agent hay maintainer) và bằng chứng phải thu được.
+
+- **`--dry-run`** in ra kế hoạch và không thực thi gì — không gắn thẻ, build,
+  ký, tải lên, công bố hay ghi file.
+- **`--execute`** chạy các bước thuộc `agent` (gate trước khi gắn thẻ, build apk
+  A/B, gate manifest/pin, quét sau khi công bố) rồi dừng ở bước `maintainer`
+  đầu tiên (gắn thẻ, workflow, PR pin, tải lên draft, ký apk, chuyển công bố)
+  hoặc bước `manual` (smoke trong lab) kèm đúng lệnh cần chạy — thoát mã 5/6;
+  tiếp tục bằng `--from-step N`. Nó từ chối bước thiếu đầu vào (7), fail-closed
+  khi một bước lỗi (1) và khi cây làm việc bẩn/lệch `main` (8), và ghi một file
+  bằng chứng cho mỗi lần chạy (bước → lệnh → mã thoát → sha256 đầu ra, kèm log
+  thô) trong `$HOME/release-evidence/<tag>-<UTC>/` — nằm ngoài worktree để gate
+  cây-sạch ở bước 1 vẫn đạt.
+- Tên thẻ đi qua `scripts/validate-release-tag.sh` (S-003) trước khi được dùng
+  trong bất kỳ lệnh nào; ba điểm dừng cứng không bao giờ bị vượt tự động (gate
+  trước khi gắn thẻ F-01, hash A/B lệch, gate manifest/pin).
+- Kế hoạch được đúc kết từ lần chạy v0.2.9, không phải tự nghĩ ra; bước mà lần
+  chạy trước không thể chạy bằng code đã commit (smoke VM) được đánh dấu
+  `manual` và nói rõ.
+- Được bảo vệ bởi `tests/ci/release-run-test.sh` (job `release-run (P3.11)`
+  trong CI), có chạy thử `--execute` trên repo git tạm. Tài liệu:
+  `docs/release/release-run.md`.
+
 ## Xoay anchor ký phát hành (2026-11-28, sau v0.2.9)
 
 Anchor tin cậy của bản phát hành CLI đã được xoay: `keys/goshisen-release.pub.pem`

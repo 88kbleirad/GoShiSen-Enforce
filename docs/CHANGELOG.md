@@ -7,6 +7,36 @@ Status and notable history for GoShiSen-Enforce. Per-release detail lives in `do
 - **v0.2.9** — latest release (published 2026-11-27): release-engineering / CI-hardening release with **no runtime change** (the CLI behaves exactly as v0.2.8): F-02 approval gate on the `sign` job, hardened OpenWrt e2e harness, bounded CI network steps, fail-closed S-005 govulncheck gates, the codified apk build recipe + build manifest gate, and the post-tag pin + step-9 recipe anchor. Notes: [`docs/release/v0.2.9-notes.md`](release/v0.2.9-notes.md); assets: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.9).
 - **v0.2.8** — previous release (published 2026-11-22): security/hardening release — bounded file reads everywhere operator input is read, private policy store (0700/0600) with bounded metrics listener, OpenWrt `api_token` written 0600, authenticated-read opt-ins (D1), govulncheck re-balanced (D2). Notes: [`docs/release/v0.2.8-notes.md`](release/v0.2.8-notes.md); assets: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.8).
 
+## Unreleased — release-run wrapper (P3.11, issue #142)
+
+`scripts/release-run.sh` codifies one release run as a 12-step plan — pre-tag
+gate → annotated tag → release workflow (draft) → post-tag pin PR → apk build
+A/B → manifest + pin/version gates → unsigned VM smoke → draft upload →
+production apk signing → signed smoke/attach → publish flip → post-publish
+sweep — printing each step's exact commands, its owner (agent or maintainer) and
+the evidence it must produce.
+
+- **`--dry-run`** prints the plan and executes nothing — no tag, build, signing,
+  upload, publish or file written.
+- **`--execute`** runs the steps owned by `agent` (pre-tag gate, apk build A/B,
+  manifest/pin gates, post-publish sweep), then stops at the first `maintainer`
+  step (tag, workflow, pin PR, draft upload, apk signing, publish flip) or
+  `manual` step (the lab smoke) with the exact commands to run — exit 5/6;
+  resume with `--from-step N`. It refuses a step whose inputs are unset (7),
+  fails closed on a failing step (1) and on a dirty/off-`main` tree (8), and
+  writes one evidence file per run (step → command → exit → output sha256, plus
+  the raw step log) under `$HOME/release-evidence/<tag>-<UTC>/` — outside the
+  worktree, so step 1's clean-tree gate still passes.
+- The tag name goes through `scripts/validate-release-tag.sh` (S-003) before it
+  is used in any printed command; three hard stops are never crossed
+  automatically (F-01 pre-tag gate, A/B hash mismatch, manifest/pin gate).
+- The plan is codified from the v0.2.9 run, not invented; the two steps the last
+  run could not drive from committed code (the VM smoke) are marked `manual` and
+  say so.
+- Guarded by `tests/ci/release-run-test.sh` (`release-run (P3.11)` in CI), which
+  drives `--execute` against scratch git fixtures. Doc:
+  [`docs/release/release-run.md`](release/release-run.md).
+
 ## Release signing anchor rotation (2026-11-28, post-v0.2.9)
 
 The CLI release trust anchor rotated: `keys/goshisen-release.pub.pem` is now the

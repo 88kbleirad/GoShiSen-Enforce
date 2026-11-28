@@ -90,6 +90,20 @@ jobs:
       - name: Metacharacter tag fixtures must be rejected before use
         run: bash tests/ci/validate-release-tag-test.sh
 
+  release-run:
+    # P3.11 regression gate: the release-run wrapper must list every step with
+    # its exact commands, validate the tag through the S-003 guard first, and
+    # mutate nothing in --dry-run; in --execute it runs only the `agent` steps
+    # against scratch fixtures, stops at a gated step, and writes evidence.
+    # The plan is the codified v0.2.9 run (issue #142); this pins it so a step
+    # or a refusal cannot silently disappear.
+    name: release-run (P3.11)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Dry-run plan, fail-closed arguments, no mutation
+        run: bash tests/ci/release-run-test.sh
+
   release-pretag-gate:
     # F-01 regression gate: the commit being tagged must ALREADY carry a
     # matching openwrt/Makefile (PKG_VERSION == tag version, PKG_RELEASE
