@@ -22,7 +22,7 @@ nay là khóa Ed25519 có vân tay
   được chữ ký v0.2.x — tài liệu cài đặt đã được cập nhật tương ứng.
 - Không thay đổi hành vi runtime/CLI; không có artifact đã phát hành nào bị ký
   lại hay thu hồi.
-- Bản ghi: [`docs/release/release-key-rotation-2026-11-28.md`](release/release-key-rotation-2026-11-28.md).
+- Bản ghi: [`docs/release/release-key-rotation-2026-11-28.md`](../../../../docs/release/release-key-rotation-2026-11-28.md).
 
 ## v0.2.9 (đã công bố 2026-11-27)
 
