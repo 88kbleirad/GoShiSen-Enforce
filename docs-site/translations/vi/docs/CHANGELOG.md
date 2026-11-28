@@ -16,18 +16,26 @@ chưa ký → tải apk chưa ký lên draft → ký apk production → smoke b�
 kèm → chuyển sang công bố → quét sau khi công bố — in ra lệnh chính xác của từng
 bước, ai thực hiện (agent hay maintainer) và bằng chứng phải thu được.
 
-- **Phần 1: chỉ `--dry-run`.** Không thực thi gì — không gắn thẻ, build, ký,
-  tải lên, công bố hay ghi file — và `--execute` thoát mã 3 thay vì chạy nửa
-  vời kế hoạch. Phần còn lại sẽ chạy các bước không cần quyền, dừng ở mỗi bước
-  cần quyền với đúng lệnh `gh`, và ghi một file bằng chứng cho mỗi lần chạy vào
-  `evidence/release-run/<tag>-<UTC>/`.
+- **`--dry-run`** in ra kế hoạch và không thực thi gì — không gắn thẻ, build,
+  ký, tải lên, công bố hay ghi file.
+- **`--execute`** chạy các bước thuộc `agent` (gate trước khi gắn thẻ, build apk
+  A/B, gate manifest/pin, quét sau khi công bố) rồi dừng ở bước `maintainer`
+  đầu tiên (gắn thẻ, workflow, PR pin, tải lên draft, ký apk, chuyển công bố)
+  hoặc bước `manual` (smoke trong lab) kèm đúng lệnh cần chạy — thoát mã 5/6;
+  tiếp tục bằng `--from-step N`. Nó từ chối bước thiếu đầu vào (7), fail-closed
+  khi một bước lỗi (1) và khi cây làm việc bẩn/lệch `main` (8), và ghi một file
+  bằng chứng cho mỗi lần chạy (bước → lệnh → mã thoát → sha256 đầu ra, kèm log
+  thô) trong `$HOME/release-evidence/<tag>-<UTC>/` — nằm ngoài worktree để gate
+  cây-sạch ở bước 1 vẫn đạt.
 - Tên thẻ đi qua `scripts/validate-release-tag.sh` (S-003) trước khi được dùng
   trong bất kỳ lệnh nào; ba điểm dừng cứng không bao giờ bị vượt tự động (gate
   trước khi gắn thẻ F-01, hash A/B lệch, gate manifest/pin).
-- Kế hoạch được đúc kết từ lần chạy v0.2.9, không phải tự nghĩ ra; bước duy
-  nhất mà lần chạy trước dùng script bàn giao chưa commit (smoke VM) đã nói rõ.
-- Được bảo vệ bởi `tests/ci/release-run-test.sh` (job `release-run dry-run
-  (P3.11)` trong CI). Tài liệu: `docs/release/release-run.md`.
+- Kế hoạch được đúc kết từ lần chạy v0.2.9, không phải tự nghĩ ra; bước mà lần
+  chạy trước không thể chạy bằng code đã commit (smoke VM) được đánh dấu
+  `manual` và nói rõ.
+- Được bảo vệ bởi `tests/ci/release-run-test.sh` (job `release-run (P3.11)`
+  trong CI), có chạy thử `--execute` trên repo git tạm. Tài liệu:
+  `docs/release/release-run.md`.
 
 ## Xoay anchor ký phát hành (2026-11-28, sau v0.2.9)
 

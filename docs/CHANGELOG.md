@@ -16,18 +16,26 @@ production apk signing → signed smoke/attach → publish flip → post-publish
 sweep — printing each step's exact commands, its owner (agent or maintainer) and
 the evidence it must produce.
 
-- **Slice 1: `--dry-run` only.** It executes nothing — no tag, build, signing,
-  upload, publish or file written — and `--execute` exits 3 instead of
-  half-running a plan. The remaining slice runs the credential-free steps,
-  stops at every credential-gated step with the exact `gh` command, and writes
-  one evidence file per run under `evidence/release-run/<tag>-<UTC>/`.
+- **`--dry-run`** prints the plan and executes nothing — no tag, build, signing,
+  upload, publish or file written.
+- **`--execute`** runs the steps owned by `agent` (pre-tag gate, apk build A/B,
+  manifest/pin gates, post-publish sweep), then stops at the first `maintainer`
+  step (tag, workflow, pin PR, draft upload, apk signing, publish flip) or
+  `manual` step (the lab smoke) with the exact commands to run — exit 5/6;
+  resume with `--from-step N`. It refuses a step whose inputs are unset (7),
+  fails closed on a failing step (1) and on a dirty/off-`main` tree (8), and
+  writes one evidence file per run (step → command → exit → output sha256, plus
+  the raw step log) under `$HOME/release-evidence/<tag>-<UTC>/` — outside the
+  worktree, so step 1's clean-tree gate still passes.
 - The tag name goes through `scripts/validate-release-tag.sh` (S-003) before it
   is used in any printed command; three hard stops are never crossed
   automatically (F-01 pre-tag gate, A/B hash mismatch, manifest/pin gate).
-- The plan is codified from the v0.2.9 run, not invented; the one step the last
-  run drove with an uncommitted handoff script (the VM smoke) says so.
-- Guarded by `tests/ci/release-run-test.sh` (`release-run dry-run (P3.11)` in
-  CI). Doc: [`docs/release/release-run.md`](release/release-run.md).
+- The plan is codified from the v0.2.9 run, not invented; the two steps the last
+  run could not drive from committed code (the VM smoke) are marked `manual` and
+  say so.
+- Guarded by `tests/ci/release-run-test.sh` (`release-run (P3.11)` in CI), which
+  drives `--execute` against scratch git fixtures. Doc:
+  [`docs/release/release-run.md`](release/release-run.md).
 
 ## Release signing anchor rotation (2026-11-28, post-v0.2.9)
 
