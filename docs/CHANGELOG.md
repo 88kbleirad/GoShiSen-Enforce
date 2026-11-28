@@ -7,6 +7,23 @@ Status and notable history for GoShiSen-Enforce. Per-release detail lives in `do
 - **v0.2.9** — latest release (published 2026-11-27): release-engineering / CI-hardening release with **no runtime change** (the CLI behaves exactly as v0.2.8): F-02 approval gate on the `sign` job, hardened OpenWrt e2e harness, bounded CI network steps, fail-closed S-005 govulncheck gates, the codified apk build recipe + build manifest gate, and the post-tag pin + step-9 recipe anchor. Notes: [`docs/release/v0.2.9-notes.md`](release/v0.2.9-notes.md); assets: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.9).
 - **v0.2.8** — previous release (published 2026-11-22): security/hardening release — bounded file reads everywhere operator input is read, private policy store (0700/0600) with bounded metrics listener, OpenWrt `api_token` written 0600, authenticated-read opt-ins (D1), govulncheck re-balanced (D2). Notes: [`docs/release/v0.2.8-notes.md`](release/v0.2.8-notes.md); assets: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.8).
 
+## Release signing anchor rotation (2026-11-28, post-v0.2.9)
+
+The CLI release trust anchor rotated: `keys/goshisen-release.pub.pem` is now the
+Ed25519 key with fingerprint `e9b4bf1194ce90d2377720102748460404eacbc7aba9aa8ad48532cd63294fb9`
+(key ID `bdda690b97a4f49e`). The pre-rotation anchor
+(`24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0`, created
+2026-11-13) signed **v0.2.1 – v0.2.9** and stays committed as
+`keys/goshisen-release-2026-11-13.pub.pem`.
+
+- **Verifying an older release:** use the `public_key.pem` asset that ships with
+  that release (or the archived anchor above). `main` now carries the rotated
+  anchor and will not verify v0.2.x signatures — the install docs were updated
+  accordingly.
+- No runtime/CLI behaviour change, and no published artifact is re-signed or
+  withdrawn.
+- Record: [`docs/release/release-key-rotation-2026-11-28.md`](release/release-key-rotation-2026-11-28.md).
+
 ## v0.2.9 (published 2026-11-27)
 
 Release-engineering and CI-hardening release. **No daemon code change since

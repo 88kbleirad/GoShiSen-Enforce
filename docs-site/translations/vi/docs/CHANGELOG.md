@@ -7,6 +7,23 @@ Trạng thái và lịch sử đáng chú ý của GoShiSen-Enforce. Chi tiết 
 - **v0.2.9** — bản phát hành mới nhất (đã công bố 2026-11-27): bản phát hành về kỹ thuật phát hành / làm cứng CI với **không thay đổi runtime** (CLI hoạt động y hệt v0.2.8): cổng phê duyệt F-02 cho job `sign`, harness e2e OpenWrt được làm cứng, các bước mạng trong CI có giới hạn, gate S-005 govulncheck fail-closed, công thức build apk được đưa vào repo kèm gate build manifest, và PR pin sau tag + neo recipe ở bước 9. Ghi chú: `docs/release/v0.2.9-notes.md`; asset: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.9).
 - **v0.2.8** — bản phát hành trước (đã công bố 2026-11-22): bản phát hành bảo mật/làm cứng — đọc file có giới hạn ở mọi chỗ đọc đầu vào của người vận hành, policy store riêng tư (0700/0600) với listener metrics có giới hạn thời gian, UCI `api_token` được ghi 0600, các tùy chọn yêu cầu xác thực khi đọc (D1), cân bằng lại govulncheck (D2). Ghi chú: `docs/release/v0.2.8-notes.md`; asset: [Releases](https://github.com/88kbleirad/GoShiSen-Enforce/releases/tag/v0.2.8).
 
+## Xoay anchor ký phát hành (2026-11-28, sau v0.2.9)
+
+Anchor tin cậy của bản phát hành CLI đã được xoay: `keys/goshisen-release.pub.pem`
+nay là khóa Ed25519 có vân tay
+`e9b4bf1194ce90d2377720102748460404eacbc7aba9aa8ad48532cd63294fb9`
+(key ID `bdda690b97a4f49e`). Anchor trước khi xoay
+(`24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0`, tạo
+2026-11-13) đã ký **v0.2.1 – v0.2.9** và vẫn được commit tại
+`keys/goshisen-release-2026-11-13.pub.pem`.
+
+- **Khi xác minh bản cũ:** dùng asset `public_key.pem` đi kèm chính bản đó (hoặc
+  anchor lưu trữ ở trên). `main` nay mang anchor đã xoay và sẽ **không** xác minh
+  được chữ ký v0.2.x — tài liệu cài đặt đã được cập nhật tương ứng.
+- Không thay đổi hành vi runtime/CLI; không có artifact đã phát hành nào bị ký
+  lại hay thu hồi.
+- Bản ghi: [`docs/release/release-key-rotation-2026-11-28.md`](release/release-key-rotation-2026-11-28.md).
+
 ## v0.2.9 (đã công bố 2026-11-27)
 
 Bản phát hành về kỹ thuật phát hành và làm cứng CI. **Không có thay đổi mã daemon

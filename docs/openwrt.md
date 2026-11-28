@@ -76,9 +76,12 @@ apk add /tmp/goshisen.apk       # signature verified by apk; no --allow-untruste
 ```
 
 The APK anchor is an EC P-256 public key
-(`keys/goshisen-apk.pub.pem`, fingerprint `542bb7ae…`) and is **not**
+(`keys/goshisen-apk.pub.pem`, fingerprint `542bb7ae...`) and is **not**
 the CLI release key (the `public_key.pem` release asset, Ed25519,
-fingerprint `24215e01…`, verifies the tarballs/checksums/SBOM only).
+fingerprint `e9b4bf11...` since the 2026-11-28 rotation, verifies the
+tarballs/checksums/SBOM only; releases up to v0.2.9 are signed with the
+pre-rotation key `24215e01...`, archived as
+`keys/goshisen-release-2026-11-13.pub.pem`).
 Package installs disabled by default; enable with `uci set
 goshisen.main.enabled=1; uci commit goshisen; /etc/init.d/goshisen
 enable && start`.
@@ -256,7 +259,8 @@ uci set goshisen.main.enabled='0'; uci commit goshisen
 **Status: APK package signing — production-signed since v0.2.3.**
 The release workflow signs the CLI release archives (tarballs, checksums,
 SBOM) with the Ed25519 production key (fingerprint
-`24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0`).
+`e9b4bf1194ce90d2377720102748460404eacbc7aba9aa8ad48532cd63294fb9`
+since the 2026-11-28 rotation; `24215e01...` for v0.2.1–v0.2.9).
 The OpenWrt `.apk` is production-signed (apk v3) with the APK key whose
 public anchor is `keys/goshisen-apk.pub.pem` (EC P-256, fingerprint
 `542bb7ae9058fee9b4d37ed30b0af44f234ea7cb8866daa1ffc71a7bc37c839d`).

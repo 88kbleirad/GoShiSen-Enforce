@@ -57,20 +57,26 @@ lỗi lớn) nếu thiếu:
    grep goshisen-linux-amd64.tar.gz checksums.txt | sha256sum -c -
    ```
 
-3. Xác minh chữ ký Ed25519 với khóa công khai phát hành đã commit:
+3. Xác minh chữ ký Ed25519 với khóa công khai phát hành:
 
    ```bash
-   curl -LO https://raw.githubusercontent.com/88kbleirad/GoShiSen-Enforce/main/keys/goshisen-release.pub.pem
-   curl -LO https://github.com/88kbleirad/GoShiSen-Enforce/releases/download/v0.1.0/goshisen-linux-amd64.tar.gz.sig
-   openssl pkeyutl -verify -rawin -pubin -inkey goshisen-release.pub.pem \
+   curl -LO https://github.com/88kbleirad/GoShiSen-Enforce/releases/download/<TAG>/public_key.pem
+   curl -LO https://github.com/88kbleirad/GoShiSen-Enforce/releases/download/<TAG>/goshisen-linux-amd64.tar.gz.sig
+   openssl pkeyutl -verify -rawin -pubin -inkey public_key.pem \
      -in goshisen-linux-amd64.tar.gz -sigfile goshisen-linux-amd64.tar.gz.sig
    ```
 
-   Lệnh phải in `Signature Verified Successfully`. So sánh vân tay khóa
-   một cách độc lập: `openssl pkey -pubin -in goshisen-release.pub.pem
-   -outform DER | sha256sum` phải bằng
+   Lệnh phải in `Signature Verified Successfully`. Mỗi bản phát hành kèm chính
+   khóa đã ký nó dưới dạng asset `public_key.pem` — hãy tải từ bản phát hành bạn
+   đang cài, **không** lấy từ `main`, vì anchor có thể được xoay. So sánh vân tay
+   khóa một cách độc lập: `openssl pkey -pubin -in public_key.pem -outform DER |
+   sha256sum` phải bằng vân tay in trong release notes của bản đó:
+   `e9b4bf1194ce90d2377720102748460404eacbc7aba9aa8ad48532cd63294fb9`
+   (SHA-256 của DER SubjectPublicKeyInfo) cho các bản từ v0.2.10 trở đi, và
    `24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0`
-   (SHA-256 của DER SubjectPublicKeyInfo; khóa tạo 2026-11-13).
+   (khóa tạo 2026-11-13) cho v0.2.1–v0.2.9 — anchor cũ vẫn được commit tại
+   `keys/goshisen-release-2026-11-13.pub.pem`. Xem
+   [`release-key-rotation-2026-11-28.md`](../release/release-key-rotation-2026-11-28.md).
 
 4. Giải nén và cài đặt:
 

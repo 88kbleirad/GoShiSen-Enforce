@@ -30,15 +30,24 @@ as trust anchor).
   maintainers. First-install trust is anchored independently of the artifact
   channel.
 - **Public key fingerprint (SHA-256 of DER SPKI):**
+  `e9b4bf1194ce90d2377720102748460404eacbc7aba9aa8ad48532cd63294fb9`
+  — the current anchor; signs releases from v0.2.10 on (rotated 2026-11-28).
+- **Key identifier (first 16 hex of raw pubkey):** `bdda690b97a4f49e`
+- **Created:** 2026-11-14 (maintainer workstation), promoted to the production
+  anchor on 2026-11-28.
+- **Previous anchor (retired 2026-11-28):**
   `24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0`
-- **Key identifier (first 16 hex of raw pubkey):** `f955ede984245d64`
-- **Created:** 2026-11-13 (UTC), maintainer-generated on a trusted machine.
-- **Rotation:** a new key replaces `keys/goshisen-release.pub.pem` (older
-  fingerprints remain in docs for verifying older releases). Procedure: maintainer
-  generates a new key, stores the new secret, opens a PR committing the new public
-  key + updated fingerprints, verifies the new key against a tag release in a
-  staging environment, then flips production tags to the new key. Rollback = keep
-  verifying with the previous key (it stays published in docs and git history).
+  (key ID `f955ede984245d64`, created 2026-11-13) — signed v0.2.1–v0.2.9 and
+  stays committed as `keys/goshisen-release-2026-11-13.pub.pem` so those
+  releases remain verifiable.
+- **Rotation:** a new key replaces `keys/goshisen-release.pub.pem`; the retired
+  public key stays committed under a dated name (older fingerprints remain in
+  docs for verifying older releases). Procedure: maintainer selects/generates the
+  key offline, stores the new secret, opens a PR committing the new public key +
+  every updated fingerprint pin, proves the pair with a dry run on `main`, then
+  flips production tags to the new key. Rollback = re-store the previous key in
+  the secret and revert the anchor PR. Executed 2026-11-28 — full record:
+  `docs/release/release-key-rotation-2026-11-28.md`.
 - **Revocation:** an Ed25519 key cannot be revoked on-chain; compromise is handled
   by rotation to a fresh key and immediate re-release of affected artifacts.
   Because the trust anchor is the committed public key, a compromised release key
@@ -151,6 +160,13 @@ Errors are distinct: `missing-signature`, `bad-signature`,
    signed and verified end-to-end.
 3. Optional later: native OpenWrt `usign` key for `apk` (backlog #1) — removes
    the `--allow-untrusted` transition exception.
+4. ✅ **Anchor rotation (2026-11-28):** `keys/goshisen-release.pub.pem` is now
+   `e9b4bf11...` (key ID `bdda690b97a4f49e`); the retired anchor (`24215e01...`)
+   stays committed as `keys/goshisen-release-2026-11-13.pub.pem`. Every
+   fingerprint pin (workflow literal, offline-backup check default, two test
+   fixtures) was updated in the same PR, and the new key was proven by a
+   `workflow_dispatch` dry run on `main`. Record:
+   `docs/release/release-key-rotation-2026-11-28.md`.
 
 ## 8. Secrets safety
 
