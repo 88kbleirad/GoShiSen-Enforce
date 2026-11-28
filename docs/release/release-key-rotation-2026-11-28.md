@@ -2,7 +2,7 @@
 
 **Type:** production trust-anchor rotation for the CLI release signing key
 (`GH_RELEASE_SIGNING_KEY`). **No runtime, CLI, or packaged-artifact change.**
-**Applies to:** every release from v0.2.10 on. v0.2.1–v0.2.9 keep verifying with
+**Applies to:** every release after v0.2.9. v0.2.1–v0.2.9 keep verifying with
 the retired anchor (still committed, §3).
 
 ## 1. Why the anchor moved
@@ -28,7 +28,7 @@ a custody `README.txt`.
 | Fingerprint (SHA-256 DER SPKI) | `24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0` | `e9b4bf1194ce90d2377720102748460404eacbc7aba9aa8ad48532cd63294fb9` |
 | Key ID (first 16 hex of raw pubkey) | `f955ede984245d64` | `bdda690b97a4f49e` |
 | Created | 2026-11-13 | 2026-11-14 (promoted 2026-11-28) |
-| Signed releases | v0.2.1 – v0.2.9 | v0.2.10 on |
+| Signed releases | v0.2.1 – v0.2.9 | after v0.2.9 |
 | Public key in git | `keys/goshisen-release-2026-11-13.pub.pem` (archived) | `keys/goshisen-release.pub.pem` |
 | Private key | GitHub secret (environment `signing`), superseded | GitHub secret (environment `signing`) + owner custody |
 
@@ -124,7 +124,7 @@ Results (2026-11-28, base `9834600`, tree with the rotation applied):
   `public_key.pem` asset. A rollback that requires *signing* with the retired key
   is therefore only possible from that offline backup.
 - No tag, release, or published asset was created, moved, or re-signed at any
-  step; the rotation takes effect on the next tag (v0.2.10 on).
+  step; the rotation takes effect on the next tag after v0.2.9.
 
 ## 6. Rollback
 

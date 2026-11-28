@@ -31,7 +31,7 @@ as trust anchor).
   channel.
 - **Public key fingerprint (SHA-256 of DER SPKI):**
   `e9b4bf1194ce90d2377720102748460404eacbc7aba9aa8ad48532cd63294fb9`
-  — the current anchor; signs releases from v0.2.10 on (rotated 2026-11-28).
+  — the current anchor; signs releases after v0.2.9 (rotated 2026-11-28).
 - **Key identifier (first 16 hex of raw pubkey):** `bdda690b97a4f49e`
 - **Created:** 2026-11-14 (maintainer workstation), promoted to the production
   anchor on 2026-11-28.
