@@ -1,5 +1,12 @@
 # F-02 — CLI release signing key moved behind a protected environment
 
+> **STATUS 2026-11-28: F-02 IS COMPLETE — the key is environment-scoped, and
+> that scope is proven.** The `signing` environment secret holds the (rotated)
+> CLI private key, the repository-level copy is **deleted**, and two dry runs
+> succeeded on `main` after the change (`46108232674`, then `46108443415`).
+> Section §0 states the current state; §1 onward is the record of how it got
+> there.
+>
 > **STATUS 2026-11-23: REINSTATED — the gate is `environment: signing`.**
 > `release.yml`'s `sign` job now declares `environment: signing` (the same
 > environment `apk-sign.yml` uses: required reviewer `88kbleirad`, deployment
@@ -15,37 +22,44 @@
 > declared only for an environment that exists with rules.
 
 Issue: [#100](https://github.com/88kbleirad/GoShiSen-Enforce/issues/100).
-Scope: the **CLI release** signing key `GH_RELEASE_SIGNING_KEY`
-(Ed25519, production fingerprint
-`24215e016621925215dec0ad6ea14ac74253a4e97249a973e89d649a2217cca0`,
-key ID `f955ede984245d64`). The APK signing key is a different key and a
-different environment (`signing`) — see
-`docs/release/apk-signing-key-custody.md`.
+Scope: the **CLI release** signing key `GH_RELEASE_SIGNING_KEY` (Ed25519).
+**Current anchor, since the 2026-11-28 rotation:** fingerprint
+`e9b4bf1194ce90d2377720102748460404eacbc7aba9aa8ad48532cd63294fb9`,
+key ID `bdda690b97a4f49e`. The retired anchor (`24215e01...7cca0`, key ID
+`f955ede984245d64`) signed v0.2.1–v0.2.9 and stays committed as
+`keys/goshisen-release-2026-11-13.pub.pem` so those releases remain verifiable —
+see `docs/release/release-key-rotation-2026-11-28.md`. The APK signing key
+(`GH_RELEASE_APK_SIGNING_KEY`) is a different key, though it lives in the same
+environment — see `docs/release/apk-signing-key-custody.md`.
 
-## 0. Current state (2026-11-23) — gate reinstated in `signing`
+## 0. Current state (2026-11-28) — F-02 acceptance met
 
-> **2026-11-28 — the CLI anchor was rotated.** The records in this section
-> describe the pre-rotation state (key `24215e01...`). The committed anchor and
-> every fingerprint pin now carry the new key `e9b4bf11...`
+> **The CLI anchor was rotated and the repository-level copy is gone.** The
+> committed anchor and every fingerprint pin carry the new key `e9b4bf11...`
 > (key ID `bdda690b97a4f49e`), the retired anchor stays committed as
-> `keys/goshisen-release-2026-11-13.pub.pem`, and the environment secret in
-> `signing` holds the new key. Full record incl. the repository-level copy
-> removal and the dry-run proof: `docs/release/release-key-rotation-2026-11-28.md`.
+> `keys/goshisen-release-2026-11-13.pub.pem`, and `GH_RELEASE_SIGNING_KEY`
+> exists **only** as a secret of environment `signing`. Full record:
+> `docs/release/release-key-rotation-2026-11-28.md`.
 
-| Item | State |
+| Item | State (verified 2026-11-28) |
 | --- | --- |
 | `release.yml` `sign` job | `environment: signing`; only `sign` may reference the key, only `sign` may write |
 | Environment `signing` | required reviewer `88kbleirad` (`can_admins_bypass: true`, `prevent_self_review: false` — so the approval is deliberate confirmation, not two-person review; see §0.3); deployment policies `main` (branch) + `v*` (**tag**), so tag releases pass the policy check |
-| Environment secret in `signing` | `GH_RELEASE_APK_SIGNING_KEY` only — **`GH_RELEASE_SIGNING_KEY` is not there yet** |
-| Repository-level `GH_RELEASE_SIGNING_KEY` | still present; it **is** the production CLI key (run `45001752175` signed and verified against the anchor). Remove it only after a green dry run proves the environment scope |
-| Environment `release-cli` | stray leftover: no protection rules, no policies, no secrets. Delete it in Settings → Environments; nothing declares it, and re-declaring it would let GitHub auto-create it unprotected |
+| Environment secret in `signing` | `GH_RELEASE_APK_SIGNING_KEY` + **`GH_RELEASE_SIGNING_KEY`** = the rotated CLI private key (`2026-11-28T04:35:08Z`) |
+| Repository-level `GH_RELEASE_SIGNING_KEY` | **deleted 2026-11-28** — the CLI key now exists only in the environment scope; `gh secret list` at repository scope lists no CLI key |
+| Environment `release-cli` | **gone** (`gh api .../environments` → `github-pages`, `signing`); nothing declares it. It was the withdrawn 2026-11-22 attempt that §1 and §2c describe |
+| Scope proof | decoy negative control run `46102623905` failed closed on the 19-char decoy while a valid key sat at repository scope ⇒ the environment scope is what the job reads; dry run `46108232674` green with the rotated key stored in `signing`; dry run `46108443415` green **after** the repository-level copy was deleted ⇒ resolution from the environment scope alone |
 | F-02 guard | rule `environment-scoped` (the `sign` job must declare `environment: signing`) + negative fixture `bad-sign-no-environment.yml`; `secret-scope` still confines the key to `sign` in every scanned workflow |
 
-### 0.1 Ordering (blocked on the key's value)
+### 0.1 Ordering — EXECUTED 2026-11-28
 
 GitHub never returns a secret value, so the environment secret cannot be
 copied out of the repository scope. The value must come from the offline
-backup (or a rotation):
+backup (or a rotation). Steps 1–2 were performed with the **rotated** key
+(`bash scripts/check-backup-key.sh --key ~/.keys/goshisen-release-key/key.pem`
+→ `MATCH` (e9b4bf11...), exit 0), step 4 is dry run `46108232674`, and step 5's
+deletion plus the second dry run (`46108443415`) are recorded in
+`docs/release/release-key-rotation-2026-11-28.md` §5:
 
 ```sh
 # 1. verify the backup offline first — prints only size/header/fingerprint
@@ -65,9 +79,11 @@ gh workflow run release.yml --ref main -f dry_run=true
 
 If the backup no longer exists, rotate: `openssl genpkey -algorithm ed25519`,
 store the new key in the environment secret, and replace
-`keys/goshisen-release.pub.pem` in a dedicated PR — and, in the same PR, the two
-**hardcoded** copies of the expected fingerprint (keep the old anchor committed
-so past releases still verify):
+`keys/goshisen-release.pub.pem` in a dedicated PR — and, in the same PR, every
+**hardcoded** copy of the expected fingerprint (keep the old anchor committed
+so past releases still verify). **This is the path that was taken on
+2026-11-28** — the owner's local key was promoted to the anchor instead of
+generating new material:
 
 | Where | Literal (before → after the 2026-11-28 rotation) |
 | --- | --- |
@@ -95,8 +111,8 @@ never merged, so treat both literals as the source of truth.
 
 Environment secrets are readable by **every** job that declares the
 environment. `apk-sign.yml`'s `sign` job declares `environment: signing` and
-checks out + builds the repository before it signs, so once
-`GH_RELEASE_SIGNING_KEY` lives there that job can read it too (and
+checks out + builds the repository before it signs, so with
+`GH_RELEASE_SIGNING_KEY` stored there that job can read it too (and
 release.yml's `sign` job can read `GH_RELEASE_APK_SIGNING_KEY`). Both
 workflows gate on the same required reviewer, so this is a deliberate
 trade-off (one environment to manage) rather than a slip; a dedicated
@@ -114,19 +130,24 @@ booleans only) as last inspected on **2026-11-23** — the API needs a
 credential, so this is a recorded observation, not something a reader can
 re-verify from an unauthenticated checkout. Re-read it before relying on it.
 
-**1. Secret-scope resolution is not fail-closed — an environment declaration
-does not pin the key's provenance.** GitHub resolves an environment secret in
-preference to a same-named repository secret, but when the environment does
-*not* define the name, the job silently falls back to the repository-level
-secret. So while `GH_RELEASE_SIGNING_KEY` exists at repository scope (it does)
-and is absent from `signing` (it is, §0), a tag run's `sign` job resolves the
-**repository** copy after the approval wait: the approval is real, but the key
-used is the unscoped one. This is the same resolution order that produced the
-demonstrated fail-open on 2026-11-22 (§1b: an environment with no secret fell
-back to the repository copy and signed without any approval). The gate only
-becomes fail-closed for the key's provenance once the environment secret is set
-*and* the repository-level copy is deleted (§3); the second dry run is the proof,
-and until then the repository-level copy must be treated as the effective key.
+**1. Secret-scope resolution is now fail-closed for the CLI key (closed
+2026-11-28).** GitHub resolves an environment secret in preference to a
+same-named repository secret — but when the environment does *not* define the
+name, the job silently falls back to the repository-level secret. That is the
+resolution order behind the demonstrated fail-open on 2026-11-22 (§1b: an
+environment with no secret fell back to the repository copy and signed without
+any approval). F-02 closed it from both sides: the `signing` secret holds the
+rotated CLI key, and the repository-level copy is **deleted**, so no unscoped
+copy is left to fall back to. The proof is in §0: the decoy control (run
+`46102623905`, a 19-char non-PEM value in the environment while a valid key sat
+at repository scope) failed closed, dry run `46108232674` was green with the
+rotated key in the environment, and dry run `46108443415` was green **after** the
+repository-level copy was removed. Two things would restore the old behaviour
+and are the reason this is a configuration invariant, not code: setting
+`GH_RELEASE_SIGNING_KEY` at repository scope again, or pointing the `sign` job at
+an environment that does not exist — a workflow declaring a missing environment
+makes GitHub create it unprotected. The `environment-scoped` guard rule fails CI
+on the second; only a settings change can cause the first.
 
 **2. The approval is a deliberate-confirmation step, not two-person control.**
 Environment `signing` has required reviewer `88kbleirad` with
@@ -209,7 +230,7 @@ stray environment should still be deleted in repository settings.
 * `build` never sees the key and cannot write to the repository
   (`permissions: contents: read`), so a compromised build step (or a
   poisoned tag name reaching a shell) cannot spend the signing key.
-* `sign` runs under `release-cli`, so the run pauses for the required
+* `sign` runs under `environment: signing`, so the run pauses for the required
   reviewer's approval before the key is resolved, and only a ref allowed
   by the environment's deployment policy (main, `v*`) can get that far.
 * The key is passed to exactly one step, through that step's `env`, and
@@ -219,8 +240,9 @@ stray environment should still be deleted in repository settings.
 * Before signing, the job re-verifies that every downloaded asset matches
   the build job's `checksums.txt` and that
   `keys/goshisen-release.pub.pem` has the production fingerprint
-  `24215e01…`, so neither a tampered artifact nor a swapped anchor can be
-  signed.
+  `e9b4bf11...` (the rotated anchor; the retired `24215e01...` is archived for
+  releases up to v0.2.9), so neither a tampered artifact nor a swapped anchor
+  can be signed.
 * `tests/ci/release-workflow-guard-test.sh` (CI job
   `release-workflow-guard (F-02)`) fails the PR if any of that structure
   regresses.
@@ -233,8 +255,10 @@ paste with the committed anchor — on your own machine, no network, no CI:
 ```sh
 # prints size/header/public fingerprint only; never the key value
 bash scripts/check-backup-key.sh --key /path/to/cli-key.pem
-# expect: MATCH: this is the production CLI release key (24215e01...)
+# expect: MATCH: this is the production CLI release key (e9b4bf11...)
 #         (exit 0)
+# a pre-rotation backup instead names its archived anchor:
+#   matches: goshisen-release-2026-11-13.pub.pem
 ```
 
 Exit codes: `0` = key matches the production CLI anchor — safe to set;
@@ -245,10 +269,12 @@ readable PEM private key (quoted/escaped/corrupted/encrypted) with hints.
 Regression-covered by `tests/ci/check-backup-key-test.sh` (CI job
 `check-backup-key (F-02)`).
 
-## 3. Removing the repository-level secret (maintainer, after the dry run passed)
+## 3. Removing the repository-level secret (EXECUTED 2026-11-28)
 
 Prerequisite: the F-02 dry run (workflow_dispatch on `main`,
-`dry_run: true`) has succeeded and its run ID is recorded in issue #100.
+`dry_run: true`) has succeeded and its run ID is recorded in issue #100 — met by
+run `46108232674`; the deletion was then performed and proved by dry run
+`46108443415`. The procedure below is the executed record, not a pending step.
 
 **Note on the first dry run (2026-11-22, run `44981019938`):** it was
 approved and reached signing, but **failed fail-closed** before anything
@@ -290,6 +316,10 @@ Do not delete the environment secret, and never print or export a value.
 After step 3, `release.yml` remains fully functional: the `sign` job
 resolves the key from the environment scope.
 
+Post-execution state (2026-11-28): step 4's expectations hold — repository scope
+lists no CLI key, and environment `signing` lists `GH_RELEASE_SIGNING_KEY` +
+`GH_RELEASE_APK_SIGNING_KEY`.
+
 ## 4. Rollback if the next real release fails
 
 Symptom → cause → action:
@@ -306,7 +336,7 @@ Symptom → cause → action:
 | `metadata: 121 chars, 2 line(s), CR=0, openssl=parse-failed` (the shape of dry run `44992807857`) | the value is a valid PEM **wrapped in quotes** (plus a stray trailing space) — e.g. pasted as `"$(cat key.pem)"` or from a JSON/`gh secret set` echo. Reproduced locally: canonical Ed25519 PEM = 119 chars / 3 lines / parses; quoted + trailing space = **121 chars / 2 lines / fails** | re-set the secret unquoted (or let the built-in repair handle it — it strips quotes/whitespace/escapes and re-validates with openssl before signing) |
 | same fingerprint, and the repair still fails | the wrapping quotes may be **mismatched** (`"…'` or `'…"`, with or without a trailing space) — the surviving shapes after the first repair merged | fixed in the release path: quotes are stripped per end (no matching requirement) and, if the line structure was collapsed, the PEM is reconstructed from the fence + base64 payload; both still require openssl to parse *and* the anchor to match before signing |
 | `ERROR: cannot derive public key from …` | the same class reached before the explicit parse probe existed (releases before this change) | re-set the environment secret from the offline backup as the file's exact contents |
-| `FAIL: trust anchor fingerprint mismatch` | the committed anchor changed | restore `keys/goshisen-release.pub.pem` (fingerprint `24215e01...`) |
+| `FAIL: trust anchor fingerprint mismatch` | the committed anchor is not the one the workflow expects | restore `keys/goshisen-release.pub.pem` from git — the current anchor is `e9b4bf11...`; pinning the retired `24215e01...` back also means reverting the four fingerprint sites (`docs/release/release-key-rotation-2026-11-28.md` §6) |
 | `ERROR: key mismatch: … does not match …` (+ `FAIL: GH_RELEASE_SIGNING_KEY holds a key that belongs to: <anchor>`) | the environment secret holds a **different** key than the committed anchor (typically the APK signing key pasted by mistake) | read the named anchor: if it is `goshisen-apk.pub.pem`, the APK key was pasted into the CLI secret — re-set from the CLI offline backup; if it names nothing, the backup/secret is not the CLI key. Rotation of the anchor itself needs a dedicated PR |
 | `VERIFY-FAIL: provenance-mismatch` / `stale-provenance` | the artifact did not come from this tag's build | re-run the workflow; the sign job's checksum gate should have caught a tampered asset first — investigate before re-running |
 | Anything else, and the release must ship now | — | roll back to the pre-F-02 workflow: `git revert <F-02 merge commit>` (restores the single-job workflow that reads the repo-level secret), then re-add the repo-level secret from the offline backup with `gh secret set GH_RELEASE_SIGNING_KEY --repo …`. Note: re-adding the repo secret **alone** does not restore old behaviour while the environment secret exists — environment scope wins; the workflow revert is what restores it. |
@@ -315,15 +345,17 @@ Rollback is a temporary measure: re-open the F-02 issue with the failure
 output, because the repo-level secret is unscoped and is the exposure
 this change removed.
 
-## 5. Post-first-release check (after the next `v*` tag)
+## 5. Post-first-release check (open — run after the next `v*` tag, v0.2.10)
 
-Run once, after the first real release that goes through the new
-workflow, and record the result in issue #100:
+Run once, after the first real release that goes through the environment-only key
+(v0.2.10; v0.2.9 went through the gate but still resolved the repository-scope
+copy, see §7), and record the result in issue #100:
 
 - [ ] `gh run view <run-id> --json jobs` shows `validate` → `build` →
       `sign`, with `sign` gated on the `signing` environment.
 - [ ] The `sign` job's log shows the approval wait and then
-      `OK: trust anchor fingerprint verified 24215e01…`, `OK: downloaded
+      `OK: trust anchor fingerprint verified e9b4bf11...` (v0.2.1–v0.2.9 logs
+      print the retired `24215e01...`), `OK: downloaded
       assets match build checksums`, `OK: release artifacts signed and
       verified (key removed)`.
 - [ ] `gh secret list` no longer lists `GH_RELEASE_SIGNING_KEY` at
@@ -371,3 +403,5 @@ workflow, and record the result in issue #100:
 | 2026-11-22 | dry run `44992807857` (head `e494f2a`) reported `121 chars, 2 line(s), CR=0, openssl=parse-failed` ⇒ root cause pinned by reproduction: a **quoted** PEM (canonical 119/3 lines vs 121/2 quoted) and the first quote-strip was too strict; the repair is now a repeat-trim + strip-quotes + unescape + drop-CR loop validated by openssl, with a guard fixture for the quoted+trailing-whitespace shape | issue #100 |
 | 2026-11-22 | after that repair merged, dry run `44994859221` (head `faf1d66`) reported the identical fingerprint ⇒ the surviving shapes are **mismatched-quote** wrappers (`"...'` ± space) and **collapsed line structure**; the repair now strips quotes per end and reconstructs a canonical PEM from the fence + payload (both openssl-validated, anchor-checked), with fixtures for mismatched quotes and a fully collapsed one-line PEM | issue #100, PR #119 |
 | 2026-11-23 | **REINSTATED in a different environment**: `release.yml`'s `sign` job declares `environment: signing` (same environment as `apk-sign.yml`: required reviewer + `main`/`v*` policies), so the approval gate is back without recreating the withdrawn `release-cli`. The F-02 guard gained the `environment-scoped` rule (`sign` must declare `environment: signing`) plus the `bad-sign-no-environment.yml` negative fixture — the #125 regression (a `sign` job that silently loses the gate) now fails CI. Remaining before the repository-level secret can go: the key's value in the environment secret (offline backup or rotation), a green dry run, then the removal in §3 | issue #100, see §0 |
+| 2026-11-27 | **v0.2.9 released through the gate**: tag run `45996996706`, `sign` waited for the `signing` reviewer then signed and verified (release published 15:21:39Z). It resolved `GH_RELEASE_SIGNING_KEY` from the **repository** scope — the environment secret still did not exist — so the approval was real but the key was unscoped. This is the last release on the retired anchor (v0.2.1–v0.2.9) | issue #100, `docs/release/v0.2.9-notes.md` |
+| 2026-11-28 | **Env scope proven, anchor rotated, repository copy deleted — F-02 closed**: a 19-char decoy written to the `signing` secret made dry run `46102623905` fail closed on its shape while a valid key sat at repository scope ⇒ the environment scope is what the job reads. The owner then promoted the local Ed25519 key to the anchor (PR #152 → `2c364bf`), re-provisioned the environment secret with it (`2026-11-28T04:35:08Z`), and deleted the repository-level copy. Dry runs `46108232674` (rotated key in the environment) and `46108443415` (repository copy gone) both succeeded — `OK: trust anchor fingerprint verified e9b4bf11...`, `VERIFY-PASS` — and both logs scanned clean for key material. Recorded by PR #153 → `e4c2228` | issue #100, `docs/release/release-key-rotation-2026-11-28.md` |
